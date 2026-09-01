@@ -1,0 +1,12 @@
+.DS_Store
+.venv/
+__pycache__/
+.pytest_cache/
+
+# Machine-local source paths and generated media
+.local/
+work/
+exports/
+catalog/*.sqlite*
+catalog/generated/
+*.partial
