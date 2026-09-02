@@ -13,6 +13,13 @@ from .review import load_json
 
 CONTEXT_PACKET_SCHEMA = "phase1-context-packet/v1"
 CONTEXT_REVIEW_SCHEMA = "phase1-context-review/v1"
+NOTABLE_CATEGORIES = {
+    "candid",
+    "dialogue",
+    "unexpected",
+    "visual",
+    "travel_detail",
+}
 
 
 def _group_range(
@@ -209,6 +216,8 @@ def build_context_packet(
             "Synthesize Korean and English transcript candidates using visual context; retain uncertainty.",
             "Choose representative_sample_id only from candidate_frames for that group.",
             "Describe the event across the whole storyboard, not only the selected representative frame.",
+            "Add zero to three notable_moments only when a candid, funny, unexpected, visually strong, dialogue, or travel-specific beat is genuinely useful for editing; do not force one for every group.",
+            "Anchor every notable moment to a candidate sample and explain both what makes it distinctive and how an editor could use it.",
         ],
         "groups": groups,
     }
@@ -244,6 +253,29 @@ def validate_context_review(packet: dict[str, Any], review: dict[str, Any]) -> N
         for key_moment in reviewed_group.get("key_moments", []):
             if key_moment.get("sample_id") not in candidate_ids:
                 raise ValueError(f"Invalid key moment for {source_group['group_id']}")
+        notable_moments = reviewed_group.get("notable_moments", [])
+        if not isinstance(notable_moments, list) or len(notable_moments) > 3:
+            raise ValueError(
+                f"notable_moments must be a list of at most 3 items for {source_group['group_id']}"
+            )
+        for notable in notable_moments:
+            if not isinstance(notable, dict):
+                raise TypeError(
+                    f"Invalid notable moment for {source_group['group_id']}"
+                )
+            if notable.get("sample_id") not in candidate_ids:
+                raise ValueError(
+                    f"Invalid notable moment sample for {source_group['group_id']}"
+                )
+            if notable.get("category") not in NOTABLE_CATEGORIES:
+                raise ValueError(
+                    f"Invalid notable moment category for {source_group['group_id']}"
+                )
+            for field in ("title", "description", "edit_hint"):
+                if not str(notable.get(field, "")).strip():
+                    raise ValueError(
+                        f"Missing notable moment {field} for {source_group['group_id']}"
+                    )
 
 
 def create_context_html(timeline: dict[str, Any], output_path: Path) -> None:
@@ -251,6 +283,15 @@ def create_context_html(timeline: dict[str, Any], output_path: Path) -> None:
     for group in timeline["context_groups"]:
         context = group["context_review"]
         storyboard = os.path.relpath(group["storyboard"], output_path.parent)
+        notable_items = "".join(
+            f"<li><strong>{html.escape(item['title'])}</strong> — {html.escape(item['description'])} <span>{html.escape(item['edit_hint'])}</span></li>"
+            for item in context.get("notable_moments", [])
+        )
+        notable_section = (
+            f'<section class="notable"><h3>특이 포인트</h3><ul>{notable_items}</ul></section>'
+            if notable_items
+            else ""
+        )
         cards.append(
             f"""
             <article>
@@ -259,6 +300,7 @@ def create_context_html(timeline: dict[str, Any], output_path: Path) -> None:
               <div class="time">{html.escape(group["timecode"])}</div>
               <p>{html.escape(context["narrative_summary"])}</p>
               <p class="dialogue"><strong>대화:</strong> {html.escape(context.get("dialogue_summary", "—"))}</p>
+              {notable_section}
               <p class="muted">대표 프레임: {html.escape(context["representative_sample_id"])} · {html.escape(context.get("representative_reason", ""))}</p>
             </article>
             """
@@ -268,6 +310,7 @@ def create_context_html(timeline: dict[str, Any], output_path: Path) -> None:
 body {{ margin:0; padding:28px; background:#0d1015; color:#edf2f8; font:15px/1.55 -apple-system,BlinkMacSystemFont,sans-serif; }}
 main {{ display:grid; gap:24px; max-width:1280px; margin:auto; }} article {{ background:#171c24; border:1px solid #2a3342; border-radius:12px; overflow:hidden; padding-bottom:18px; }}
 article img {{ width:100%; display:block; background:#000; }} h1,h2,p,.time {{ margin-left:18px; margin-right:18px; }} h2 {{ margin-bottom:4px; }} .time,.muted {{ color:#9ba8ba; }} .dialogue {{ color:#c9e7ff; }}
+.notable {{ margin:16px 18px; padding:12px 16px; border-left:3px solid #d6ef68; background:#202834; }} .notable h3 {{ margin:0 0 8px; }} .notable ul {{ margin:0; padding-left:18px; }} .notable li + li {{ margin-top:7px; }} .notable span {{ display:block; color:#9ba8ba; font-size:13px; }}
 </style></head><body><main><h1>{html.escape(timeline["source"]["name"])}</h1>{"".join(cards)}</main></body></html>"""
     output_path.write_text(document, encoding="utf-8")
 

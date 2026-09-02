@@ -14,6 +14,13 @@ from .phase1 import atomic_json, format_time
 from .review import load_json
 
 WEB_SCHEMA = "phase1-web-timeline/v1"
+NOTABLE_LABELS = {
+    "candid": "솔직한 순간",
+    "dialogue": "살릴 대사",
+    "unexpected": "돌발 순간",
+    "visual": "그림 되는 컷",
+    "travel_detail": "여행 디테일",
+}
 
 
 class ImageAssetResolver:
@@ -133,6 +140,10 @@ def _render_frame_strip(
         item["sample_id"]: item.get("role", "핵심 순간")
         for item in context.get("key_moments", [])
     }
+    notable_moments = {
+        item["sample_id"]: item.get("title", "특이 포인트")
+        for item in context.get("notable_moments", [])
+    }
     representative = context["representative_sample_id"]
     tiles: list[str] = []
     frame_action = "프레임부터 재생" if seek_enabled else "프레임"
@@ -150,6 +161,10 @@ def _render_frame_strip(
             badges.append('<span class="frame-badge frame-badge--rep">대표</span>')
         if role:
             badges.append(f'<span class="frame-badge">{_escape(role)}</span>')
+        if sample_id in notable_moments:
+            badges.append(
+                f'<span class="frame-badge frame-badge--notable" title="{_escape(notable_moments[sample_id])}">특이 포인트</span>'
+            )
         tiles.append(
             f"""
             <button class="{" ".join(classes)}" type="button"
@@ -170,6 +185,51 @@ def _render_frame_strip(
             """
         )
     return "".join(tiles)
+
+
+def _render_notable_moments(
+    timeline: dict[str, Any],
+    context: dict[str, Any],
+    assets: ImageAssetResolver,
+    *,
+    seek_enabled: bool,
+) -> str:
+    moments = context.get("notable_moments", [])
+    if not moments:
+        return ""
+    sample_map = {sample["sample_id"]: sample for sample in timeline["samples"]}
+    disabled = "" if seek_enabled else "disabled"
+    cards: list[str] = []
+    for moment in moments:
+        sample = sample_map[moment["sample_id"]]
+        category = str(moment.get("category", "travel_detail"))
+        category_label = NOTABLE_LABELS.get(category, "특이 포인트")
+        cards.append(
+            f"""
+            <article class="notable-card notable-card--{_escape(category)}">
+              <button class="notable-frame" type="button" data-seek="{float(sample["time"]):.3f}" {disabled}>
+                <img loading="lazy" src="{assets.url(sample["frame"])}"
+                     alt="{_escape(moment["title"])}">
+                <span>{_escape(sample["timecode"])}</span>
+              </button>
+              <div class="notable-copy">
+                <span>{_escape(category_label)}</span>
+                <h4>{_escape(moment["title"])}</h4>
+                <p>{_escape(moment["description"])}</p>
+                <small><b>EDIT USE</b>{_escape(moment["edit_hint"])}</small>
+              </div>
+            </article>
+            """
+        )
+    return f"""
+        <section class="detail-section notable-section">
+          <div class="section-heading">
+            <div><span class="eyebrow">NOTABLE BEATS</span><h3>특이 포인트</h3></div>
+            <p>평범한 요약에서 빠지기 쉬운 표정·돌발 상황·대사·여행 디테일입니다.</p>
+          </div>
+          <div class="notable-grid">{"".join(cards)}</div>
+        </section>
+    """
 
 
 def _render_transcripts(
@@ -293,6 +353,7 @@ def _render_edit_map(
         if item.get("sample_id") in sample_times
     ]
     evidence_languages = [str(item) for item in context.get("dialogue_evidence", [])]
+    notable_moments = context.get("notable_moments", [])
     silence_intervals = timeline.get("audio_analysis", {}).get("silence_intervals", [])
     disabled = "" if seek_enabled else "disabled"
     rows: list[str] = []
@@ -326,6 +387,16 @@ def _render_edit_map(
         status_class, status_label, status_reason = _edit_recommendation(
             segment, overlaps_key_moment=overlaps_key
         )
+        segment_notables = [
+            item
+            for item in notable_moments
+            if item.get("sample_id") in sample_times
+            and start <= sample_times[item["sample_id"]] < end
+        ]
+        notable_note = "".join(
+            f'<div class="row-notable"><b>특이 포인트</b><span>{_escape(item["title"])}</span></div>'
+            for item in segment_notables
+        )
         actions = "".join(
             f"<span>{_escape(action)}</span>" for action in review.get("actions", [])
         )
@@ -350,6 +421,7 @@ def _render_edit_map(
               <div class="edit-visual">
                 <span class="edit-cell-label">화면 · 행동</span>
                 <strong>{_escape(review.get("visual_summary", "설명 없음"))}</strong>
+                {notable_note}
                 <div class="action-tags">{actions}</div>
                 <small>화질 {quality}% · {_escape(quality_note)}</small>
               </div>
@@ -379,6 +451,7 @@ def _render_group(
     frame_limit: int,
 ) -> str:
     context = group["context_review"]
+    notable_moments = context.get("notable_moments", [])
     start = float(group["start"])
     end = float(group["end"])
     samples = _group_samples(timeline, start, end, frame_limit=frame_limit)
@@ -401,6 +474,14 @@ def _render_group(
         str(context.get("narrative_summary", "")),
         str(context.get("dialogue_summary", "")),
     ]
+    for moment in notable_moments:
+        search_parts.extend(
+            [
+                str(moment.get("title", "")),
+                str(moment.get("description", "")),
+                str(moment.get("edit_hint", "")),
+            ]
+        )
     for segment in segments:
         review = segment.get("review", {})
         search_parts.append(str(review.get("visual_summary", "")))
@@ -411,6 +492,11 @@ def _render_group(
     representative_url = assets.url(representative["frame"])
     play_disabled = "" if media_url else "disabled"
     play_label = "이 구간 재생" if media_url else "프록시 연결 후 재생"
+    notable_badge = (
+        f'<span class="notable-count">★ {len(notable_moments)} 특이 포인트</span>'
+        if notable_moments
+        else ""
+    )
     return f"""
     <details class="scene" id="scene-{_escape(group["group_id"])}"
              data-search="{_escape(summary_search)}"
@@ -435,7 +521,7 @@ def _render_group(
           <span class="scene-description">{_escape(context["narrative_summary"])}</span>
         </span>
         <span class="scene-action">
-          <span class="confidence">{round(confidence * 100)}% 맥락 확신</span>
+          <span class="scene-signals">{notable_badge}<span class="confidence">{round(confidence * 100)}% 맥락 확신</span></span>
           <span class="detail-label"><span>자세히 보기</span><i aria-hidden="true"></i></span>
         </span>
       </summary>
@@ -461,6 +547,8 @@ def _render_group(
             <p>{_escape(context.get("representative_reason", ""))}</p>
           </div>
         </section>
+
+        {_render_notable_moments(timeline, context, assets, seek_enabled=media_url is not None)}
 
         <section class="detail-section edit-map-section">
           <div class="section-heading">
@@ -580,6 +668,9 @@ def render_timeline_web(
         "embedded_source_bytes": assets.embedded_bytes,
         "frame_limit": frame_limit,
         "scene_count": len(groups),
+        "notable_moment_count": sum(
+            len(group["context_review"].get("notable_moments", [])) for group in groups
+        ),
     }
     atomic_json(output_dir / "manifest.json", manifest)
     return output_path

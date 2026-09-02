@@ -146,12 +146,25 @@ def test_context_review_representative_must_come_from_storyboard() -> None:
                 "narrative_summary": "빙하와 헬기가 보인다",
                 "representative_sample_id": "F0002",
                 "key_moments": [{"sample_id": "F0001", "role": "도입"}],
+                "notable_moments": [
+                    {
+                        "sample_id": "F0002",
+                        "category": "visual",
+                        "title": "빙하 위 노란 헬기",
+                        "description": "회색 빙하와 노란 기체의 대비가 강하다.",
+                        "edit_hint": "장소를 각인시키는 와이드 컷으로 쓴다.",
+                    }
+                ],
             }
         ],
     }
     validate_context_review(packet, review)
     review["groups"][0]["representative_sample_id"] = "F9999"
     with pytest.raises(ValueError, match="representative"):
+        validate_context_review(packet, review)
+    review["groups"][0]["representative_sample_id"] = "F0002"
+    review["groups"][0]["notable_moments"][0]["sample_id"] = "F9999"
+    with pytest.raises(ValueError, match="notable moment sample"):
         validate_context_review(packet, review)
 
 
@@ -203,6 +216,15 @@ def test_web_timeline_renders_details_without_video(tmp_path: Path) -> None:
                     "representative_sample_id": "F0001",
                     "representative_reason": "빙하 전경이 잘 보인다.",
                     "key_moments": [{"sample_id": "F0001", "role": "도착"}],
+                    "notable_moments": [
+                        {
+                            "sample_id": "F0001",
+                            "category": "visual",
+                            "title": "빙하 위 노란 헬기",
+                            "description": "회색 빙하와 노란 기체의 대비가 강하다.",
+                            "edit_hint": "장소를 각인시키는 도입 컷으로 쓴다.",
+                        }
+                    ],
                     "confidence": 0.9,
                 },
             }
@@ -221,12 +243,16 @@ def test_web_timeline_renders_details_without_video(tmp_path: Path) -> None:
     assert "편집 판단 타임라인" in document
     assert "화면 · 행동" in document
     assert "음성 · 대화" in document
+    assert "NOTABLE BEATS" in document
+    assert "빙하 위 노란 헬기" in document
+    assert "장소를 각인시키는 도입 컷으로 쓴다." in document
     assert "data:image/jpeg;base64," in document
     assert "<video" not in document
     assert "__MEDIA_STATUS__" not in document
     assert manifest["video_mode"] == "none"
     assert manifest["asset_mode"] == "embed"
     assert manifest["embedded_asset_count"] == 1
+    assert manifest["notable_moment_count"] == 1
 
     relative_output = render_timeline_web(
         timeline_path, tmp_path / "web-relative", asset_mode="relative"
