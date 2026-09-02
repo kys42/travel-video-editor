@@ -157,6 +157,7 @@ def test_context_review_representative_must_come_from_storyboard() -> None:
 
 def test_web_timeline_renders_details_without_video(tmp_path: Path) -> None:
     frame = tmp_path / "frame.jpg"
+    frame.write_bytes(b"portable-image")
     timeline = {
         "schema_version": "phase1-context-reviewed-timeline/v1",
         "asset_id": "asset-1",
@@ -216,7 +217,25 @@ def test_web_timeline_renders_details_without_video(tmp_path: Path) -> None:
 
     assert "헬기에서 내려 빙하를 둘러본다." in document
     assert "도착했다고 말한다." in document
-    assert "PROXY PREVIEW / RESERVED" in document
+    assert "GLOBAL PREVIEW DECK" in document
+    assert "편집 판단 타임라인" in document
+    assert "화면 · 행동" in document
+    assert "음성 · 대화" in document
+    assert "data:image/jpeg;base64," in document
     assert "<video" not in document
     assert "__MEDIA_STATUS__" not in document
     assert manifest["video_mode"] == "none"
+    assert manifest["asset_mode"] == "embed"
+    assert manifest["embedded_asset_count"] == 1
+
+    relative_output = render_timeline_web(
+        timeline_path, tmp_path / "web-relative", asset_mode="relative"
+    )
+    relative_document = relative_output.read_text(encoding="utf-8")
+    relative_manifest = json.loads(
+        (relative_output.parent / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert 'src="../frame.jpg"' in relative_document
+    assert "data:image/jpeg;base64," not in relative_document
+    assert relative_manifest["asset_mode"] == "relative"
+    assert relative_manifest["embedded_asset_count"] == 0

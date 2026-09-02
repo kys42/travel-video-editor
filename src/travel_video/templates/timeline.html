@@ -181,6 +181,7 @@
       margin: 0 auto;
       padding: 62px clamp(24px, 5vw, 76px) 120px;
     }
+    .timeline-column, .timeline { min-width: 0; }
 
     .side-rail { position: relative; }
     .side-inner { position: sticky; top: 28px; }
@@ -249,6 +250,32 @@
     .search-wrap input:focus { border-color: var(--signal); }
     .result-count { color: var(--ink-soft); font-family: var(--condensed); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; }
 
+    .preview-deck {
+      position: sticky;
+      top: 10px;
+      z-index: 55;
+      display: grid;
+      grid-template-columns: 132px minmax(0, 1fr) auto;
+      align-items: center;
+      min-height: 78px;
+      margin-bottom: 22px;
+      overflow: hidden;
+      color: #eef4ea;
+      background: rgba(16,25,22,.96);
+      box-shadow: 0 13px 38px rgba(16,25,22,.18);
+      backdrop-filter: blur(14px);
+    }
+    .preview-poster { position: relative; align-self: stretch; min-height: 78px; overflow: hidden; background: #26332f; }
+    .preview-poster img { width: 100%; height: 100%; object-fit: cover; opacity: .72; }
+    .preview-poster::after { position: absolute; inset: 0; border: 1px solid rgba(255,255,255,.12); content: ""; }
+    .preview-copy { min-width: 0; padding: 11px 18px; }
+    .preview-copy span { display: block; color: var(--acid); font-family: var(--condensed); font-size: 9px; font-weight: 800; letter-spacing: .18em; }
+    .preview-copy strong { display: block; overflow: hidden; margin-top: 3px; font-family: var(--serif); font-size: 20px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+    .preview-copy small { color: rgba(238,244,234,.58); font-family: var(--condensed); font-size: 10px; letter-spacing: .06em; }
+    .preview-state { display: grid; gap: 3px; min-width: 150px; padding: 13px 18px; border-left: 1px solid rgba(255,255,255,.15); }
+    .preview-state b { color: var(--signal); font-family: var(--condensed); font-size: 10px; letter-spacing: .14em; }
+    .preview-state span { color: rgba(238,244,234,.54); font-size: 10px; }
+
     .timeline { position: relative; }
     .timeline::before {
       position: absolute;
@@ -262,6 +289,8 @@
 
     .scene {
       position: relative;
+      min-width: 0;
+      max-width: calc(100% - 56px);
       margin: 0 0 18px 56px;
       border-top: 1px solid var(--line-strong);
       border-bottom: 1px solid var(--line-strong);
@@ -332,63 +361,27 @@
     .detail-label i::after { transform: translate(-50%,-50%) rotate(90deg); transition: transform .2s ease; }
     .scene[open] .detail-label i::after { transform: translate(-50%,-50%) rotate(0); }
 
-    .scene-detail { border-top: 1px solid var(--line-strong); animation: reveal .38s ease both; }
+    .scene-detail { min-width: 0; overflow: hidden; border-top: 1px solid var(--line-strong); animation: reveal .38s ease both; }
     @keyframes reveal { from { opacity: 0; transform: translateY(-7px); } }
-    .scene-detail-grid { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, .5fr); }
-    .media-panel { min-width: 0; background: var(--night); }
-    .player-stage { position: relative; min-height: 380px; overflow: hidden; background: #090d0c; }
-    .scene-video { display: block; width: 100%; min-height: 380px; max-height: 620px; object-fit: contain; background: #090d0c; }
-    .player-poster-copy {
-      position: absolute;
-      inset: auto auto 72px 26px;
-      display: grid;
-      gap: 3px;
-      pointer-events: none;
-      color: #fff;
-      text-shadow: 0 2px 18px rgba(0,0,0,.55);
-      transition: opacity .2s ease;
-    }
-    .player-poster-copy span { color: var(--acid); font-family: var(--condensed); font-size: 11px; font-weight: 800; letter-spacing: .16em; }
-    .player-poster-copy strong { font-family: var(--condensed); font-size: 27px; }
-    .player-stage.is-playing .player-poster-copy { opacity: 0; }
-    .player-controls {
-      position: absolute;
-      right: 0;
-      bottom: 0;
-      left: 0;
-      display: flex;
-      align-items: center;
-      gap: 7px;
-      min-height: 56px;
-      padding: 8px 14px;
-      color: #fff;
-      background: linear-gradient(transparent, rgba(0,0,0,.92));
-    }
-    .player-controls button { min-height: 34px; padding: 0 12px; border: 1px solid rgba(255,255,255,.35); color: #fff; background: rgba(0,0,0,.26); cursor: pointer; }
-    .player-controls button:hover { border-color: var(--acid); }
-    .player-controls .play-scene { color: var(--night); border-color: var(--acid); background: var(--acid); font-weight: 800; }
-    .player-clock { margin-left: auto; font-family: var(--condensed); font-size: 11px; letter-spacing: .06em; }
-    .player-unavailable { display: grid; min-height: 300px; place-content: center; padding: 30px; text-align: center; }
-    .player-unavailable span { color: var(--signal); font-family: var(--condensed); font-size: 12px; font-weight: 800; letter-spacing: .18em; }
-    .player-unavailable strong { margin-top: 12px; color: #fff; font-family: var(--serif); font-size: clamp(27px, 3vw, 43px); font-weight: 400; }
-    .player-unavailable p { max-width: 420px; color: rgba(255,255,255,.6); }
-    .player-unavailable code { color: var(--acid); }
-
-    .scene-brief { padding: clamp(28px, 4vw, 54px); color: #eef4ea; background: #1b2824; }
+    .scene-overview { display: grid; grid-template-columns: minmax(0, 1.2fr) 210px minmax(230px, .55fr); color: #eef4ea; background: #1b2824; }
+    .scene-brief { padding: clamp(28px, 4vw, 50px); }
     .scene-brief h3, .detail-section h3 { margin: 0; font-family: var(--serif); font-size: clamp(25px, 2.2vw, 36px); font-weight: 400; line-height: 1.05; }
     .scene-brief > p { color: rgba(238,244,234,.72); font-size: 14px; }
-    .scene-brief dl { margin: 30px 0 0; border-top: 1px solid rgba(255,255,255,.22); }
-    .scene-brief dl div { display: flex; justify-content: space-between; gap: 20px; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,.12); }
-    .scene-brief dt { color: rgba(238,244,234,.48); font-size: 11px; }
-    .scene-brief dd { margin: 0; font-family: var(--condensed); font-size: 12px; font-weight: 700; text-align: right; }
-    .scene-brief .representative-reason { margin-top: 28px; padding-left: 14px; border-left: 2px solid var(--signal); color: rgba(238,244,234,.55); font-size: 11px; }
+    .scene-facts { margin: 0; padding: 29px 25px; border-right: 1px solid rgba(255,255,255,.13); border-left: 1px solid rgba(255,255,255,.13); }
+    .scene-facts div { display: flex; justify-content: space-between; gap: 14px; padding: 9px 0; border-bottom: 1px solid rgba(255,255,255,.11); }
+    .scene-facts dt { color: rgba(238,244,234,.45); font-size: 10px; }
+    .scene-facts dd { margin: 0; font-family: var(--condensed); font-size: 11px; font-weight: 700; text-align: right; }
+    .scene-quick-action { display: flex; flex-direction: column; justify-content: center; gap: 15px; padding: 28px; }
+    .scene-quick-action button { min-height: 42px; padding: 0 15px; border: 1px solid var(--acid); color: var(--night); background: var(--acid); font-size: 11px; font-weight: 800; cursor: pointer; }
+    .scene-quick-action button:disabled { color: rgba(238,244,234,.48); border-color: rgba(238,244,234,.25); background: transparent; cursor: default; }
+    .scene-quick-action p { margin: 0; padding-left: 12px; border-left: 2px solid var(--signal); color: rgba(238,244,234,.55); font-size: 10px; }
 
-    .detail-section { padding: clamp(34px, 5vw, 62px); border-top: 1px solid var(--line); }
+    .detail-section { min-width: 0; padding: clamp(34px, 5vw, 62px); border-top: 1px solid var(--line); }
     .section-heading { display: flex; align-items: end; justify-content: space-between; gap: 30px; margin-bottom: 28px; }
     .section-heading .eyebrow { margin-bottom: 8px; }
     .section-heading > p, .section-heading > span { max-width: 410px; margin: 0; color: var(--ink-soft); font-size: 11px; text-align: right; }
 
-    .frame-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; }
+    .frame-strip { display: grid; min-width: 0; max-width: 100%; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; }
     .frame-tile { min-width: 0; padding: 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
     .frame-tile:disabled { color: inherit; cursor: default; }
     .frame-image-wrap { position: relative; display: block; aspect-ratio: 16/9; overflow: hidden; background: var(--paper-deep); }
@@ -412,7 +405,7 @@
     .evidence-drawer > summary { display: flex; justify-content: space-between; gap: 20px; padding: 15px 0; list-style: none; font-weight: 700; cursor: pointer; }
     .evidence-drawer > summary::-webkit-details-marker { display: none; }
     .evidence-drawer > summary span { color: var(--ink-soft); font-size: 11px; font-weight: 400; }
-    .transcript-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 10px 0 3px; }
+    .transcript-grid { display: grid; min-width: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 10px 0 3px; }
     .transcript-column { border: 1px solid rgba(20,33,30,.2); background: rgba(255,255,255,.3); }
     .transcript-column.is-evidence { border-top: 3px solid var(--signal); }
     .transcript-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 15px; padding: 14px 15px; border-bottom: 1px solid rgba(20,33,30,.16); }
@@ -431,17 +424,45 @@
     .signal--low { background: #b65641; }
     .empty-copy { padding: 15px; color: var(--ink-soft); font-size: 11px; }
 
-    .segment-section { background: #f8f5ed; }
-    .segment-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 30px; margin: 0; padding: 0; list-style: none; counter-reset: shot; border-top: 1px solid var(--line-strong); }
-    .segment-list li { counter-increment: shot; border-bottom: 1px solid var(--line); }
-    .segment-list button { display: grid; grid-template-columns: 58px 1fr; gap: 13px; width: 100%; min-height: 68px; padding: 12px 0; border: 0; background: transparent; text-align: left; cursor: pointer; }
-    .segment-list button:hover strong { color: var(--signal-dark); }
-    .segment-list button:disabled { color: inherit; cursor: default; }
-    .segment-list button:disabled:hover strong { color: inherit; }
-    .segment-time { color: var(--signal-dark); font-family: var(--condensed); font-size: 11px; font-weight: 800; }
-    .segment-copy { display: grid; gap: 3px; }
-    .segment-copy strong { font-size: 12px; font-weight: 600; }
-    .segment-copy small { color: var(--ink-soft); font-size: 10px; }
+    .edit-map-section { background: #f8f5ed; }
+    .decision-note { padding: 6px 9px; border: 1px solid var(--line); }
+    .edit-map { min-width: 0; border-top: 1px solid var(--line-strong); }
+    .edit-row {
+      --decision: #7b857f;
+      display: grid;
+      grid-template-columns: 86px 126px minmax(190px, 1.15fr) minmax(190px, 1fr) 132px;
+      min-height: 128px;
+      border-bottom: 1px solid var(--line);
+      border-left: 4px solid var(--decision);
+      background: rgba(255,255,255,.22);
+    }
+    .edit-row--keep { --decision: #20815e; }
+    .edit-row--review { --decision: #c38a14; }
+    .edit-row--bridge { --decision: #547c91; }
+    .edit-row--trim { --decision: #b44c35; background: rgba(180,76,53,.045); }
+    .edit-time { display: flex; flex-direction: column; align-items: flex-start; padding: 18px 10px; border: 0; background: transparent; text-align: left; cursor: pointer; }
+    .edit-time:disabled { color: inherit; cursor: default; }
+    .edit-time strong { color: var(--signal-dark); font-family: var(--condensed); font-size: 15px; }
+    .edit-time span, .edit-time small { color: var(--ink-soft); font-family: var(--condensed); font-size: 9px; }
+    .edit-time small { margin-top: auto; }
+    .edit-frame { position: relative; min-width: 0; margin: 14px 0; overflow: hidden; background: var(--paper-deep); }
+    .edit-frame img { width: 100%; height: 100%; object-fit: cover; }
+    .edit-frame > span { position: absolute; right: 5px; bottom: 5px; padding: 2px 5px; color: #fff; background: rgba(16,25,22,.76); font-family: var(--condensed); font-size: 8px; }
+    .edit-visual, .edit-audio, .edit-decision { min-width: 0; padding: 17px 16px; border-left: 1px solid var(--line); }
+    .edit-cell-label { display: block; margin-bottom: 7px; color: var(--ink-soft); font-family: var(--condensed); font-size: 8px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+    .edit-visual > strong, .edit-audio > strong { display: block; font-size: 12px; line-height: 1.45; }
+    .edit-visual > small { display: block; margin-top: 9px; color: var(--ink-soft); font-size: 8px; }
+    .action-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+    .action-tags span { padding: 2px 5px; color: var(--ink-soft); border: 1px solid var(--line); font-size: 8px; }
+    .edit-transcripts { display: grid; gap: 5px; margin-top: 8px; }
+    .edit-transcripts p { display: grid; grid-template-columns: 22px 1fr; gap: 5px; margin: 0; color: var(--ink-soft); font-size: 9px; line-height: 1.4; }
+    .edit-transcripts span { min-width: 0; overflow-wrap: anywhere; }
+    .edit-transcripts b { color: var(--signal-dark); font-family: var(--condensed); font-size: 8px; }
+    .edit-transcripts .no-dialogue { display: block; color: var(--ink-soft); }
+    .edit-decision { display: flex; flex-direction: column; align-items: flex-start; }
+    .edit-status { padding: 4px 7px; color: #fff; background: var(--decision); font-family: var(--condensed); font-size: 9px; font-weight: 800; letter-spacing: .05em; }
+    .edit-decision p { margin: 11px 0 8px; color: var(--ink-soft); font-size: 9px; line-height: 1.4; }
+    .edit-decision small { margin-top: auto; color: var(--ink-soft); font-family: var(--condensed); font-size: 8px; }
 
     .footer { display: flex; justify-content: space-between; gap: 30px; padding: 32px clamp(24px, 5vw, 76px); color: rgba(238,244,234,.52); background: var(--night); font-family: var(--condensed); font-size: 10px; letter-spacing: .08em; }
 
@@ -450,8 +471,13 @@
       .side-rail { display: none; }
       .scene-summary { grid-template-columns: 42px 92px 190px minmax(220px, 1fr); }
       .scene-action { display: none; }
-      .scene-detail-grid { grid-template-columns: 1fr; }
-      .player-stage, .scene-video { min-height: 320px; }
+      .scene-overview { grid-template-columns: 1fr 220px; }
+      .scene-quick-action { grid-column: 1 / -1; flex-direction: row; align-items: center; }
+      .scene-quick-action button { flex: 0 0 220px; }
+      .edit-row { grid-template-columns: 76px 110px minmax(180px, 1fr) minmax(180px, 1fr); }
+      .edit-decision { grid-column: 1 / -1; flex-direction: row; align-items: center; gap: 14px; padding: 10px 14px; border-top: 1px solid var(--line); border-left: 0; }
+      .edit-decision p { margin: 0; }
+      .edit-decision small { margin: 0 0 0 auto; }
     }
 
     @media (max-width: 760px) {
@@ -464,8 +490,13 @@
       .workspace { padding: 34px 14px 80px; }
       .timeline-toolbar { grid-template-columns: 1fr; gap: 10px; }
       .result-count { text-align: right; }
+      .preview-deck { top: 6px; grid-template-columns: 86px minmax(0, 1fr); min-height: 66px; }
+      .preview-poster { min-height: 66px; }
+      .preview-copy { padding: 8px 11px; }
+      .preview-copy strong { font-size: 16px; }
+      .preview-state { display: none; }
       .timeline::before { left: 9px; }
-      .scene { margin-left: 27px; }
+      .scene { max-width: calc(100% - 27px); margin-left: 27px; }
       .scene::before { top: 35px; left: -24px; width: 9px; height: 9px; border-width: 2px; }
       .scene-summary { grid-template-columns: 34px 1fr; min-height: 0; padding: 0; }
       .scene-index { grid-row: 1 / span 3; padding: 15px 0 0 10px; }
@@ -475,17 +506,24 @@
       .scene-copy { grid-column: 2; padding: 16px 13px 20px; }
       .scene-title { font-size: 25px; }
       .scene-description { font-size: 12px; }
-      .player-stage, .scene-video { min-height: 220px; }
-      .player-controls { flex-wrap: wrap; }
-      .player-controls button[data-nudge] { display: none; }
-      .player-clock { font-size: 9px; }
+      .scene-overview { grid-template-columns: 1fr; }
       .scene-brief, .detail-section { padding: 29px 18px; }
+      .scene-facts { padding: 18px; border: 0; border-top: 1px solid rgba(255,255,255,.13); }
+      .scene-quick-action { grid-column: auto; flex-direction: column; align-items: stretch; padding: 18px; border-top: 1px solid rgba(255,255,255,.13); }
+      .scene-quick-action button { flex: auto; }
       .section-heading { align-items: start; flex-direction: column; gap: 9px; }
       .section-heading > p, .section-heading > span { text-align: left; }
-      .frame-strip { display: flex; margin-right: -18px; padding-right: 18px; overflow-x: auto; scroll-snap-type: x mandatory; }
+      .edit-map-section { padding-right: 10px; padding-left: 10px; }
+      .edit-row { grid-template-columns: 72px 1fr; }
+      .edit-frame { min-height: 92px; margin: 10px 10px 10px 0; }
+      .edit-visual, .edit-audio, .edit-decision { grid-column: 1 / -1; border-top: 1px solid var(--line); border-left: 0; }
+      .edit-decision { flex-direction: column; align-items: flex-start; gap: 0; }
+      .edit-decision p { margin: 9px 0; }
+      .edit-decision small { margin: 0; }
+      .frame-strip { display: flex; width: 100%; margin-right: 0; padding-right: 18px; overflow-x: auto; overscroll-behavior-inline: contain; scroll-snap-type: x mandatory; }
       .frame-tile { flex: 0 0 73vw; scroll-snap-align: start; }
       .dialogue-section blockquote { padding-left: 32px; font-size: 21px; }
-      .transcript-grid, .segment-list { grid-template-columns: 1fr; }
+      .transcript-grid { grid-template-columns: 1fr; }
       .footer { flex-direction: column; }
     }
 
@@ -538,6 +576,18 @@
         </label>
         <span class="result-count"><b data-visible-count>__SCENE_COUNT__</b> / __SCENE_COUNT__ scenes</span>
       </div>
+      <section class="preview-deck" aria-label="공용 영상 미리보기" data-preview-deck>
+        <div class="preview-poster"><img src="__PREVIEW_POSTER__" alt="현재 장면 대표 프레임" data-preview-poster></div>
+        <div class="preview-copy">
+          <span>GLOBAL PREVIEW DECK</span>
+          <strong data-preview-title>__PREVIEW_TITLE__</strong>
+          <small data-preview-time>__PREVIEW_TIMECODE__</small>
+        </div>
+        <div class="preview-state">
+          <b>PROXY OFFLINE</b>
+          <span>향후 한 개의 플레이어만 이 영역에 연결</span>
+        </div>
+      </section>
       <div class="timeline">__SCENE_CARDS__</div>
     </section>
   </main>
@@ -555,10 +605,22 @@
       const search = document.querySelector('[data-scene-search]');
       const visibleCount = document.querySelector('[data-visible-count]');
 
-      const sceneVideo = (element) => element.closest('.scene')?.querySelector('.scene-video');
+      const previewDeck = document.querySelector('[data-preview-deck]');
+      const previewPoster = document.querySelector('[data-preview-poster]');
+      const previewTitle = document.querySelector('[data-preview-title]');
+      const previewTime = document.querySelector('[data-preview-time]');
+      const previewVideo = previewDeck?.querySelector('video') || null;
+      let currentPreviewScene = null;
       const sceneBounds = (element) => {
-        const button = element.closest('.scene')?.querySelector('.play-scene');
+        const button = element.closest('.scene')?.querySelector('.queue-scene');
         return button ? { start: Number(button.dataset.start), end: Number(button.dataset.end) } : null;
+      };
+      const updatePreview = (scene) => {
+        if (!scene) return;
+        currentPreviewScene = scene;
+        if (previewPoster) previewPoster.src = scene.dataset.previewPoster;
+        if (previewTitle) previewTitle.textContent = scene.dataset.previewTitle;
+        if (previewTime) previewTime.textContent = scene.dataset.previewTime;
       };
 
       document.addEventListener('click', async (event) => {
@@ -574,62 +636,37 @@
           return;
         }
 
-        const video = sceneVideo(target);
-        if (!video) return;
-        const stage = video.closest('.player-stage');
+        if (!previewVideo) return;
         const bounds = sceneBounds(target);
 
-        if (target.matches('.play-scene')) {
-          video.currentTime = Number(target.dataset.start);
-          video.dataset.stopAt = target.dataset.end;
-          try { await video.play(); } catch (_) { /* local browser may require a second click */ }
+        if (target.matches('.queue-scene')) {
+          previewVideo.currentTime = Number(target.dataset.start);
+          previewVideo.dataset.stopAt = target.dataset.end;
+          try { await previewVideo.play(); } catch (_) { /* local browser may require a second click */ }
           return;
         }
         if (target.matches('[data-seek]')) {
-          video.currentTime = Number(target.dataset.seek);
-          if (bounds) video.dataset.stopAt = String(bounds.end);
-          try { await video.play(); } catch (_) { /* user can use native controls */ }
-          video.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          previewVideo.currentTime = Number(target.dataset.seek);
+          if (bounds) previewVideo.dataset.stopAt = String(bounds.end);
+          try { await previewVideo.play(); } catch (_) { /* user can use native controls */ }
+          previewDeck.scrollIntoView({ behavior: 'smooth', block: 'start' });
           return;
-        }
-        if (target.matches('[data-nudge]')) {
-          const delta = Number(target.dataset.nudge);
-          const lower = bounds?.start ?? 0;
-          const upper = bounds?.end ?? video.duration;
-          video.currentTime = Math.max(lower, Math.min(upper, video.currentTime + delta));
-          if (stage) stage.classList.add('is-playing');
         }
       });
 
-      document.querySelectorAll('.scene-video').forEach(video => {
-        const stage = video.closest('.player-stage');
-        const clock = stage.querySelector('.player-clock');
-        const bounds = sceneBounds(video);
-        video.controls = true;
-        video.addEventListener('play', () => stage.classList.add('is-playing'));
-        video.addEventListener('pause', () => stage.classList.remove('is-playing'));
-        video.addEventListener('timeupdate', () => {
-          const stopAt = Number(video.dataset.stopAt || bounds?.end || 0);
-          if (stopAt && video.currentTime >= stopAt) {
-            video.pause();
-            video.currentTime = stopAt;
-          }
-          if (clock && bounds) {
-            const value = Number.isFinite(video.currentTime) ? video.currentTime : bounds.start;
-            const mm = String(Math.floor(value / 60)).padStart(2, '0');
-            const ss = String(Math.floor(value % 60)).padStart(2, '0');
-            const endM = String(Math.floor(bounds.end / 60)).padStart(2, '0');
-            const endS = String(Math.floor(bounds.end % 60)).padStart(2, '0');
-            clock.textContent = `${mm}:${ss} / ${endM}:${endS}`;
-          }
-        });
+      previewVideo?.addEventListener('timeupdate', () => {
+        const stopAt = Number(previewVideo.dataset.stopAt || 0);
+        if (stopAt && previewVideo.currentTime >= stopAt) {
+          previewVideo.pause();
+          previewVideo.currentTime = stopAt;
+        }
       });
 
       scenes.forEach(scene => {
         scene.addEventListener('toggle', () => {
           const label = scene.querySelector('.detail-label span');
           if (label) label.textContent = scene.open ? '접기' : '자세히 보기';
-          if (!scene.open) scene.querySelector('.scene-video')?.pause();
+          if (scene.open) updatePreview(scene);
         });
       });
 
@@ -642,6 +679,10 @@
           if (visible) count += 1;
         });
         visibleCount.textContent = String(count);
+        const nextScene = currentPreviewScene && !currentPreviewScene.hidden
+          ? currentPreviewScene
+          : scenes.find(scene => !scene.hidden && scene.open) || scenes.find(scene => !scene.hidden);
+        updatePreview(nextScene);
       });
 
       const observer = new IntersectionObserver((entries) => {
@@ -657,6 +698,7 @@
       };
       addEventListener('scroll', updateProgress, { passive: true });
       addEventListener('resize', updateProgress);
+      updatePreview(scenes.find(scene => scene.open) || scenes[0]);
       updateProgress();
     })();
   </script>

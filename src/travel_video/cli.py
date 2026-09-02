@@ -76,6 +76,12 @@ def build_parser() -> argparse.ArgumentParser:
     render_web.add_argument("timeline", type=Path)
     render_web.add_argument("--output-dir", type=Path, required=True)
     render_web.add_argument("--frame-limit", type=int, default=16)
+    render_web.add_argument(
+        "--assets",
+        choices=("embed", "relative"),
+        default="embed",
+        help="Embed images for portable HTML or link existing frame files",
+    )
     return parser
 
 
@@ -126,6 +132,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.timeline,
                 args.output_dir,
                 frame_limit=args.frame_limit,
+                asset_mode=args.assets,
             )
             print(output)
     except Exception as exc:  # noqa: BLE001 - CLI boundary converts failures to exit codes.
