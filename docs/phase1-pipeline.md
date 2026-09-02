@@ -13,8 +13,9 @@ Phase 1은 원본 영상을 편집하지 않습니다. 원본의 전체 시간�
   → 로컬 MLX Whisper 한국어·영어 병렬 전사 + 환각 필터
   → 12개 세그먼트당 연락판 1장
   → 코덱스 1차 리뷰: 장면 설명과 사건 그룹
-  → 사건별 4~8장 스토리보드
+  → 사건별 최대 12장 스토리보드
   → 코덱스 2차 리뷰: 맥락·대화 종합·대표 이미지 선정
+  → 펼쳐보는 로컬 웹 타임라인
 ```
 
 ## 구현 상태
@@ -40,6 +41,9 @@ uv run travel-video validate-context-review \
 uv run travel-video merge-context-review \
   timeline.reviewed.json context/context-review-packet.json context/context-review.json \
   --output timeline.context-reviewed.json
+
+uv run travel-video render-web timeline.context-reviewed.json \
+  --output-dir web
 ```
 
 원본은 읽기만 합니다. 파생 자료는 기본적으로 `work/phase1` 아래에 생성되고 Git에서 제외됩니다.
@@ -52,7 +56,7 @@ work/phase1/<asset-id>/<visual-config-hash>/
 ├── contact_sheets/            # 한 장에 최대 12개 세그먼트
 ├── transcript/<model>/ko/     # 한국어 강제 전사 원본 JSON
 ├── transcript/<model>/en/     # 영어 강제 전사 원본 JSON
-├── context/storyboards/       # 검토 그룹별 4~8장 스토리보드
+├── context/storyboards/       # 검토 그룹별 최대 12장 스토리보드
 ├── context/context-review-packet.json
 ├── context/context-review.json
 ├── run.json                   # 실행 상태와 개수
@@ -63,6 +67,8 @@ work/phase1/<asset-id>/<visual-config-hash>/
 ├── timeline.reviewed.html     # 설명·검토 그룹이 표시된 최종 타임라인
 ├── timeline.context-reviewed.json
 ├── timeline.context-reviewed.html # 사건 맥락·대화·대표 이미지 최종 결과
+├── web/index.html              # 재사용 인터랙티브 타임라인
+├── web/manifest.json           # 입력과 렌더 설정
 └── timeline.html              # 로컬 브라우저 검토 화면
 ```
 
@@ -70,7 +76,7 @@ work/phase1/<asset-id>/<visual-config-hash>/
 
 1. 코덱스에는 원본 영상이나 모든 프레임을 주지 않습니다.
 2. 한 번의 저해상도 프레임 추출로 밝기, 선명도, 변화량, 대표 프레임 선택을 모두 처리합니다.
-3. 1차 연락판으로 사건 그룹을 만든 뒤, 그룹 내부에서 시간 분포·화면 차이·화질을 반영한 4~8장만 2차 스토리보드로 만듭니다.
+3. 1차 연락판으로 사건 그룹을 만든 뒤, 그룹 내부에서 시간 분포·화면 차이·화질을 반영한 최대 12장만 2차 스토리보드로 만듭니다. 현재 5초 샘플이 12장 이하면 모두 보여 줍니다.
 4. 코덱스는 스토리보드 전체 맥락을 본 뒤 대표 이미지를 직접 고릅니다. 기계가 고른 단일 이미지는 최종값이 아닙니다.
 5. 한국어·영어 STT 원본은 둘 다 로컬에 보존하되 리뷰 패킷에는 장면과 겹치는 짧은 후보만 넣습니다.
 6. Whisper의 `avg_logprob`, `no_speech_prob`, `compression_ratio`와 연속 중복으로 낮은 신뢰도 전사를 거르지만, 두 언어 중 하나를 점수만으로 영구 삭제하지 않습니다.
@@ -124,13 +130,28 @@ Whisper tiny는 음악과 주변 소리를 반복 한국어 문장으로 잘못 
 
 기존에는 세그먼트 중간과 화질 점수로 대표 이미지 한 장을 골랐습니다. 빙하 이동 장면에서는 이 방식이 바닥을 향한 프레임을 대표로 골라 노란 헬기를 놓쳤습니다.
 
-2차 단계는 검토 그룹 안에서 다음 요소로 최대 8장을 고릅니다.
+2차 단계는 검토 그룹 안에서 다음 요소로 최대 12장을 고릅니다.
 
 - 시간적으로 서로 떨어진 정도
 - 평균 해시가 다른 정도
 - 선명도·노출 기반 품질
 
 코덱스가 이 스토리보드를 보고 장면 전체 설명, 핵심 순간과 최종 대표 프레임을 고릅니다. 실제 파일럿에서 빙하 이동 장면의 대표는 바닥 프레임에서 `F0006`의 노란 헬기 전경으로, 음식 주문 장면은 메뉴판에서 `F0026`의 음료 수령 순간으로 교체됐습니다.
+
+긴 음식 메뉴 선택 그룹은 11장, 빙하 이동 그룹도 11장으로 다시 생성해 현재 5초 샘플을 빠짐없이 확인했습니다. 더 촘촘한 2초 프레임은 전체 영상에 적용하지 않고, 긴 그룹이나 시각 변화가 큰 그룹에만 후속 추출하는 적응형 단계로 남깁니다.
+
+## 웹 타임라인
+
+`render-web`은 최종 JSON을 동일한 UX의 정적 웹으로 변환합니다. 세로 사건 요약에서 장면을 펼치면 다음 정보를 볼 수 있습니다.
+
+- 사건 전체 설명과 대표 프레임 선정 이유
+- 최대 16장의 시간순 프레임과 핵심 순간 표시
+- 화면과 이중 STT를 종합한 대화 요약
+- 한국어·영어 STT 원문 후보와 개별 타임코드
+- 5초 단위 세부 구간 설명
+- 향후 저화질 프록시를 연결할 미디어 슬롯
+
+현재 `render-web`은 미디어 입력을 받지 않습니다. 따라서 웹 생성은 즉시 끝나고 영상 파일을 복사하거나 인코딩하지 않습니다. 상세 설계는 [웹 타임라인 문서](web-timeline.md)를 참고합니다.
 
 ## 현재 한계
 
@@ -147,5 +168,5 @@ Whisper tiny는 음악과 주변 소리를 반복 한국어 문장으로 잘못 
 1. 로컬 시각 임베딩을 이용한 의미 기반 인접 그룹
 2. 음성 구간 검출과 화자 구분을 추가해 무음·음악의 이중 STT 연산 감소
 3. SQLite 단계별 작업 큐와 실패 재시작
-4. HTML에서 그룹 합치기·나누기·제외·별점 저장
+4. 웹에서 그룹 합치기·나누기·제외·별점 저장
 5. 파일 여러 개를 하루 사건으로 연결하는 상위 타임라인

@@ -160,7 +160,7 @@ def build_context_packet(
     reviewed_path: Path,
     output_dir: Path,
     *,
-    max_frames: int = 8,
+    max_frames: int = 12,
 ) -> tuple[dict[str, Any], Path]:
     timeline = load_json(reviewed_path)
     output_dir = output_dir.resolve()

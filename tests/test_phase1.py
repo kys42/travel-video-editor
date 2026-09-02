@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ from travel_video.phase1 import (
     validate_coverage,
 )
 from travel_video.review import validate_review
+from travel_video.web import render_timeline_web
 
 
 def sample(index: int, time: float, change: float, visual_hash: str) -> dict:
@@ -151,3 +153,70 @@ def test_context_review_representative_must_come_from_storyboard() -> None:
     review["groups"][0]["representative_sample_id"] = "F9999"
     with pytest.raises(ValueError, match="representative"):
         validate_context_review(packet, review)
+
+
+def test_web_timeline_renders_details_without_video(tmp_path: Path) -> None:
+    frame = tmp_path / "frame.jpg"
+    timeline = {
+        "schema_version": "phase1-context-reviewed-timeline/v1",
+        "asset_id": "asset-1",
+        "source": {"name": "trip.mp4", "path": str(tmp_path / "missing.mp4")},
+        "media": {
+            "duration": 12.0,
+            "video": {"width": 3840, "height": 2160, "codec": "hevc"},
+        },
+        "samples": [sample(1, 0, 0.0, "0" * 16) | {"frame": str(frame)}],
+        "segments": [
+            {
+                "segment_id": "S001",
+                "start": 0.0,
+                "end": 12.0,
+                "review": {
+                    "visual_summary": "빙하에 도착한다.",
+                    "actions": ["도착"],
+                },
+                "transcript_candidates": {
+                    "ko": [
+                        {
+                            "start": 1.0,
+                            "end": 2.0,
+                            "text": "도착했다",
+                            "avg_logprob": -0.3,
+                        }
+                    ],
+                    "en": [],
+                },
+            }
+        ],
+        "context_groups": [
+            {
+                "group_id": "G001",
+                "label": "빙하 도착",
+                "start": 0.0,
+                "end": 12.0,
+                "segment_ids": ["S001"],
+                "context_review": {
+                    "narrative_summary": "헬기에서 내려 빙하를 둘러본다.",
+                    "dialogue_summary": "도착했다고 말한다.",
+                    "dialogue_evidence": ["ko"],
+                    "representative_sample_id": "F0001",
+                    "representative_reason": "빙하 전경이 잘 보인다.",
+                    "key_moments": [{"sample_id": "F0001", "role": "도착"}],
+                    "confidence": 0.9,
+                },
+            }
+        ],
+    }
+    timeline_path = tmp_path / "timeline.json"
+    timeline_path.write_text(json.dumps(timeline), encoding="utf-8")
+
+    output = render_timeline_web(timeline_path, tmp_path / "web")
+    document = output.read_text(encoding="utf-8")
+    manifest = json.loads((output.parent / "manifest.json").read_text(encoding="utf-8"))
+
+    assert "헬기에서 내려 빙하를 둘러본다." in document
+    assert "도착했다고 말한다." in document
+    assert "PROXY PREVIEW / RESERVED" in document
+    assert "<video" not in document
+    assert "__MEDIA_STATUS__" not in document
+    assert manifest["video_mode"] == "none"

@@ -7,6 +7,7 @@ from pathlib import Path
 from .context import build_context_packet, merge_context_review, validate_context_review
 from .phase1 import Phase1Config, process_assets
 from .review import load_json, merge_review, validate_review
+from .web import render_timeline_web
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -53,7 +54,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     context.add_argument("reviewed", type=Path)
     context.add_argument("--output-dir", type=Path, required=True)
-    context.add_argument("--max-frames", type=int, default=8)
+    context.add_argument("--max-frames", type=int, default=12)
 
     validate_context = subparsers.add_parser(
         "validate-context-review", help="Validate second-pass context review"
@@ -68,6 +69,13 @@ def build_parser() -> argparse.ArgumentParser:
     merge_context.add_argument("packet", type=Path)
     merge_context.add_argument("review", type=Path)
     merge_context.add_argument("--output", type=Path, required=True)
+
+    render_web = subparsers.add_parser(
+        "render-web", help="Render an interactive, reusable scene timeline"
+    )
+    render_web.add_argument("timeline", type=Path)
+    render_web.add_argument("--output-dir", type=Path, required=True)
+    render_web.add_argument("--frame-limit", type=int, default=16)
     return parser
 
 
@@ -113,6 +121,13 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "merge-context-review":
             merge_context_review(args.reviewed, args.packet, args.review, args.output)
             print(args.output)
+        elif args.command == "render-web":
+            output = render_timeline_web(
+                args.timeline,
+                args.output_dir,
+                frame_limit=args.frame_limit,
+            )
+            print(output)
     except Exception as exc:  # noqa: BLE001 - CLI boundary converts failures to exit codes.
         print(f"error: {exc}", file=sys.stderr)
         return 1
