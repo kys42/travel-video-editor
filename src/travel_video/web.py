@@ -232,6 +232,41 @@ def _render_notable_moments(
     """
 
 
+def _render_video_synopsis(timeline: dict[str, Any]) -> str:
+    summary = timeline.get("video_summary")
+    if not summary:
+        return ""
+    group_map = {group["group_id"]: group for group in timeline["context_groups"]}
+    highlights = set(summary.get("highlight_group_ids", []))
+    events = "".join(
+        f"""
+        <li class="video-event{" is-highlight" if event["group_id"] in highlights else ""}">
+          <span>{_escape(_short_time(float(group_map[event["group_id"]]["start"])))}</span>
+          <strong>{_escape(event["headline"])}</strong>
+        </li>
+        """
+        for event in summary["chronological_events"]
+    )
+    tags = "".join(f"<span>{_escape(tag)}</span>" for tag in summary.get("tags", []))
+    return f"""
+    <section class="video-synopsis" aria-label="영상 전체 요약">
+      <div class="video-synopsis-inner">
+        <div class="video-synopsis-copy">
+          <span class="eyebrow">VIDEO SYNOPSIS</span>
+          <h2>{_escape(summary["title"])}</h2>
+          <strong>{_escape(summary["one_line_summary"])}</strong>
+          <p>{_escape(summary["narrative_summary"])}</p>
+          <div class="video-tags">{tags}</div>
+        </div>
+        <div class="video-event-run">
+          <span>WHAT HAPPENED / 시간순</span>
+          <ol>{events}</ol>
+        </div>
+      </div>
+    </section>
+    """
+
+
 def _render_transcripts(
     transcripts: dict[str, list[dict[str, Any]]],
     evidence: list[str],
@@ -597,7 +632,10 @@ def render_timeline_web(
     if frame_limit < 4:
         raise ValueError("frame limit must be at least 4")
     timeline = load_json(timeline_path)
-    if timeline.get("schema_version") != "phase1-context-reviewed-timeline/v1":
+    if timeline.get("schema_version") not in {
+        "phase1-context-reviewed-timeline/v1",
+        "phase1-video-summarized-timeline/v1",
+    }:
         raise ValueError("render-web requires a context-reviewed timeline")
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -651,6 +689,7 @@ def render_timeline_web(
         "__PREVIEW_TIMECODE__": _escape(
             f"{_short_time(float(first_group['start']))} — {_short_time(float(first_group['end']))}"
         ),
+        "__VIDEO_SYNOPSIS__": _render_video_synopsis(timeline),
     }
     document = template
     for token, value in replacements.items():
@@ -671,6 +710,7 @@ def render_timeline_web(
         "notable_moment_count": sum(
             len(group["context_review"].get("notable_moments", [])) for group in groups
         ),
+        "has_video_summary": "video_summary" in timeline,
     }
     atomic_json(output_dir / "manifest.json", manifest)
     return output_path

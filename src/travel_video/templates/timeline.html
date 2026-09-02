@@ -173,6 +173,21 @@
     .hero-meta dt { color: rgba(238,244,234,.5); font-family: var(--condensed); font-size: 11px; letter-spacing: .15em; text-transform: uppercase; }
     .hero-meta dd { margin: 0; font-family: var(--condensed); font-size: 17px; font-weight: 700; }
 
+    .video-synopsis { color: var(--ink); background: var(--acid); }
+    .video-synopsis-inner { display: grid; grid-template-columns: minmax(0,1.2fr) minmax(420px,.8fr); gap: clamp(45px,8vw,120px); max-width: 1560px; margin: auto; padding: 42px clamp(24px,5vw,76px); }
+    .video-synopsis .eyebrow { margin-bottom: 9px; }
+    .video-synopsis h2 { margin: 0 0 8px; font-family: var(--serif); font-size: clamp(31px,3vw,46px); font-weight: 400; line-height: 1; }
+    .video-synopsis-copy > strong { display: block; max-width: 760px; font-size: 14px; word-break: keep-all; }
+    .video-synopsis-copy > p { max-width: 800px; margin: 10px 0 0; color: rgba(20,33,30,.66); font-size: 11px; word-break: keep-all; }
+    .video-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 14px; }
+    .video-tags span { padding: 3px 7px; border: 1px solid rgba(20,33,30,.32); font-size: 9px; }
+    .video-event-run > span { font-family: var(--condensed); font-size: 9px; font-weight: 800; letter-spacing: .15em; }
+    .video-event-run ol { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 0; margin: 11px 0 0; padding: 0; border-top: 1px solid rgba(20,33,30,.35); list-style: none; }
+    .video-event { display: grid; grid-template-columns: 42px 1fr; gap: 7px; padding: 8px 9px 8px 0; border-bottom: 1px solid rgba(20,33,30,.22); }
+    .video-event span { color: var(--signal-dark); font-family: var(--condensed); font-size: 9px; font-weight: 800; }
+    .video-event strong { font-size: 9px; line-height: 1.35; word-break: keep-all; }
+    .video-event.is-highlight strong::after { margin-left: 5px; color: var(--signal-dark); content: "★"; }
+
     .workspace {
       display: grid;
       grid-template-columns: 250px minmax(0, 1fr);
@@ -502,6 +517,7 @@
     .footer { display: flex; justify-content: space-between; gap: 30px; padding: 32px clamp(24px, 5vw, 76px); color: rgba(238,244,234,.52); background: var(--night); font-family: var(--condensed); font-size: 10px; letter-spacing: .08em; }
 
     @media (max-width: 1120px) {
+      .video-synopsis-inner { grid-template-columns: 1fr; }
       .workspace { grid-template-columns: 1fr; }
       .side-rail { display: none; }
       .scene-summary { grid-template-columns: 42px 92px 190px minmax(220px, 1fr); }
@@ -523,6 +539,8 @@
       .hero { grid-template-columns: 1fr; padding: 58px 20px 60px; }
       .hero h1 { font-size: clamp(39px, 13vw, 64px); }
       .hero-meta { margin-top: 10px; }
+      .video-synopsis-inner { padding: 30px 20px; }
+      .video-event-run ol { grid-template-columns: 1fr; }
       .workspace { padding: 34px 14px 80px; }
       .timeline-toolbar { grid-template-columns: 1fr; gap: 10px; }
       .result-count { text-align: right; }
@@ -593,6 +611,8 @@
       </dl>
     </div>
   </header>
+
+  __VIDEO_SYNOPSIS__
 
   <main class="workspace">
     <aside class="side-rail" aria-label="장면 바로가기">

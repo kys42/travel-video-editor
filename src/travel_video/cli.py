@@ -5,8 +5,14 @@ import sys
 from pathlib import Path
 
 from .context import build_context_packet, merge_context_review, validate_context_review
+from .library import render_video_library
 from .phase1 import Phase1Config, process_assets
 from .review import load_json, merge_review, validate_review
+from .video_summary import (
+    build_video_summary_packet,
+    merge_video_summary,
+    validate_video_summary,
+)
 from .web import render_timeline_web
 
 
@@ -82,6 +88,40 @@ def build_parser() -> argparse.ArgumentParser:
         default="embed",
         help="Embed images for portable HTML or link existing frame files",
     )
+
+    summary_packet = subparsers.add_parser(
+        "build-video-summary-packet",
+        help="Build a token-light packet for whole-video synthesis",
+    )
+    summary_packet.add_argument("timeline", type=Path)
+    summary_packet.add_argument("--output", type=Path, required=True)
+
+    validate_summary = subparsers.add_parser(
+        "validate-video-summary", help="Validate whole-video summary JSON"
+    )
+    validate_summary.add_argument("packet", type=Path)
+    validate_summary.add_argument("review", type=Path)
+
+    merge_summary = subparsers.add_parser(
+        "merge-video-summary", help="Merge a validated whole-video summary"
+    )
+    merge_summary.add_argument("timeline", type=Path)
+    merge_summary.add_argument("packet", type=Path)
+    merge_summary.add_argument("review", type=Path)
+    merge_summary.add_argument("--output", type=Path, required=True)
+
+    render_library = subparsers.add_parser(
+        "render-library", help="Render summarized videos in capture-time order"
+    )
+    render_library.add_argument("timelines", nargs="+", type=Path)
+    render_library.add_argument("--output-dir", type=Path, required=True)
+    render_library.add_argument("--title", default="Travel video field log")
+    render_library.add_argument(
+        "--assets",
+        choices=("embed", "relative"),
+        default="embed",
+        help="Embed representative images or link existing frame files",
+    )
     return parser
 
 
@@ -132,6 +172,28 @@ def main(argv: list[str] | None = None) -> int:
                 args.timeline,
                 args.output_dir,
                 frame_limit=args.frame_limit,
+                asset_mode=args.assets,
+            )
+            print(output)
+        elif args.command == "build-video-summary-packet":
+            build_video_summary_packet(args.timeline, args.output)
+            print(args.output)
+        elif args.command == "validate-video-summary":
+            validate_video_summary(load_json(args.packet), load_json(args.review))
+            print("video summary valid")
+        elif args.command == "merge-video-summary":
+            merge_video_summary(
+                args.timeline,
+                args.packet,
+                args.review,
+                args.output,
+            )
+            print(args.output)
+        elif args.command == "render-library":
+            output = render_video_library(
+                args.timelines,
+                args.output_dir,
+                title=args.title,
                 asset_mode=args.assets,
             )
             print(output)

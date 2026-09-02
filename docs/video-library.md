@@ -1,0 +1,122 @@
+# 영상 단위 요약과 다중 영상 라이브러리
+
+## 목적
+
+장면 분석이 끝난 뒤 결과를 파일 단위로 다시 종합하고, 여러 파일을 촬영 시각순으로 훑을 수 있게 합니다. 이 단계의 입력은 이미 검토된 장면 데이터뿐입니다. 원본 영상, 연락판과 스토리보드를 다시 열지 않으므로 영상 수가 늘어도 모델에 전달하는 정보량은 장면 수에 비례합니다.
+
+```text
+timeline.context-reviewed.json
+  → 장면 설명·대화·특이 포인트만 요약 패킷으로 축소
+  → 영상 제목·한 줄 설명·전체 서사·시간순 사건 생성
+  → ID와 사건 순서를 기계 검증
+  → timeline.summarized.json
+  → 촬영 메타데이터순 다중 영상 웹 라이브러리
+```
+
+## 영상 요약 계약
+
+`build-video-summary-packet`은 다음 정보만 남깁니다.
+
+- 영상의 `asset_id`, 원본 이름, 길이와 촬영 시각
+- 각 그룹의 원본 시작·종료 시각
+- 검토가 끝난 장면 설명과 대화 요약
+- 핵심 순간과 특이 포인트
+- 장면 검토에서 이미 허용된 대표 프레임 후보 ID
+
+작성할 `video-summary.json`의 핵심 필드는 다음과 같습니다.
+
+```json
+{
+  "schema_version": "phase1-video-summary/v1",
+  "asset_id": "...",
+  "title": "영상 전체를 구분하는 짧은 제목",
+  "one_line_summary": "한 문장 요약",
+  "narrative_summary": "시작·진행·마무리를 담은 전체 서사",
+  "chronological_events": [
+    {
+      "group_id": "G001",
+      "headline": "사건 제목",
+      "description": "이 장면에서 실제로 일어난 일"
+    }
+  ],
+  "highlight_group_ids": ["G001"],
+  "representative_sample_id": "F0001",
+  "tags": ["장소", "행동"]
+}
+```
+
+검증기는 모든 장면 그룹이 정확히 한 번, 원래 순서대로 들어갔는지 확인합니다. 대표 이미지는 기존 장면 검토에서 확인한 대표·핵심·특이 프레임만 선택할 수 있고, 하이라이트는 최대 세 그룹, 태그는 1–8개로 제한합니다. 자유롭게 만든 타임코드나 존재하지 않는 프레임은 병합되지 않습니다.
+
+## 실행 순서
+
+```bash
+uv run travel-video build-video-summary-packet \
+  timeline.context-reviewed.json \
+  --output summary/video-summary-packet.json
+
+# Codex 또는 사람이 packet만 읽고 summary/video-summary.json 작성
+uv run travel-video validate-video-summary \
+  summary/video-summary-packet.json \
+  summary/video-summary.json
+
+uv run travel-video merge-video-summary \
+  timeline.context-reviewed.json \
+  summary/video-summary-packet.json \
+  summary/video-summary.json \
+  --output timeline.summarized.json
+
+uv run travel-video render-web timeline.summarized.json \
+  --output-dir web
+```
+
+기존 개별 웹 타임라인에는 영상 전체 요약 밴드가 추가됩니다. 장면을 펼치기 전에 영상의 한 줄 설명, 전체 서사, 태그와 모든 사건의 순서를 먼저 파악할 수 있습니다.
+
+## 여러 영상 렌더
+
+```bash
+uv run travel-video render-library \
+  clip-01/timeline.summarized.json \
+  clip-02/timeline.summarized.json \
+  clip-03/timeline.summarized.json \
+  --output-dir work/library \
+  --title "여행 날짜 또는 장소" \
+  --assets embed
+```
+
+라이브러리는 다음 정보를 데스크톱 중심으로 표시합니다.
+
+- 촬영 시각순 영상 목록과 하루의 빠른 순서표
+- 파일마다 대표 프레임, 제목, 한 줄 설명과 전체 서사
+- 영상 내부의 모든 사건과 원본 기준 시작 시각
+- 하이라이트 사건과 특이 포인트·편집 활용도
+- 제목·서사·사건·태그·특이 포인트의 즉시 검색
+- 기존 개별 장면 타임라인으로 이동하는 링크
+
+이미지는 기본적으로 HTML에 내장되어 리모트나 다른 경로에서도 깨지지 않습니다. `--assets relative`는 같은 로컬 디렉터리 구조가 유지될 때만 사용합니다. 영상은 복사하거나 인코딩하지 않습니다.
+
+정렬 키는 MP4의 `creation_time`, 그다음 원본 파일명입니다. 오프셋이 `+00:00`이면 화면에 `UTC`를 명시하며, 별도의 시간대 근거 없이 파일명의 숫자나 여행지를 보고 현지 시각으로 변환하지 않습니다. 날짜가 다른 파일도 같은 규칙으로 연속 표시할 수 있습니다.
+
+## 음식 시퀀스 파일럿
+
+`cam2-0825`의 음식 영상과 바로 앞뒤 파일을 함께 처리했습니다.
+
+| 순서 | 영상 전체 요약 | 길이 | 사건 | 특이 포인트 |
+|---:|---|---:|---:|---:|
+| 1 | 불꽃 테이블에 자리 잡기 | 58초 | 2 | 2 |
+| 2 | 푸드트럭에서 알래스카 소다 사기 | 3분 21초 | 5 | 5 |
+| 3 | 첫 모금과 권태기 농담 | 36초 | 2 | 2 |
+| 4 | 소스 고르고 피시 타코 공개 | 57초 | 3 | 3 |
+
+합계는 영상 4개, 5분 51초, 사건 12개, 특이 포인트 12개입니다. 흐름은 화로가 있는 자리를 발견하는 장면에서 시작해 음료 탐색과 구매, 첫 시음과 농담, 소스 선택과 피시 타코 공개로 이어집니다. 대표 프레임 4장만 다중 영상 인덱스에 내장하고, 더 자세한 프레임·행동·대화는 개별 타임라인에서 주문형으로 봅니다.
+
+## 재사용 경계
+
+라이브러리 HTML은 읽기 전용 결과물이고 진실의 원천은 `timeline.summarized.json`입니다. 이후 Codex 스킬은 다음을 오케스트레이션하는 얇은 계층으로 만듭니다.
+
+1. 각 영상의 Phase 1 캐시 확인 또는 생성
+2. 장면별 1·2차 리뷰와 검증
+3. 장면 결과만 이용한 영상 단위 요약과 검증
+4. 선택한 영상들을 시간순 라이브러리로 렌더
+5. 결과 링크, 처리량과 불확실성 보고
+
+날짜 전체를 하나의 여행 서사로 다시 쓰거나 파일 사이 중복·연결 컷을 판단하는 작업은 별도 상위 단계로 둡니다. 지금 구현은 파일 경계를 보존하면서도 편집자가 실제 사건 흐름을 빠르게 파악하는 데 집중합니다.

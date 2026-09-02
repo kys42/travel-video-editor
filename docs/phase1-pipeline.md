@@ -15,7 +15,9 @@ Phase 1은 원본 영상을 편집하지 않습니다. 원본의 전체 시간�
   → 코덱스 1차 리뷰: 장면 설명과 사건 그룹
   → 사건별 최대 12장 스토리보드
   → 코덱스 2차 리뷰: 맥락·대화 종합·대표 이미지·특이 포인트 선정
+  → 장면별 결과만으로 영상 전체 요약·시간순 사건 합성
   → 펼쳐보는 로컬 웹 타임라인
+  → 여러 영상의 촬영 시각순 라이브러리
 ```
 
 ## 구현 상태
@@ -42,8 +44,22 @@ uv run travel-video merge-context-review \
   timeline.reviewed.json context/context-review-packet.json context/context-review.json \
   --output timeline.context-reviewed.json
 
-uv run travel-video render-web timeline.context-reviewed.json \
+uv run travel-video build-video-summary-packet timeline.context-reviewed.json \
+  --output summary/video-summary-packet.json
+
+uv run travel-video validate-video-summary \
+  summary/video-summary-packet.json summary/video-summary.json
+
+uv run travel-video merge-video-summary \
+  timeline.context-reviewed.json \
+  summary/video-summary-packet.json summary/video-summary.json \
+  --output timeline.summarized.json
+
+uv run travel-video render-web timeline.summarized.json \
   --output-dir web
+
+uv run travel-video render-library clip-*/timeline.summarized.json \
+  --output-dir work/library --title "여행 날짜 또는 장소"
 ```
 
 원본은 읽기만 합니다. 파생 자료는 기본적으로 `work/phase1` 아래에 생성되고 Git에서 제외됩니다.
@@ -67,6 +83,9 @@ work/phase1/<asset-id>/<visual-config-hash>/
 ├── timeline.reviewed.html     # 설명·검토 그룹이 표시된 최종 타임라인
 ├── timeline.context-reviewed.json
 ├── timeline.context-reviewed.html # 사건 맥락·대화·대표 이미지 최종 결과
+├── summary/video-summary-packet.json # 검토 완료 장면만 담은 영상 종합 입력
+├── summary/video-summary.json        # 영상 제목·전체 서사·시간순 사건
+├── timeline.summarized.json          # 영상 단위 요약까지 병합한 최종 데이터
 ├── web/index.html              # 재사용 인터랙티브 타임라인
 ├── web/manifest.json           # 입력과 렌더 설정
 └── timeline.html              # 로컬 브라우저 검토 화면
@@ -83,6 +102,8 @@ work/phase1/<asset-id>/<visual-config-hash>/
 7. 시각 단계 캐시 키와 언어별 STT 캐시를 분리했습니다. STT 전략만 바꿀 때 프레임을 다시 추출하지 않습니다.
 8. 코덱스가 세그먼트 ID나 타임코드를 바꿀 수 없고, 리뷰 그룹과 대표 프레임 ID를 각각 검증합니다.
 9. 특이 포인트는 같은 2차 스토리보드 리뷰에서 그룹당 0~3개만 고르므로 별도의 전수 영상 시청이나 모델 패스가 없습니다.
+10. 영상 전체 요약 단계는 최종 장면 설명·대화·특이 포인트와 후보 프레임 ID만 읽습니다. 원본, 연락판과 스토리보드를 다시 모델에 넣지 않습니다.
+11. 다중 영상 페이지는 `timeline.summarized.json`들을 로컬에서 정렬·렌더할 뿐 추가 모델 호출이 없습니다.
 
 ## 파일럿 결과
 
@@ -111,6 +132,17 @@ work/phase1/<asset-id>/<visual-config-hash>/
 4. 헬기 쪽으로 이동
 
 같은 2차 리뷰에서 일반 사건 요약과 분리해 음식 영상 5개, 빙하 영상 4개의 특이 포인트를 기록했습니다. 예를 들어 7.5달러 음료와 팁 걱정, 렌즈를 덮은 손, 더위 대사와 화로의 아이러니, 빙하 위에서 90도로 돌아간 카메라, 셀카 직전의 익살스러운 표정이 포함됩니다.
+
+같은 날 음식 영상의 직전 1개와 직후 2개를 추가 처리해 `0008`–`0011` 네 파일을 하나의 시퀀스로 만들었습니다.
+
+| 순서 | 원본 | 길이 | 최종 사건 | 영상 전체 요약 제목 |
+|---:|---|---:|---:|---|
+| 1 | `DJI_20260826073820_0008_D.MP4` | 58.1초 | 2 | 불꽃 테이블에 자리 잡기 |
+| 2 | `DJI_20260826073937_0009_D.MP4` | 200.5초 | 5 | 푸드트럭에서 알래스카 소다 사기 |
+| 3 | `DJI_20260826074332_0010_D.MP4` | 35.5초 | 2 | 첫 모금과 권태기 농담 |
+| 4 | `DJI_20260826074453_0011_D.MP4` | 56.7초 | 3 | 소스 고르고 피시 타코 공개 |
+
+전체 5분 51초가 12개 사건과 12개 특이 포인트로 연결됐습니다. 새로 처리한 세 파일은 24개 저빈도 세그먼트와 7개 사건 그룹으로 압축했습니다. 각 영상의 제목, 한 줄 설명, 시작부터 끝까지의 서사와 모든 사건을 순서대로 합성한 뒤, MP4 `creation_time` 메타데이터와 파일명으로 안정 정렬했습니다. 메타데이터에 UTC 오프셋이 있으므로 웹에는 임의로 현지 시각으로 바꾸지 않고 `UTC`라고 명시합니다.
 
 ## STT 파일럿에서 배운 점
 
@@ -175,4 +207,4 @@ Whisper tiny는 음악과 주변 소리를 반복 한국어 문장으로 잘못 
 2. 음성 구간 검출과 화자 구분을 추가해 무음·음악의 이중 STT 연산 감소
 3. SQLite 단계별 작업 큐와 실패 재시작
 4. 웹에서 그룹 합치기·나누기·제외·별점 저장
-5. 파일 여러 개를 하루 사건으로 연결하는 상위 타임라인
+5. 여러 영상 사이의 연결 장면·중복·누락을 판단하는 날짜 단위 상위 서사

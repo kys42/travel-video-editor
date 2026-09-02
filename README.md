@@ -13,14 +13,17 @@
 
 ## 현재 상태
 
-- 2026-09-02: Phase 1 CLI 구현 및 실제 Osmo Pocket 3 영상 두 개 파일럿 완료
-- 2.40 GiB·310초 원본을 62개 대표 프레임과 연락판 4장, 약 4.0 MiB 파생 자료로 변환
+- 2026-09-02: Phase 1 CLI 구현 및 실제 Osmo Pocket 3 영상 다섯 개 파일럿 완료
+- 음식 장면 전후 4개 영상을 하나의 시간순 라이브러리로 연결하고, 각 영상의 전체 요약·사건 순서·대표 프레임 생성
+- 음식 시퀀스 5분 51초를 12개 사건과 12개 특이 포인트로 정리한 데스크톱 웹 인덱스 생성
+- 초기 두 영상 2.40 GiB·310초 원본을 62개 대표 프레임과 연락판 4장, 약 4.0 MiB 파생 자료로 변환
 - 구조화 리뷰 검증을 거쳐 음식 트럭 영상 5개, 빙하 영상 4개 사건 그룹 생성
 - 한국어·영어 전체 이중 STT와 사건별 최대 12장 스토리보드 2차 리뷰 구현
 - 코덱스가 장면 맥락을 보고 대표 프레임을 다시 선택하며 최종 결과는 약 5.7 MiB
 - 리모트에서도 이미지가 깨지지 않는 단일 HTML 웹 리포트와 공용 미리보기 덱 구현
 - 화면·행동·이중 STT·품질 신호·편집 제안을 원본 타임코드별로 합친 편집 판단 타임라인 구현
 - 웃긴 반응·돌발 상황·그림 되는 컷·살릴 대사 같은 특이 포인트를 별도 편집 비트로 기록하고 표시
+- 장면별 검토 결과만 다시 읽어 영상 전체를 종합하는 `video_summary` 단계와 촬영 시각순 다중 영상 템플릿 구현
 - 2026-09-02: 토큰 효율적인 전수 장면 타임라인 설계 추가
 - 외장 T7의 Osmo 추정 원본을 읽기 전용으로 탐색했으며 상세 인벤토리는 아직 생성하지 않음
 - 현재 Mac에서 Apple Silicon, FFmpeg 8.1.2, `ffprobe`, `uv` 사용 가능 확인
@@ -37,6 +40,7 @@
 6. MCP는 초기 분석의 필수 요소가 아니라 반복 작업 또는 NLE 제어가 필요할 때 선택적으로 연결한다.
 7. 전수 타임라인과 편집 후보를 분리하고, 모델 호출은 중요도·중복도에 따라 계층화한다.
 8. 사실 요약과 재미있는 편집 비트를 분리하고, 특이 포인트는 실제 근거가 있을 때만 기록한다.
+9. 영상 전체 요약은 이미 검토한 장면 데이터에서만 합성하고 원본 영상이나 이미지 시트를 다시 읽지 않는다.
 
 ## 문서
 
@@ -44,6 +48,7 @@
 - [권장 아키텍처](docs/architecture.md)
 - [토큰 효율적인 전수 장면 타임라인](docs/token-efficient-scene-timeline.md)
 - [Phase 1 구현과 파일럿 결과](docs/phase1-pipeline.md)
+- [영상 단위 요약과 시간순 다중 영상 라이브러리](docs/video-library.md)
 - [`kyungdoc/video-summary` 검토](docs/upstream-video-summary-review.md)
 - [T7 원본 사전 점검](docs/source-assessment-2026-09-02.md)
 - [파일럿 실행 계획](docs/pilot-plan.md)
@@ -89,6 +94,28 @@ uv run travel-video render-web timeline.context-reviewed.json \
 ```
 
 기본값은 프레임을 `index.html`에 내장해 파일 하나만 열어도 동작합니다. 영상은 넣지 않고 상단 공용 미리보기 덱만 남기며, 향후 저화질 프록시 하나를 이 영역에 연결합니다. 같은 로컬 파일 구조에서만 쓸 때는 `--assets relative`로 HTML 크기를 줄일 수 있습니다. [웹 타임라인 설계](docs/web-timeline.md)에 재사용 구조와 프록시 연결 방식을 기록했습니다.
+
+장면별 맥락 검토 뒤에는 원본을 다시 보지 않고 영상 하나의 전체 흐름을 합성하고, 여러 영상을 촬영 시각순 인덱스로 묶을 수 있습니다.
+
+```bash
+uv run travel-video build-video-summary-packet timeline.context-reviewed.json \
+  --output summary/video-summary-packet.json
+
+# packet을 근거로 summary/video-summary.json을 작성한 뒤 검증·병합
+uv run travel-video validate-video-summary \
+  summary/video-summary-packet.json summary/video-summary.json
+uv run travel-video merge-video-summary \
+  timeline.context-reviewed.json \
+  summary/video-summary-packet.json summary/video-summary.json \
+  --output timeline.summarized.json
+
+uv run travel-video render-library \
+  clip-a/timeline.summarized.json clip-b/timeline.summarized.json \
+  --output-dir work/library \
+  --title "여행 날짜 또는 장소"
+```
+
+상세 계약과 실제 음식 시퀀스 결과는 [다중 영상 라이브러리 문서](docs/video-library.md)에 있습니다.
 
 ## 다음 단계
 
