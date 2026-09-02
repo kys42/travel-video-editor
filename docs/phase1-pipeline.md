@@ -10,24 +10,36 @@ Phase 1은 원본 영상을 편집하지 않습니다. 원본의 전체 시간�
   → 5초 간격 640px 대표 프레임
   → 밝기·선명도·시각 변화량·평균 해시
   → 빈 구간 없는 기계 세그먼트
-  → 로컬 MLX Whisper + 환각 필터
+  → 로컬 MLX Whisper 한국어·영어 병렬 전사 + 환각 필터
   → 12개 세그먼트당 연락판 1장
-  → 코덱스 구조화 리뷰
-  → 검증된 장면 설명과 사건 그룹
+  → 코덱스 1차 리뷰: 장면 설명과 사건 그룹
+  → 사건별 4~8장 스토리보드
+  → 코덱스 2차 리뷰: 맥락·대화 종합·대표 이미지 선정
 ```
 
 ## 구현 상태
 
-CLI는 다음 세 명령을 제공합니다.
+CLI는 기계 처리, 두 단계 리뷰와 검증 명령을 제공합니다.
 
 ```bash
 uv run travel-video phase1 VIDEO.mp4 --stt mlx \
-  --stt-model mlx-community/whisper-small-mlx
+  --stt-model mlx-community/whisper-small-mlx \
+  --stt-languages ko,en
 
 uv run travel-video validate-review timeline.machine.json timeline.review.json
 
 uv run travel-video merge-review timeline.machine.json timeline.review.json \
   --output timeline.reviewed.json
+
+uv run travel-video build-context-packet timeline.reviewed.json \
+  --output-dir context --max-frames 8
+
+uv run travel-video validate-context-review \
+  context/context-review-packet.json context/context-review.json
+
+uv run travel-video merge-context-review \
+  timeline.reviewed.json context/context-review-packet.json context/context-review.json \
+  --output timeline.context-reviewed.json
 ```
 
 원본은 읽기만 합니다. 파생 자료는 기본적으로 `work/phase1` 아래에 생성되고 Git에서 제외됩니다.
@@ -38,13 +50,19 @@ uv run travel-video merge-review timeline.machine.json timeline.review.json \
 work/phase1/<asset-id>/<visual-config-hash>/
 ├── frames/                    # 640px 저빈도 대표 프레임
 ├── contact_sheets/            # 한 장에 최대 12개 세그먼트
-├── transcript/<model>/        # 원본 전사 JSON
+├── transcript/<model>/ko/     # 한국어 강제 전사 원본 JSON
+├── transcript/<model>/en/     # 영어 강제 전사 원본 JSON
+├── context/storyboards/       # 검토 그룹별 4~8장 스토리보드
+├── context/context-review-packet.json
+├── context/context-review.json
 ├── run.json                   # 실행 상태와 개수
 ├── timeline.machine.json      # 기계 신호와 전수 시간축
 ├── review-packet.json         # 코덱스에 전달할 압축 입력
 ├── timeline.review.json       # 코덱스/사람의 구조화 판단
 ├── timeline.reviewed.json     # 검증 후 병합 결과
 ├── timeline.reviewed.html     # 설명·검토 그룹이 표시된 최종 타임라인
+├── timeline.context-reviewed.json
+├── timeline.context-reviewed.html # 사건 맥락·대화·대표 이미지 최종 결과
 └── timeline.html              # 로컬 브라우저 검토 화면
 ```
 
@@ -52,11 +70,12 @@ work/phase1/<asset-id>/<visual-config-hash>/
 
 1. 코덱스에는 원본 영상이나 모든 프레임을 주지 않습니다.
 2. 한 번의 저해상도 프레임 추출로 밝기, 선명도, 변화량, 대표 프레임 선택을 모두 처리합니다.
-3. 연락판을 먼저 보고 애매한 칸만 개별 프레임으로 확대합니다.
-4. STT 원본 JSON은 로컬에 보존하되 리뷰 패킷에는 구간과 겹치는 짧은 텍스트만 넣습니다.
-5. Whisper의 `avg_logprob`, `no_speech_prob`, `compression_ratio`와 연속 중복으로 낮은 신뢰도 전사를 버립니다.
-6. 시각 단계 캐시 키와 STT 모델 캐시를 분리했습니다. STT 모델만 바꿀 때 프레임을 다시 추출하지 않습니다.
-7. 코덱스가 세그먼트 ID나 타임코드를 바꿀 수 없고, 리뷰 그룹은 모든 구간을 순서대로 정확히 한 번 포함해야 합니다.
+3. 1차 연락판으로 사건 그룹을 만든 뒤, 그룹 내부에서 시간 분포·화면 차이·화질을 반영한 4~8장만 2차 스토리보드로 만듭니다.
+4. 코덱스는 스토리보드 전체 맥락을 본 뒤 대표 이미지를 직접 고릅니다. 기계가 고른 단일 이미지는 최종값이 아닙니다.
+5. 한국어·영어 STT 원본은 둘 다 로컬에 보존하되 리뷰 패킷에는 장면과 겹치는 짧은 후보만 넣습니다.
+6. Whisper의 `avg_logprob`, `no_speech_prob`, `compression_ratio`와 연속 중복으로 낮은 신뢰도 전사를 거르지만, 두 언어 중 하나를 점수만으로 영구 삭제하지 않습니다.
+7. 시각 단계 캐시 키와 언어별 STT 캐시를 분리했습니다. STT 전략만 바꿀 때 프레임을 다시 추출하지 않습니다.
+8. 코덱스가 세그먼트 ID나 타임코드를 바꿀 수 없고, 리뷰 그룹과 대표 프레임 ID를 각각 검증합니다.
 
 ## 파일럿 결과
 
@@ -67,9 +86,9 @@ work/phase1/<asset-id>/<visual-config-hash>/
 | `DJI_20260826073937_0009_D.MP4` | 푸드코트·음료 주문, 2.7K/30fps | 200.5초 | 40 | 31 | 30 | 5 |
 | `DJI_20260826111739_0034_D.MP4` | 빙하·헬기·셀카, 4K/60fps | 109.5초 | 22 | 11 | 9 | 4 |
 
-두 원본은 합계 약 2.40 GiB이며 약 310초 동안 12,500장 이상의 원본 프레임이 있습니다. Phase 1은 62장의 640px JPEG와 4장의 연락판으로 압축했고, 모든 JSON·HTML·이미지를 포함한 파생 자료는 약 4.0 MiB였습니다.
+두 원본은 합계 약 2.40 GiB이며 약 310초 동안 12,500장 이상의 원본 프레임이 있습니다. Phase 1은 62장의 640px JPEG와 4장의 1차 연락판으로 압축했습니다. 2차 검토에서는 기존 JPEG를 재사용해 사건 스토리보드 9장을 추가했습니다. 한국어·영어 전사, JSON과 HTML을 모두 포함한 파생 자료는 약 5.7 MiB였습니다.
 
-코덱스는 네 장의 연락판과 필터된 인접 STT만 검토했습니다. 음식 트럭 영상은 다음 사건으로 정리됐습니다.
+코덱스는 먼저 네 장의 연락판으로 사건을 나눈 뒤 아홉 장의 사건별 스토리보드와 양쪽 STT 후보를 검토했습니다. 음식 트럭 영상은 다음 사건으로 정리됐습니다.
 
 1. 푸드코트 탐색
 2. 노란 트럭 메뉴 고르기
@@ -86,23 +105,39 @@ work/phase1/<asset-id>/<visual-config-hash>/
 
 ## STT 파일럿에서 배운 점
 
-Whisper tiny는 음악과 주변 소리를 반복 한국어 문장으로 잘못 전사했습니다. 작은 모델의 원문을 그대로 리뷰 입력에 넣는 것은 토큰 낭비이자 판단 오염이었습니다.
+Whisper tiny는 음악과 주변 소리를 반복 한국어 문장으로 잘못 전사했습니다. 또한 파일 전체를 한국어로 판정하자 영어 직원의 말을 어색한 한국어로 바꿨습니다. 단일 언어 원문을 그대로 리뷰 입력에 넣는 것은 판단 오염이었습니다.
 
-파일럿에서는 `mlx-community/whisper-small-mlx`로 승격하고 다음 전사를 제외했습니다.
+파일럿에서는 `mlx-community/whisper-small-mlx`로 승격하고 전체 음성을 한국어와 영어로 각각 전사합니다. 두 후보를 타임코드별로 나란히 보존하고 코덱스가 화면 맥락과 함께 종합합니다. 기계 점수는 우선순위 힌트일 뿐입니다.
+
+음식 트럭의 80~130초 주문 구간에서 한국어 패스는 영어 대화를 부정확하게 옮겼지만 영어 패스는 `recommend flavor`, `mandarin`, `grapefruit`, `7.35`와 감사 인사를 복원했습니다. 반대로 후반 휴식 구간의 “더워, 너무 더운데”는 한국어 후보가 유효했습니다.
+
+각 언어 후보 내부에서는 다음 전사를 제외합니다.
 
 - 평균 로그 확률이 `-1.0` 미만
 - 무음 확률이 `0.6` 초과
 - 압축률이 `2.4` 초과인 반복 문구
 - 바로 인접한 동일 문구
 
-음식 트럭 영상에서는 431자를 채택하고 86자를 제외했으며, 빙하 영상에서는 146자를 채택하고 9자를 제외했습니다. 필터를 통과해도 전사는 참고 신호일 뿐이며 화면과 충돌할 때 장면 설명의 근거로 사용하지 않습니다.
+필터를 통과해도 두 언어 후보는 직역, 번역 또는 음차일 수 있습니다. 최종 결과에는 원문을 확정 자막처럼 복사하지 않고 “무슨 대화를 했는지”를 맥락 요약하며 불확실성을 유지합니다.
+
+## 2차 스토리보드에서 배운 점
+
+기존에는 세그먼트 중간과 화질 점수로 대표 이미지 한 장을 골랐습니다. 빙하 이동 장면에서는 이 방식이 바닥을 향한 프레임을 대표로 골라 노란 헬기를 놓쳤습니다.
+
+2차 단계는 검토 그룹 안에서 다음 요소로 최대 8장을 고릅니다.
+
+- 시간적으로 서로 떨어진 정도
+- 평균 해시가 다른 정도
+- 선명도·노출 기반 품질
+
+코덱스가 이 스토리보드를 보고 장면 전체 설명, 핵심 순간과 최종 대표 프레임을 고릅니다. 실제 파일럿에서 빙하 이동 장면의 대표는 바닥 프레임에서 `F0006`의 노란 헬기 전경으로, 음식 주문 장면은 메뉴판에서 `F0026`의 음료 수령 순간으로 교체됐습니다.
 
 ## 현재 한계
 
 - 손으로 들고 이동하는 영상에서는 단순 시각 변화량이 의미 장면보다 카메라 움직임에 민감해 과분할됩니다.
 - 평균 해시는 같은 장소를 다른 각도로 촬영한 구간을 잘 묶지 못합니다.
 - 현재 HTML은 읽기 전용이며 별점·그룹 수정 UI는 없습니다.
-- STT는 영상 전체를 한 언어로 탐지하므로 한국어와 영어가 섞인 구간에 약할 수 있습니다.
+- 언어 강제 전사는 다른 언어 발화를 번역하거나 음차할 수 있으므로 두 후보와 영상 맥락을 함께 보아야 합니다.
 - 5초 사이에 일어난 매우 짧은 사건은 대표 프레임에 잡히지 않을 수 있습니다.
 
 과분할은 시간축 누락보다 안전하며 이번 파일럿에서는 코덱스 리뷰가 이를 보정했습니다. 전체 18시간으로 확대하기 전에는 로컬 시각 임베딩으로 같은 장소·대상을 묶고, 의미 변화가 큰 구간만 연락판에 남기는 Phase 1.1이 필요합니다.
@@ -110,7 +145,7 @@ Whisper tiny는 음악과 주변 소리를 반복 한국어 문장으로 잘못 
 ## 다음 구현 우선순위
 
 1. 로컬 시각 임베딩을 이용한 의미 기반 인접 그룹
-2. 저비용 1차 샘플과 중요 구간 2차 샘플을 분리한 적응형 샘플링
+2. 음성 구간 검출과 화자 구분을 추가해 무음·음악의 이중 STT 연산 감소
 3. SQLite 단계별 작업 큐와 실패 재시작
 4. HTML에서 그룹 합치기·나누기·제외·별점 저장
 5. 파일 여러 개를 하루 사건으로 연결하는 상위 타임라인

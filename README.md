@@ -16,6 +16,8 @@
 - 2026-09-02: Phase 1 CLI 구현 및 실제 Osmo Pocket 3 영상 두 개 파일럿 완료
 - 2.40 GiB·310초 원본을 62개 대표 프레임과 연락판 4장, 약 4.0 MiB 파생 자료로 변환
 - 구조화 리뷰 검증을 거쳐 음식 트럭 영상 5개, 빙하 영상 4개 사건 그룹 생성
+- 한국어·영어 전체 이중 STT와 사건별 4~8장 스토리보드 2차 리뷰 구현
+- 코덱스가 장면 맥락을 보고 대표 프레임을 다시 선택하며 최종 결과는 약 5.7 MiB
 - 2026-09-02: 토큰 효율적인 전수 장면 타임라인 설계 추가
 - 외장 T7의 Osmo 추정 원본을 읽기 전용으로 탐색했으며 상세 인벤토리는 아직 생성하지 않음
 - 현재 Mac에서 Apple Silicon, FFmpeg 8.1.2, `ffprobe`, `uv` 사용 가능 확인
@@ -69,7 +71,8 @@ travel-video-editor/
 uv sync
 uv run travel-video phase1 /absolute/path/to/video.mp4 \
   --stt mlx \
-  --stt-model mlx-community/whisper-small-mlx
+  --stt-model mlx-community/whisper-small-mlx \
+  --stt-languages ko,en
 ```
 
 결과는 기본적으로 `work/phase1`에 생성됩니다. 자세한 출력과 리뷰 절차는 [Phase 1 문서](docs/phase1-pipeline.md)를 참고합니다.

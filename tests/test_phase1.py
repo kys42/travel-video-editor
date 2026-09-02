@@ -2,8 +2,10 @@ from pathlib import Path
 
 import pytest
 
+from travel_video.context import select_storyboard_samples, validate_context_review
 from travel_video.phase1 import (
     Phase1Config,
+    attach_transcript_candidates,
     build_machine_groups,
     build_segments,
     filter_transcript,
@@ -97,3 +99,55 @@ def test_transcript_filter_drops_repetition_and_low_confidence() -> None:
     assert [item["text"] for item in accepted] == ["실제 대화"]
     assert stats["accepted_segments"] == 1
     assert stats["rejected_segments"] == 2
+
+
+def test_parallel_transcript_candidates_are_both_preserved() -> None:
+    segments = [{"segment_id": "S001", "start": 0.0, "end": 10.0}]
+    common = {"start": 1, "end": 4, "no_speech_prob": 0.1, "compression_ratio": 1.0}
+    transcripts = {
+        "ko": {"segments": [{**common, "text": "만다린 맛으로 주세요", "avg_logprob": -0.35}]},
+        "en": {"segments": [{**common, "text": "Can I get mandarin?", "avg_logprob": -0.45}]},
+    }
+    stats = attach_transcript_candidates(segments, transcripts)
+    assert segments[0]["transcript_candidates"]["ko"][0]["text"] == "만다린 맛으로 주세요"
+    assert segments[0]["transcript_candidates"]["en"][0]["text"] == "Can I get mandarin?"
+    assert segments[0]["transcript_machine_preference"] == "mixed_or_uncertain"
+    assert set(stats) == {"ko", "en"}
+
+
+def test_storyboard_selection_is_diverse_and_bounded() -> None:
+    samples = [sample(index, (index - 1) * 5, 0.05, "0" * 16) for index in range(1, 10)]
+    samples[4]["average_hash"] = "f" * 16
+    selected = select_storyboard_samples(samples, 0, 45, max_frames=4)
+    assert len(selected) == 4
+    assert [item["time"] for item in selected] == sorted(item["time"] for item in selected)
+    assert "F0005" in {item["sample_id"] for item in selected}
+
+
+def test_context_review_representative_must_come_from_storyboard() -> None:
+    packet = {
+        "schema_version": "phase1-context-packet/v1",
+        "asset_id": "asset-1",
+        "groups": [
+            {
+                "group_id": "G001",
+                "candidate_frames": [{"sample_id": "F0001"}, {"sample_id": "F0002"}],
+            }
+        ],
+    }
+    review = {
+        "schema_version": "phase1-context-review/v1",
+        "asset_id": "asset-1",
+        "groups": [
+            {
+                "group_id": "G001",
+                "narrative_summary": "빙하와 헬기가 보인다",
+                "representative_sample_id": "F0002",
+                "key_moments": [{"sample_id": "F0001", "role": "도입"}],
+            }
+        ],
+    }
+    validate_context_review(packet, review)
+    review["groups"][0]["representative_sample_id"] = "F9999"
+    with pytest.raises(ValueError, match="representative"):
+        validate_context_review(packet, review)

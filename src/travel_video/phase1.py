@@ -9,12 +9,20 @@ import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
-from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont, ImageOps, ImageStat
-
+from PIL import (
+    Image,
+    ImageChops,
+    ImageDraw,
+    ImageFilter,
+    ImageFont,
+    ImageOps,
+    ImageStat,
+)
 
 SCHEMA_VERSION = "phase1-machine/v1"
 
@@ -34,7 +42,7 @@ class Phase1Config:
     hwaccel: str = "auto"
     stt: str = "off"
     stt_model: str = "mlx-community/whisper-tiny"
-    language: str | None = None
+    stt_languages: tuple[str, ...] = ("ko", "en")
 
 
 def log(message: str) -> None:
@@ -135,9 +143,20 @@ def config_digest(config: Phase1Config) -> str:
     visual_config = {
         key: value
         for key, value in asdict(config).items()
-        if key not in {"stt", "stt_model", "language"}
+        if key != "stt" and not key.startswith("stt_")
     }
     encoded = json.dumps(visual_config, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()[:10]
+
+
+def stt_config_digest(config: Phase1Config) -> str:
+    payload = {
+        "stt": config.stt,
+        "model": config.stt_model,
+        "languages": config.stt_languages,
+        "policy": "parallel-language-candidates/v1",
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()[:10]
 
 
@@ -407,7 +426,13 @@ def detect_silence(source: Path, duration: float, config: Phase1Config) -> list[
     return intervals
 
 
-def transcribe_mlx(source: Path, transcript_dir: Path, config: Phase1Config) -> dict[str, Any]:
+def transcribe_mlx(
+    source: Path,
+    transcript_dir: Path,
+    config: Phase1Config,
+    *,
+    language: str,
+) -> dict[str, Any]:
     transcript_dir.mkdir(parents=True, exist_ok=True)
     output = transcript_dir / "transcript.json"
     if output.exists():
@@ -435,13 +460,26 @@ def transcribe_mlx(source: Path, transcript_dir: Path, config: Phase1Config) -> 
             "False",
         ]
     )
-    if config.language:
-        command.extend(["--language", config.language])
-    log(f"  transcribing locally with {config.stt_model}")
+    command.extend(["--language", language])
+    log(f"  transcribing {language} candidate with {config.stt_model}")
     run(command, capture=False)
     if not output.exists():
         raise RuntimeError(f"MLX Whisper did not create {output}")
     return json.loads(output.read_text(encoding="utf-8"))
+
+
+def transcribe_language_candidates(
+    source: Path,
+    transcript_root: Path,
+    config: Phase1Config,
+) -> tuple[dict[str, dict[str, Any]], dict[str, str]]:
+    transcripts: dict[str, dict[str, Any]] = {}
+    paths: dict[str, str] = {}
+    for language in config.stt_languages:
+        language_dir = transcript_root / language
+        transcripts[language] = transcribe_mlx(source, language_dir, config, language=language)
+        paths[language] = str(language_dir / "transcript.json")
+    return transcripts, paths
 
 
 def filter_transcript(transcript: dict[str, Any]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -509,6 +547,59 @@ def attach_transcript(segments: list[dict[str, Any]], transcript: dict[str, Any]
             if start < segment["end"] and end > segment["start"]:
                 overlaps.append(speech)
         segment["transcript"] = overlaps
+    return stats
+
+
+def transcript_candidate_score(items: list[dict[str, Any]]) -> float | None:
+    if not items:
+        return None
+    weighted_score = 0.0
+    total_duration = 0.0
+    for item in items:
+        duration = max(0.25, float(item["end"]) - float(item["start"]))
+        score = float(item.get("avg_logprob", -2.0))
+        score -= max(0.0, float(item.get("no_speech_prob", 0.0)) - 0.4)
+        score -= max(0.0, float(item.get("compression_ratio", 0.0)) - 2.0) * 0.15
+        weighted_score += score * duration
+        total_duration += duration
+    return round(weighted_score / total_duration, 4)
+
+
+def attach_transcript_candidates(
+    segments: list[dict[str, Any]],
+    transcripts: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    filtered: dict[str, list[dict[str, Any]]] = {}
+    stats: dict[str, Any] = {}
+    for language, transcript in transcripts.items():
+        filtered[language], stats[language] = filter_transcript(transcript)
+
+    for segment in segments:
+        candidates: dict[str, list[dict[str, Any]]] = {}
+        scores: dict[str, float | None] = {}
+        for language, speech_items in filtered.items():
+            overlaps = [
+                speech
+                for speech in speech_items
+                if float(speech["start"]) < float(segment["end"])
+                and float(speech["end"]) > float(segment["start"])
+            ]
+            candidates[language] = overlaps
+            scores[language] = transcript_candidate_score(overlaps)
+        ranked = sorted(
+            ((score, language) for language, score in scores.items() if score is not None),
+            reverse=True,
+        )
+        if not ranked:
+            preference = "none"
+        elif len(ranked) == 1 or ranked[0][0] - ranked[1][0] >= 0.15:
+            preference = ranked[0][1]
+        else:
+            preference = "mixed_or_uncertain"
+        segment["transcript"] = []
+        segment["transcript_candidates"] = candidates
+        segment["transcript_candidate_scores"] = scores
+        segment["transcript_machine_preference"] = preference
     return stats
 
 
@@ -580,7 +671,13 @@ def create_contact_sheets(
 def build_review_packet(machine: dict[str, Any], run_dir: Path) -> dict[str, Any]:
     compact_segments: list[dict[str, Any]] = []
     for segment in machine["segments"]:
-        transcript_text = " ".join(item["text"] for item in segment.get("transcript", []))
+        transcript_candidates = {
+            language: {
+                "text": " ".join(item["text"] for item in items)[:500],
+                "score": segment.get("transcript_candidate_scores", {}).get(language),
+            }
+            for language, items in segment.get("transcript_candidates", {}).items()
+        }
         compact_segments.append(
             {
                 "segment_id": segment["segment_id"],
@@ -592,7 +689,8 @@ def build_review_packet(machine: dict[str, Any], run_dir: Path) -> dict[str, Any
                 "machine_group_id": segment["machine_group_id"],
                 "quality": segment["machine"]["quality"],
                 "flags": segment["machine"]["flags"],
-                "transcript": transcript_text[:400],
+                "transcript_candidates": transcript_candidates,
+                "transcript_machine_preference": segment.get("transcript_machine_preference", "none"),
             }
         )
     return {
@@ -605,10 +703,34 @@ def build_review_packet(machine: dict[str, Any], run_dir: Path) -> dict[str, Any
             "Inspect contact sheets before opening individual frames.",
             "Keep input segment IDs and time ranges unchanged.",
             "Create contiguous reviewed groups that cover every segment exactly once.",
+            "Compare Korean and English transcript candidates; do not trust machine preference alone.",
             "Use individual frames only when a sheet cell is ambiguous.",
         ],
         "segments": compact_segments,
     }
+
+
+def apply_stt_candidates(
+    machine: dict[str, Any],
+    source: Path,
+    run_dir: Path,
+    config: Phase1Config,
+) -> None:
+    model_key = re.sub(r"[^A-Za-z0-9._-]+", "-", config.stt_model).strip("-")
+    transcript_root = run_dir / "transcript" / model_key
+    transcripts, transcript_paths = transcribe_language_candidates(source, transcript_root, config)
+    filter_stats = attach_transcript_candidates(machine["segments"], transcripts)
+    machine["config"] = asdict(config)
+    machine["audio_analysis"].update(
+        {
+            "transcript_strategy": "parallel-language-candidates/v1",
+            "transcript_strategy_digest": stt_config_digest(config),
+            "transcript_paths": transcript_paths,
+            "transcript_model": config.stt_model,
+            "transcript_languages": list(config.stt_languages),
+            "transcript_filter": filter_stats,
+        }
+    )
 
 
 def create_html(machine: dict[str, Any], output_path: Path) -> None:
@@ -621,7 +743,14 @@ def create_html(machine: dict[str, Any], output_path: Path) -> None:
     }
     for segment in machine["segments"]:
         frame_relative = os.path.relpath(segment["representative_frame"], run_dir)
-        transcript = " ".join(item["text"] for item in segment.get("transcript", [])) or "—"
+        transcript_candidates = {
+            language: " ".join(item["text"] for item in items) or "—"
+            for language, items in segment.get("transcript_candidates", {}).items()
+        }
+        transcript_html = "".join(
+            f'<p class="transcript"><strong>{html.escape(language)}</strong>: {html.escape(text)}</p>'
+            for language, text in transcript_candidates.items()
+        ) or '<p class="transcript">STT: —</p>'
         flags = ", ".join(segment["machine"]["flags"]) or "ok"
         review = segment.get("review", {})
         summary = review.get("visual_summary", "기계 분석만 완료 — 장면 설명 검토 전")
@@ -636,7 +765,7 @@ def create_html(machine: dict[str, Any], output_path: Path) -> None:
               <p>{html.escape(str(summary))}</p>
               <div class="muted">actions: {html.escape(actions)}</div>
               <div class="muted">quality {segment['machine']['quality']:.2f} · {html.escape(flags)}</div>
-              <p class="transcript">STT: {html.escape(transcript)}</p>
+              {transcript_html}
             </article>
             """
         )
@@ -672,21 +801,9 @@ def process_asset(source: Path, output_root: Path, config: Phase1Config) -> Path
     timeline_path = run_dir / "timeline.machine.json"
     if timeline_path.exists():
         machine = json.loads(timeline_path.read_text(encoding="utf-8"))
-        selected_model = machine.get("audio_analysis", {}).get("transcript_model")
-        if config.stt == "mlx" and selected_model != config.stt_model:
-            model_key = re.sub(r"[^A-Za-z0-9._-]+", "-", config.stt_model).strip("-")
-            transcript_path = run_dir / "transcript" / model_key
-            transcript = transcribe_mlx(source, transcript_path, config)
-            filter_stats = attach_transcript(machine["segments"], transcript)
-            machine["config"] = asdict(config)
-            machine["audio_analysis"].update(
-                {
-                    "transcript_path": str(transcript_path / "transcript.json"),
-                    "transcript_model": config.stt_model,
-                    "transcript_language": transcript.get("language"),
-                    "transcript_filter": filter_stats,
-                }
-            )
+        selected_strategy = machine.get("audio_analysis", {}).get("transcript_strategy_digest")
+        if config.stt == "mlx" and selected_strategy != stt_config_digest(config):
+            apply_stt_candidates(machine, source, run_dir, config)
             atomic_json(timeline_path, machine)
             atomic_json(run_dir / "review-packet.json", build_review_packet(machine, run_dir))
             create_html(machine, run_dir / "timeline.html")
@@ -703,14 +820,6 @@ def process_asset(source: Path, output_root: Path, config: Phase1Config) -> Path
     segments = build_segments(samples, media["duration"], config)
     groups = build_machine_groups(segments, config)
     silences = detect_silence(source, media["duration"], config) if media["audio"] else []
-    transcript: dict[str, Any] | None = None
-    transcript_path: Path | None = None
-    transcript_filter: dict[str, Any] | None = None
-    if config.stt == "mlx":
-        model_key = re.sub(r"[^A-Za-z0-9._-]+", "-", config.stt_model).strip("-")
-        transcript_path = run_dir / "transcript" / model_key
-        transcript = transcribe_mlx(source, transcript_path, config)
-        transcript_filter = attach_transcript(segments, transcript)
     sheets = create_contact_sheets(segments, run_dir / "contact_sheets", key, config)
 
     machine = {
@@ -725,16 +834,14 @@ def process_asset(source: Path, output_root: Path, config: Phase1Config) -> Path
         "media": media,
         "audio_analysis": {
             "silence_intervals": silences,
-            "transcript_path": str(transcript_path / "transcript.json") if transcript_path else None,
-            "transcript_model": config.stt_model if transcript else None,
-            "transcript_language": transcript.get("language") if transcript else None,
-            "transcript_filter": transcript_filter,
         },
         "samples": samples,
         "segments": segments,
         "machine_groups": groups,
         "contact_sheets": sheets,
     }
+    if config.stt == "mlx":
+        apply_stt_candidates(machine, source, run_dir, config)
     atomic_json(timeline_path, machine)
     atomic_json(run_dir / "review-packet.json", build_review_packet(machine, run_dir))
     create_html(machine, run_dir / "timeline.html")
