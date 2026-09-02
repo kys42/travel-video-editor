@@ -44,6 +44,7 @@ work/phase1/<asset-id>/<visual-config-hash>/
 ├── review-packet.json         # 코덱스에 전달할 압축 입력
 ├── timeline.review.json       # 코덱스/사람의 구조화 판단
 ├── timeline.reviewed.json     # 검증 후 병합 결과
+├── timeline.reviewed.html     # 설명·검토 그룹이 표시된 최종 타임라인
 └── timeline.html              # 로컬 브라우저 검토 화면
 ```
 

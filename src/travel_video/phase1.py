@@ -614,20 +614,33 @@ def build_review_packet(machine: dict[str, Any], run_dir: Path) -> dict[str, Any
 def create_html(machine: dict[str, Any], output_path: Path) -> None:
     cards: list[str] = []
     run_dir = output_path.parent
+    reviewed_group_labels = {
+        segment_id: group.get("label", group["group_id"])
+        for group in machine.get("reviewed_groups", [])
+        for segment_id in group.get("segment_ids", [])
+    }
     for segment in machine["segments"]:
         frame_relative = os.path.relpath(segment["representative_frame"], run_dir)
         transcript = " ".join(item["text"] for item in segment.get("transcript", [])) or "—"
         flags = ", ".join(segment["machine"]["flags"]) or "ok"
+        review = segment.get("review", {})
+        summary = review.get("visual_summary", "기계 분석만 완료 — 장면 설명 검토 전")
+        group_label = reviewed_group_labels.get(segment["segment_id"], segment["machine_group_id"])
+        actions = ", ".join(review.get("actions", [])) or "—"
         cards.append(
             f"""
             <article class="segment">
               <img src="{html.escape(frame_relative)}" loading="lazy" alt="{segment['segment_id']}">
-              <div><strong>{segment['segment_id']}</strong> · {segment['start_timecode']}–{segment['end_timecode']} · {segment['machine_group_id']}</div>
+              <div><strong>{segment['segment_id']}</strong> · {segment['start_timecode']}–{segment['end_timecode']}</div>
+              <div class="group">{html.escape(group_label)}</div>
+              <p>{html.escape(str(summary))}</p>
+              <div class="muted">actions: {html.escape(actions)}</div>
               <div class="muted">quality {segment['machine']['quality']:.2f} · {html.escape(flags)}</div>
-              <p>{html.escape(transcript)}</p>
+              <p class="transcript">STT: {html.escape(transcript)}</p>
             </article>
             """
         )
+    timeline_kind = "reviewed" if machine.get("reviewed_groups") else "machine"
     document = f"""<!doctype html>
 <html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html.escape(machine['source']['name'])} timeline</title>
@@ -638,9 +651,11 @@ h1 {{ font-size: 24px; }} .meta,.muted {{ color: #9ba8ba; }}
 .segment {{ background: #171c24; border: 1px solid #293140; border-radius: 10px; overflow: hidden; padding-bottom: 12px; }}
 .segment img {{ display: block; width: 100%; aspect-ratio: 16/9; object-fit: contain; background: black; }}
 .segment div,.segment p {{ margin: 8px 12px 0; }}
+.segment .group {{ color: #7dd3fc; font-weight: 650; }}
+.segment .transcript {{ color: #c5ceda; font-size: 13px; }}
 </style></head><body>
 <h1>{html.escape(machine['source']['name'])}</h1>
-<p class="meta">{format_time(machine['media']['duration'])} · {len(machine['segments'])} segments · machine timeline</p>
+<p class="meta">{format_time(machine['media']['duration'])} · {len(machine['segments'])} segments · {timeline_kind} timeline</p>
 <main class="timeline">{''.join(cards)}</main></body></html>
 """
     output_path.write_text(document, encoding="utf-8")

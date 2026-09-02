@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .phase1 import atomic_json, validate_coverage
+from .phase1 import atomic_json, create_html, validate_coverage
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -58,4 +58,5 @@ def merge_review(machine_path: Path, review_path: Path, output_path: Path) -> di
         },
     }
     atomic_json(output_path, final)
+    create_html(final, output_path.with_suffix(".html"))
     return final
