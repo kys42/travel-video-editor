@@ -129,6 +129,15 @@ def _transcript_quality(item: dict[str, Any]) -> str:
     return "low"
 
 
+def _reconciled_quality(item: dict[str, Any]) -> str:
+    score = float(item.get("confidence", 0.0))
+    if score >= 0.8:
+        return "high"
+    if score >= 0.65:
+        return "medium"
+    return "low"
+
+
 def _render_frame_strip(
     samples: list[dict[str, Any]],
     context: dict[str, Any],
@@ -310,6 +319,38 @@ def _render_transcripts(
     return "".join(columns)
 
 
+def _render_reconciled_transcripts(
+    utterances: list[dict[str, Any]], *, seek_enabled: bool
+) -> str:
+    disabled = "" if seek_enabled else "disabled"
+    snippets: list[str] = []
+    for item in utterances:
+        text = str(item.get("original_text", "")).strip()
+        if not text:
+            continue
+        translations = " · ".join(
+            f"{str(language).upper()}: {str(value)}"
+            for language, value in item.get("translations", {}).items()
+            if str(value).strip()
+        )
+        translated = (
+            f'<small class="transcript-translation">{_escape(translations)}</small>'
+            if translations
+            else ""
+        )
+        snippets.append(
+            f"""
+            <button class="transcript-line" type="button" data-seek="{float(item["source_start"]):.3f}"
+                    {disabled}>
+              <span class="transcript-time">{_escape(_short_time(float(item["source_start"])))}</span>
+              <span class="transcript-text"><b>{_escape(str(item.get("language", "—")).upper())}</b> {_escape(text)}{translated}</span>
+              <span class="signal signal--{_reconciled_quality(item)}" title="종합 대본 신뢰도"></span>
+            </button>
+            """
+        )
+    return "".join(snippets) or '<p class="empty-copy">종합된 발화가 없습니다.</p>'
+
+
 def _silence_ratio(
     segment: dict[str, Any], silence_intervals: list[dict[str, float]]
 ) -> float:
@@ -326,6 +367,13 @@ def _silence_ratio(
 def _segment_transcript_lines(
     segment: dict[str, Any], evidence_languages: list[str]
 ) -> list[tuple[str, str]]:
+    reconciled = segment.get("reconciled_utterances", [])
+    if reconciled:
+        return [
+            (str(item.get("language", "—")), str(item.get("original_text", "")).strip())
+            for item in reconciled
+            if str(item.get("original_text", "")).strip()
+        ]
     candidates = segment.get("transcript_candidates", {})
     ordered_languages = evidence_languages + [
         language
@@ -405,7 +453,9 @@ def _render_edit_map(
         review = segment.get("review", {})
         transcript_lines = _segment_transcript_lines(segment, evidence_languages)
         silence = _silence_ratio(segment, silence_intervals)
-        if transcript_lines:
+        if segment.get("reconciled_utterances"):
+            audio_state = "종합 원문 대본"
+        elif transcript_lines:
             audio_state = "음성 후보 감지"
         elif silence >= 0.5:
             audio_state = "무음·저음량"
@@ -492,6 +542,7 @@ def _render_group(
     samples = _group_samples(timeline, start, end, frame_limit=frame_limit)
     segments = _group_segments(timeline, group)
     transcripts = _transcript_candidates(segments)
+    reconciled = group.get("reconciled_utterances", [])
     representative = next(
         sample
         for sample in timeline["samples"]
@@ -523,6 +574,11 @@ def _render_group(
         search_parts.extend(str(action) for action in review.get("actions", []))
         for items in segment.get("transcript_candidates", {}).values():
             search_parts.extend(str(item.get("text", "")) for item in items)
+    for utterance in reconciled:
+        search_parts.append(str(utterance.get("original_text", "")))
+        search_parts.extend(
+            str(value) for value in utterance.get("translations", {}).values()
+        )
     summary_search = " ".join(search_parts).lower()
     representative_url = assets.url(representative["frame"])
     play_disabled = "" if media_url else "disabled"
@@ -532,6 +588,30 @@ def _render_group(
         if notable_moments
         else ""
     )
+    if reconciled:
+        evidence_note = "원문 언어 보존 · 번역 별도"
+        evidence_drawer = f"""
+          <details class="evidence-drawer" open>
+            <summary>종합 대본과 타임코드 보기 <span>Apple 후보 + 장면 맥락 검토</span></summary>
+            <div class="transcript-grid">
+              <section class="transcript-column is-evidence">
+                <div class="transcript-heading"><h4>종합 원문</h4><span>{len(reconciled)}개 발화</span></div>
+                <div class="transcript-list">{_render_reconciled_transcripts(reconciled, seek_enabled=media_url is not None)}</div>
+              </section>
+              {_render_transcripts(transcripts, [], seek_enabled=media_url is not None)}
+            </div>
+          </details>
+        """
+    else:
+        evidence_note = "화면 맥락 + 이중 STT 종합"
+        evidence_drawer = f"""
+          <details class="evidence-drawer">
+            <summary>STT 원문 후보와 타임코드 보기 <span>검증 전 참고 신호</span></summary>
+            <div class="transcript-grid">
+              {_render_transcripts(transcripts, context.get("dialogue_evidence", []), seek_enabled=media_url is not None)}
+            </div>
+          </details>
+        """
     return f"""
     <details class="scene" id="scene-{_escape(group["group_id"])}"
              data-search="{_escape(summary_search)}"
@@ -606,15 +686,10 @@ def _render_group(
         <section class="detail-section dialogue-section">
           <div class="section-heading">
             <div><span class="eyebrow">DIALOGUE</span><h3>오간 대화</h3></div>
-            <span class="evidence-note">화면 맥락 + 이중 STT 종합</span>
+            <span class="evidence-note">{_escape(evidence_note)}</span>
           </div>
           <blockquote>{_escape(context.get("dialogue_summary", "확인 가능한 대화가 없습니다."))}</blockquote>
-          <details class="evidence-drawer">
-            <summary>STT 원문 후보와 타임코드 보기 <span>검증 전 참고 신호</span></summary>
-            <div class="transcript-grid">
-              {_render_transcripts(transcripts, context.get("dialogue_evidence", []), seek_enabled=media_url is not None)}
-            </div>
-          </details>
+          {evidence_drawer}
         </section>
 
       </div>
@@ -711,6 +786,7 @@ def render_timeline_web(
             len(group["context_review"].get("notable_moments", [])) for group in groups
         ),
         "has_video_summary": "video_summary" in timeline,
+        "has_reconciled_transcript": "reconciled_transcript" in timeline,
     }
     atomic_json(output_dir / "manifest.json", manifest)
     return output_path

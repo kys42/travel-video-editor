@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>Travel Video Editor · UI Concepts</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body data-concept="desk">
+  <a class="skip-link" href="#workspace">작업 영역으로 건너뛰기</a>
+  <header class="appbar">
+    <div class="app-identity" aria-label="Travel Video Editor">
+      <span class="app-mark" aria-hidden="true"><i></i><i></i></span>
+      <strong>Travel Video Editor</strong>
+      <span class="project-name" data-project-title></span>
+    </div>
+    <nav class="concept-switch" aria-label="디자인 시안 선택">
+      <button type="button" data-concept-button="desk" aria-pressed="true"><kbd>1</kbd> Edit Desk</button>
+      <button type="button" data-concept-button="ledger" aria-pressed="false"><kbd>2</kbd> Review Ledger</button>
+      <button type="button" data-concept-button="console" aria-pressed="false"><kbd>3</kbd> Cut Console</button>
+    </nav>
+    <div class="app-actions">
+      <span class="prototype-badge">DESIGN EXPLORATION</span>
+      <button class="icon-button" type="button" data-help aria-label="키보드 도움말" title="키보드 도움말">?</button>
+    </div>
+  </header>
+
+  <main id="workspace" class="workspace" tabindex="-1"></main>
+
+  <div class="toast" role="status" aria-live="polite" data-toast></div>
+  <dialog class="shortcut-dialog" data-shortcuts>
+    <form method="dialog">
+      <header><strong>키보드 단축키</strong><button class="icon-button" value="close" aria-label="닫기">×</button></header>
+      <dl>
+        <div><dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></dt><dd>디자인 시안 전환</dd></div>
+        <div><dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>이전·다음 장면</dd></div>
+        <div><dt><kbd>/</kbd></dt><dd>검색으로 이동</dd></div>
+        <div><dt><kbd>Esc</kbd></dt><dd>검색 초기화</dd></div>
+      </dl>
+    </form>
+  </dialog>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -19,16 +19,18 @@
 - 초기 두 영상 2.40 GiB·310초 원본을 62개 대표 프레임과 연락판 4장, 약 4.0 MiB 파생 자료로 변환
 - 구조화 리뷰 검증을 거쳐 음식 트럭 영상 5개, 빙하 영상 4개 사건 그룹 생성
 - 한국어·영어 전체 이중 STT와 사건별 최대 12장 스토리보드 2차 리뷰 구현
+- VAD 경계·10초 상한 구간별 언어 확률을 계산하고, 확실한 언어만 단일 전사하며 불확실한 경계만 KO/EN 후보를 남기는 적응형 STT 실험 구현
+- macOS 26 Apple `SpeechDetector` + 한국어·영어 `SpeechTranscriber` 이중 패스 구현; 원시 응답과 구절별 시간·신뢰도 보존
 - 코덱스가 장면 맥락을 보고 대표 프레임을 다시 선택하며 최종 결과는 약 5.7 MiB
 - 리모트에서도 이미지가 깨지지 않는 단일 HTML 웹 리포트와 공용 미리보기 덱 구현
 - 화면·행동·이중 STT·품질 신호·편집 제안을 원본 타임코드별로 합친 편집 판단 타임라인 구현
 - 웃긴 반응·돌발 상황·그림 되는 컷·살릴 대사 같은 특이 포인트를 별도 편집 비트로 기록하고 표시
 - 장면별 검토 결과만 다시 읽어 영상 전체를 종합하는 `video_summary` 단계와 촬영 시각순 다중 영상 템플릿 구현
 - 2026-09-02: 토큰 효율적인 전수 장면 타임라인 설계 추가
-- 외장 T7의 Osmo 추정 원본을 읽기 전용으로 탐색했으며 상세 인벤토리는 아직 생성하지 않음
+- T7의 4K·카메라 원본 400개(약 370.64 GiB)를 읽기 전용 소스로 확정하고, ExternalSSD에 검증 가능한 1080p 작업 프록시 배치 생성 중
 - 현재 Mac에서 Apple Silicon, FFmpeg 8.1.2, `ffprobe`, `uv` 사용 가능 확인
 - `uvx`로 MLX Whisper를 로컬 실행했으며 small 모델 파일럿 완료; 일반적인 NLE 앱은 표준 경로에서 확인되지 않음
-- 내부 데이터 볼륨 가용 공간은 약 50 GiB, 원본 T7은 약 253 GiB이므로 전체 프록시보다 주문형 파생 자료가 적합
+- 대용량 원본은 T7, 분석·검토용 1080p 프록시는 고정형 ExternalSSD, 코드와 작은 메타데이터는 프로젝트 저장소로 분리
 
 ## 원칙
 
@@ -51,6 +53,7 @@
 - [영상 단위 요약과 시간순 다중 영상 라이브러리](docs/video-library.md)
 - [`kyungdoc/video-summary` 검토](docs/upstream-video-summary-review.md)
 - [T7 원본 사전 점검](docs/source-assessment-2026-09-02.md)
+- [소스 미디어와 작업 미디어 위치](docs/media-locations.md)
 - [파일럿 실행 계획](docs/pilot-plan.md)
 - [결정 기록과 미결 사항](docs/decisions.md)
 
@@ -72,7 +75,20 @@ travel-video-editor/
 └── exports/            # 미리보기, 자막, OTIO/FCPXML/EDL
 ```
 
-원본과 대용량 프록시는 외장 SSD 등 별도 미디어 루트에 두고, 이 저장소에는 코드·설정·작은 메타데이터만 보관하는 구성을 권장합니다.
+현재 4K 원본은 T7, 1080p 작업 프록시는 ExternalSSD에 둡니다. 정확한 절대 경로, 현재 파일 수와 원본/프록시의 역할은 [미디어 위치 문서](docs/media-locations.md)를 기준으로 합니다. 이 저장소에는 코드·설정·작은 메타데이터만 보관합니다.
+
+## 영상 편집 스킬
+
+[`video-editor`](skills/video-editor/SKILL.md) 스킬은 검토된 장면과 원본 타임코드를 `video-edit-plan/v1` JSON으로 만든 뒤 FFmpeg로 실제 영상을 조립합니다. 여러 파일의 구간 trim과 재정렬, 프록시/원본 재연결, 속도·볼륨 조절, 제목·라벨·번인 자막, SRT 출력, 오디오 정규화와 결과 검증을 지원합니다.
+
+저장소에는 재현 가능한 스킬 원본을 함께 보존하고, 현재 Mac의 전역 설치본은 `~/.codex/skills/video-editor`에서 어디서든 호출할 수 있습니다. 샘플 편집안은 [`examples/skagway-foodcourt-highlight-v1.edit-plan.json`](examples/skagway-foodcourt-highlight-v1.edit-plan.json)에 보존합니다.
+
+```bash
+python3 ~/.codex/skills/video-editor/scripts/render_edit.py \
+  examples/skagway-foodcourt-highlight-v1.edit-plan.json \
+  --output /Volumes/ExternalSSD/travel-video-editor/exports/food-sequence-highlight/skagway-foodcourt-highlight-v1.mp4 \
+  --media-mode source
+```
 
 ## Phase 1 실행
 
@@ -85,6 +101,51 @@ uv run travel-video phase1 /absolute/path/to/video.mp4 \
 ```
 
 결과는 기본적으로 `work/phase1`에 생성됩니다. 자세한 출력과 리뷰 절차는 [Phase 1 문서](docs/phase1-pipeline.md)를 참고합니다.
+
+혼합 언어 음성만 독립적으로 분석하려면 단계별 산출물을 보존하는 적응형 STT 명령을 사용할 수 있습니다.
+
+```bash
+uv run travel-video stt-adaptive /absolute/path/to/video.mp4 \
+  --output-dir work/stt-adaptive/sample \
+  --model mlx-community/whisper-small-mlx \
+  --expected-languages ko,en \
+  --max-chunk 10
+```
+
+이 명령은 VAD 구간, 언어별 전체 확률, 라우팅 판단, 언어별 원시 전사와 정규화 결과를 각각 보존합니다. 현재 VAD는 FFmpeg 에너지 기반 구현이므로 지속적인 배경 소음에서는 최대 길이 창으로 보완합니다.
+
+macOS 26 이상에서는 Apple 온디바이스 STT를 Detector와 함께 실행할 수 있습니다.
+
+```bash
+uv run travel-video stt-apple /absolute/path/to/video.mp4 \
+  --output-dir work/stt-apple/sample \
+  --locales ko-KR,en-US \
+  --detector-sensitivity medium
+```
+
+이 경로는 한 번 추출한 16 kHz mono 음성에 대해 `SpeechDetector`가 각 언어별 `SpeechTranscriber`를 게이팅하게 합니다. 한국어와 영어 원시 결과를 각각 보존하고 구절별 시간·신뢰도, 정규화 후보와 확인용 음성 활동 범위를 생성합니다. 현재 Apple API는 Detector의 독립적인 VAD 경계를 결과로 제공하지 않으므로, 표시용 범위는 Detector를 통과한 양쪽 Transcriber 타임스탬프의 합집합임을 데이터에 명시합니다.
+
+원문과 번역을 분리한 종합 대본은 다음 세 단계로 만듭니다.
+
+```bash
+uv run travel-video build-transcript-reconciliation-packet \
+  work/stt-apple/sample/transcript.apple.json \
+  --mlx-normalized work/stt-adaptive/sample/normalized/chunks.json \
+  --timeline work/phase1/sample/timeline.context-reviewed.json \
+  --max-window 8 \
+  --output work/stt-apple/sample/reconciliation/packet.json
+
+uv run travel-video validate-transcript-reconciliation \
+  work/stt-apple/sample/reconciliation/packet.json \
+  work/stt-apple/sample/reconciliation/review.json
+
+uv run travel-video merge-transcript-reconciliation \
+  work/stt-apple/sample/reconciliation/packet.json \
+  work/stt-apple/sample/reconciliation/review.json \
+  --output work/stt-apple/sample/reconciliation/transcript.reconciled.json
+```
+
+패킷은 Detector가 통과시킨 Apple 한·영 후보를 최대 8초 대조 창으로 정렬하고 MLX 언어 확률과 장면 맥락을 보조 근거로 붙입니다. 리뷰는 한 창 안에서도 화자 전환과 한·영 전환을 여러 발화로 나눌 수 있습니다. 최종 파일의 `original_text`는 실제 발화 언어를 유지하고 번역은 `translations`에만 기록합니다.
 
 검토가 끝난 타임라인은 영상 인코딩 없이 인터랙티브 웹으로 만들 수 있습니다.
 

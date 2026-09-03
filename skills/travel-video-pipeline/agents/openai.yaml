@@ -1,0 +1,4 @@
+interface:
+  display_name: "Travel Video Pipeline"
+  short_description: "액션캠 영상을 토큰 효율적으로 색인·대본화·검토합니다"
+  default_prompt: "Use $travel-video-pipeline to build a traceable scene timeline and original-language transcript for my travel footage."

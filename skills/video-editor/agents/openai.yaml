@@ -1,0 +1,4 @@
+interface:
+  display_name: "Video Editor"
+  short_description: "Trim, caption, assemble, and validate local videos"
+  default_prompt: "Use $video-editor to turn selected source ranges into a captioned highlight video."

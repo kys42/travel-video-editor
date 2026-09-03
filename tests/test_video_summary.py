@@ -39,7 +39,36 @@ def context_timeline(
                 "average_hash": "0" * 16,
             }
         ],
-        "segments": [],
+        "segments": [
+            {
+                "segment_id": "S001",
+                "start": 0.0,
+                "end": 20.0,
+                "representative_frame": str(frame),
+                "review": {
+                    "visual_summary": "시장 입구에서 가게를 둘러본다.",
+                    "actions": ["도착", "탐색"],
+                },
+                "transcript_candidates": {
+                    "ko": [
+                        {
+                            "start": 2.0,
+                            "end": 3.0,
+                            "text": "무엇을 먹을까",
+                            "avg_logprob": -0.4,
+                        }
+                    ],
+                    "en": [
+                        {
+                            "start": 2.0,
+                            "end": 3.0,
+                            "text": "What should we eat?",
+                            "avg_logprob": -0.7,
+                        }
+                    ],
+                },
+            }
+        ],
         "context_groups": [
             {
                 "group_id": "G001",
@@ -47,7 +76,7 @@ def context_timeline(
                 "start": 0.0,
                 "end": 20.0,
                 "timecode": "00:00.000-00:20.000",
-                "segment_ids": [],
+                "segment_ids": ["S001"],
                 "context_review": {
                     "narrative_summary": "시장에 도착해 가게를 둘러본다.",
                     "dialogue_summary": "무엇을 먹을지 이야기한다.",
@@ -147,8 +176,18 @@ def test_library_sorts_videos_by_capture_time(tmp_path: Path) -> None:
         merge_video_summary(timeline_path, packet_path, review_path, output_path)
         summarized_paths.append(output_path)
 
+    proxy_root = tmp_path / "proxies"
+    (proxy_root / "day-1").mkdir(parents=True)
+    earlier_proxy = proxy_root / "day-1" / "earlier.mp4"
+    later_proxy = proxy_root / "day-1" / "later.mp4"
+    earlier_proxy.write_bytes(b"earlier proxy")
+    later_proxy.write_bytes(b"later proxy")
+    (proxy_root / "day-1" / "ignored.partial.mp4").write_bytes(b"partial")
     output = render_video_library(
-        summarized_paths, tmp_path / "library", title="아침 음식 산책"
+        summarized_paths,
+        tmp_path / "library",
+        title="아침 음식 산책",
+        proxy_root=proxy_root,
     )
     document = output.read_text(encoding="utf-8")
     manifest = json.loads((output.parent / "manifest.json").read_text())
@@ -158,5 +197,15 @@ def test_library_sorts_videos_by_capture_time(tmp_path: Path) -> None:
     assert "2026.08.25 — 2026.08.26" in document
     assert "뜻밖의 웃긴 표정" in document
     assert 'data-search="' in document
+    assert 'data-select-clip="earlier"' in document
+    assert "세부 구간" in document
+    assert "STT 원문 후보" in document
+    assert "무엇을 먹을까" in document
+    assert 'data-media-url="media/earlier.mp4"' in document
+    assert "data-preview-video" in document
+    assert (output.parent / "media" / "earlier.mp4").is_symlink()
+    assert (output.parent / "media" / "earlier.mp4").resolve() == earlier_proxy
     assert manifest["video_count"] == 2
+    assert manifest["proxy_video_count"] == 2
+    assert manifest["proxy_root"] == str(proxy_root.resolve())
     assert manifest["timelines"][0].endswith("earlier.summarized.json")

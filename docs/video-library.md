@@ -83,6 +83,17 @@ uv run travel-video render-library \
   --assets embed
 ```
 
+완료된 작업 프록시가 있으면 `--proxy-root`를 함께 지정합니다. 라이브러리는 원본 파일명과 정확히 일치하고 중복되지 않는 `.mp4`만 찾아 출력 폴더의 `media/` 아래에 심볼릭 링크로 연결합니다. 영상 파일 자체를 저장소로 복사하지 않습니다.
+
+```bash
+uv run travel-video render-library \
+  work/food-sequence/*/timeline.summarized.json \
+  --output-dir work/food-sequence/library \
+  --proxy-root /Volumes/ExternalSSD/travel-video-editor/proxies/1080p-h264
+```
+
+프록시가 연결된 클립은 오른쪽 Source Monitor에서 전체 영상을 탐색할 수 있고, 타임라인의 장면을 선택한 뒤 전용 재생 버튼을 누르면 그 장면의 시작–끝 구간만 재생합니다. 프록시가 없거나 외장 SSD가 분리된 경우에는 대표 프레임으로 안전하게 폴백합니다.
+
 라이브러리는 다음 정보를 데스크톱 중심으로 표시합니다.
 
 - 촬영 시각순 영상 목록과 하루의 빠른 순서표
@@ -92,7 +103,7 @@ uv run travel-video render-library \
 - 제목·서사·사건·태그·특이 포인트의 즉시 검색
 - 기존 개별 장면 타임라인으로 이동하는 링크
 
-이미지는 기본적으로 HTML에 내장되어 리모트나 다른 경로에서도 깨지지 않습니다. `--assets relative`는 같은 로컬 디렉터리 구조가 유지될 때만 사용합니다. 영상은 복사하거나 인코딩하지 않습니다.
+이미지는 기본적으로 HTML에 내장되어 리모트나 다른 경로에서도 깨지지 않습니다. `--assets relative`는 같은 로컬 디렉터리 구조가 유지될 때만 사용합니다. 라이브러리 렌더 단계는 영상을 복사하거나 인코딩하지 않으며, 이미 완성된 프록시를 링크만 합니다.
 
 정렬 키는 MP4의 `creation_time`, 그다음 원본 파일명입니다. 오프셋이 `+00:00`이면 화면에 `UTC`를 명시하며, 별도의 시간대 근거 없이 파일명의 숫자나 여행지를 보고 현지 시각으로 변환하지 않습니다. 날짜가 다른 파일도 같은 규칙으로 연속 표시할 수 있습니다.
 

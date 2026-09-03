@@ -204,14 +204,44 @@ def extract_sample_frames(source: Path, frame_dir: Path, config: Phase1Config) -
     log(f"  extracting low-rate frames every {config.sample_interval:g}s")
     try:
         run(command)
-    except subprocess.CalledProcessError as exc:
+    except subprocess.CalledProcessError:
         if not use_hwaccel or config.hwaccel == "videotoolbox":
-            raise RuntimeError(exc.stderr.strip() or "FFmpeg frame extraction failed") from exc
-        log("  VideoToolbox failed; retrying with software decode")
-        run(_ffmpeg_extract_command(source, destination, config, use_hwaccel=False))
+            log("  interval extraction failed; trying a single opening frame")
+        else:
+            log("  VideoToolbox failed; retrying with software decode")
+            try:
+                run(_ffmpeg_extract_command(source, destination, config, use_hwaccel=False))
+            except subprocess.CalledProcessError:
+                log("  interval extraction failed; trying a single opening frame")
     frames = sorted(frame_dir.glob("frame_*.jpg"))
     if not frames:
-        raise RuntimeError(f"No sample frames extracted from {source}")
+        run(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-y",
+                "-ss",
+                "0",
+                "-i",
+                str(source),
+                "-map",
+                "0:v:0",
+                "-an",
+                "-sn",
+                "-frames:v",
+                "1",
+                "-vf",
+                f"scale={config.thumbnail_width}:-2:flags=lanczos",
+                "-q:v",
+                "4",
+                str(frame_dir / "frame_000001.jpg"),
+            ]
+        )
+        frames = sorted(frame_dir.glob("frame_*.jpg"))
+        if not frames:
+            raise RuntimeError(f"No sample frames extracted from {source}")
     return frames
 
 

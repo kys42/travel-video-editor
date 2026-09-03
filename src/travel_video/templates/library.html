@@ -1,296 +1,526 @@
 <!doctype html>
+<!--
+THESIS: Source time is the spine; this is a review desk, never a landing page.
+OWN-WORLD: Graphite application chrome, amber selection, cyan audio evidence, square compact controls.
+STORY: Pick footage, scan scenes, expand one row, compare interpretation with raw evidence, mark a useful range.
+FIRST VIEWPORT: 44px app bar, 232px footage bin, flexible scene timeline, 330px source monitor.
+FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a second reading column.
+-->
 <html lang="ko">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light">
+  <meta name="color-scheme" content="dark">
   <title>__DOCUMENT_TITLE__</title>
   <style>
     :root {
-      --paper: #f2efe5;
-      --paper-bright: #fbf8f0;
-      --ink: #14211e;
-      --muted: #68716d;
-      --night: #0d1714;
-      --line: rgba(20,33,30,.18);
-      --line-strong: rgba(20,33,30,.48);
-      --signal: #ff5b35;
-      --acid: #d7f06a;
-      --cyan: #bce8e1;
-      --serif: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, serif;
-      --sans: "Avenir Next", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
-      --condensed: "Avenir Next Condensed", "DIN Condensed", "Apple SD Gothic Neo", sans-serif;
+      --font-ui: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Segoe UI", sans-serif;
+      --font-time: "SFMono-Regular", Menlo, Consolas, monospace;
+      --bg: #111315;
+      --panel: #171a1d;
+      --panel-2: #1d2125;
+      --panel-3: #23282d;
+      --line: #30363c;
+      --line-strong: #46505a;
+      --text: #e8ebed;
+      --text-2: #b6bdc4;
+      --muted: #89929b;
+      --faint: #808a93;
+      --accent: #f0ad4e;
+      --audio: #62b9ca;
+      --success: #75b798;
+      --danger: #df6a6a;
+      --selected: rgba(240, 173, 78, .11);
+      --hover: rgba(255, 255, 255, .05);
+      --bar-h: 44px;
     }
 
     * { box-sizing: border-box; }
-    html { scroll-behavior: smooth; }
-    body {
-      margin: 0;
-      color: var(--ink);
-      background:
-        repeating-linear-gradient(90deg, transparent 0 55px, rgba(20,33,30,.018) 56px),
-        var(--paper);
-      font-family: var(--sans);
-      font-size: 15px;
-      line-height: 1.55;
-      -webkit-font-smoothing: antialiased;
-    }
-    body::after {
-      position: fixed;
-      inset: 0;
-      z-index: 100;
-      pointer-events: none;
-      content: "";
-      opacity: .13;
-      mix-blend-mode: multiply;
-      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.13'/%3E%3C/svg%3E");
-    }
+    html, body { width: 100%; height: 100%; }
+    body { margin: 0; overflow: hidden; color: var(--text); background: var(--bg); font-family: var(--font-ui); font-size: 12px; line-height: 1.45; -webkit-font-smoothing: antialiased; }
+    button, input { font: inherit; }
+    button, summary, a { cursor: pointer; }
+    button { color: inherit; }
     img { display: block; max-width: 100%; }
     a { color: inherit; }
-    button, input { font: inherit; }
+    [hidden] { display: none !important; }
+    :focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+    .skip-link { position: fixed; top: 4px; left: 8px; z-index: 200; padding: 7px 10px; color: #211a0f; background: var(--accent); transform: translateY(-160%); }
+    .skip-link:focus { transform: translateY(0); }
 
-    .masthead { position: relative; overflow: hidden; color: #eff4eb; background: var(--night); }
-    .masthead::before {
-      position: absolute;
-      top: -22vw;
-      right: 8vw;
-      width: 47vw;
-      height: 47vw;
-      border: 1px solid rgba(215,240,106,.16);
-      border-radius: 50%;
-      content: "";
-      box-shadow: 0 0 0 8vw rgba(215,240,106,.025), 0 0 0 16vw rgba(215,240,106,.018);
+    .appbar { display: grid; grid-template-columns: minmax(280px, 1fr) auto minmax(250px, 1fr); align-items: center; height: var(--bar-h); padding: 0 10px; border-bottom: 1px solid var(--line-strong); background: #191c1f; }
+    .identity, .dataset, .app-meta { display: flex; align-items: center; min-width: 0; }
+    .identity { gap: 8px; }
+    .mark { display: grid; grid-template-columns: repeat(2, 4px); align-items: end; gap: 2px; width: 16px; height: 16px; padding: 3px; border: 1px solid var(--line-strong); border-radius: 3px; }
+    .mark i { display: block; background: var(--accent); }
+    .mark i:first-child { height: 8px; }
+    .mark i:last-child { height: 5px; }
+    .identity strong { font-size: 12px; font-weight: 650; }
+    .identity span:last-child { min-width: 0; overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+    .identity span:last-child::before { margin-right: 8px; color: var(--faint); content: "/"; }
+    .dataset { gap: 13px; color: var(--muted); font: 9px var(--font-time); }
+    .dataset b { color: var(--text-2); font-weight: 500; }
+    .app-meta { justify-content: flex-end; gap: 10px; color: var(--faint); font: 9px var(--font-time); }
+    .key { padding: 2px 5px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); background: #121416; }
+
+    .workspace { display: grid; grid-template-columns: 232px minmax(520px, 1fr) 330px; height: calc(100vh - var(--bar-h) - 24px); min-height: 0; }
+    .panel { min-width: 0; min-height: 0; background: var(--panel); }
+    .panel-titlebar { display: flex; align-items: center; justify-content: space-between; min-height: 36px; padding: 0 10px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
+    .panel-titlebar h2 { margin: 0; font-size: 11px; font-weight: 650; }
+    .panel-titlebar span { color: var(--faint); font: 9px var(--font-time); }
+
+    .footage-panel { display: grid; grid-template-rows: auto auto minmax(0, 1fr); border-right: 1px solid var(--line-strong); }
+    .search { position: relative; padding: 7px; border-bottom: 1px solid var(--line); }
+    .search svg { position: absolute; top: 50%; left: 16px; width: 13px; color: var(--muted); transform: translateY(-50%); }
+    .search input { width: 100%; height: 30px; padding: 0 8px 0 28px; border: 1px solid var(--line); border-radius: 5px; outline: 0; color: var(--text); background: rgba(0, 0, 0, .18); }
+    .search input::placeholder { color: var(--faint); }
+    .search input:focus { border-color: var(--accent); }
+    .footage-scroll, .timeline-scroll { min-height: 0; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+    .footage-list { margin: 0; padding: 0; list-style: none; }
+    .footage-item button { display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 8px; width: 100%; min-height: 57px; padding: 8px; border: 0; border-bottom: 1px solid var(--line); text-align: left; background: transparent; }
+    .footage-item button:hover { background: var(--hover); }
+    .footage-item button[aria-current="true"] { background: var(--selected); box-shadow: inset 2px 0 var(--accent); }
+    .footage-item img { width: 62px; height: 39px; object-fit: cover; background: #090a0b; }
+    .footage-item button > span { min-width: 0; }
+    .footage-item strong, .footage-item small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .footage-item strong { margin: 0 0 2px; font-size: 10px; font-weight: 650; }
+    .footage-item small { color: var(--muted); font-size: 8px; }
+    .footage-item i { display: flex; justify-content: space-between; margin-top: 4px; color: var(--faint); font: normal 8px var(--font-time); }
+    .footage-item i b { font-weight: 400; }
+    .empty-search { margin: 0; padding: 24px 12px; color: var(--muted); text-align: center; }
+    .empty-search strong, .empty-search span { display: block; }
+    .empty-search strong { margin-bottom: 3px; color: var(--text-2); font-size: 10px; }
+    .empty-search span { font-size: 9px; }
+
+    .timeline-panel { display: grid; grid-template-rows: minmax(0, 1fr); overflow: hidden; border-right: 1px solid var(--line-strong); }
+    .timeline-scroll { width: 100%; height: 100%; scroll-padding-block: 6px 18px; }
+    .clip-panel { min-height: 100%; }
+    .clip-header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 20px; min-height: 78px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+    .clip-title { min-width: 0; }
+    .clip-title > span { color: var(--faint); font: 8px var(--font-time); }
+    .clip-title h1 { margin: 3px 0 2px; font-size: 16px; font-weight: 680; letter-spacing: -.02em; }
+    .clip-title p { margin: 0; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+    .clip-header dl { display: grid; grid-template-columns: repeat(4, auto); align-content: start; gap: 14px; margin: 4px 0 0; }
+    .clip-header dl div { min-width: 38px; }
+    .clip-header dt { color: var(--faint); font-size: 8px; }
+    .clip-header dd { margin: 2px 0 0; color: var(--text-2); font: 9px var(--font-time); }
+    .video-summary { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; min-height: 42px; padding: 7px 12px; border-bottom: 1px solid var(--line); background: #14171a; }
+    .video-summary > p { margin: 0; overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+    .tag-row { display: flex; gap: 4px; }
+    .tag-row span { padding: 2px 5px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); font-size: 8px; white-space: nowrap; }
+    .detail-link { color: var(--text-2); font-size: 9px; text-decoration: none; white-space: nowrap; }
+    .detail-link:hover { color: var(--accent); }
+    .detail-link.is-disabled { color: var(--faint); cursor: default; }
+
+    .scene-ruler { display: flex; min-height: 43px; padding: 5px 8px 6px; overflow-x: auto; border-bottom: 1px solid var(--line); background: #14171a; }
+    .scene-ruler button { min-width: 48px; padding: 4px 6px; overflow: hidden; border: 0; border-left: 1px solid var(--line-strong); color: var(--muted); background: var(--panel-2); text-align: left; }
+    .scene-ruler button:last-child { border-right: 1px solid var(--line-strong); }
+    .scene-ruler button:hover { color: var(--text); background: var(--hover); }
+    .scene-ruler button[aria-current="true"] { color: var(--accent); background: var(--selected); box-shadow: inset 0 -2px var(--accent); }
+    .scene-ruler b, .scene-ruler span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .scene-ruler b { font-size: 9px; }
+    .scene-ruler span { margin-top: 3px; font: 8px var(--font-time); }
+
+    .scene { border-bottom: 1px solid var(--line); scroll-margin-top: 6px; }
+    .scene[hidden] { display: none; }
+    .scene-summary { display: grid; grid-template-columns: 42px 64px 112px minmax(180px, 1fr) minmax(150px, .75fr) 82px; gap: 9px; align-items: start; min-height: 86px; padding: 8px 9px 8px 0; list-style: none; user-select: none; }
+    .scene-summary::-webkit-details-marker { display: none; }
+    .scene-summary:hover { background: var(--hover); }
+    .scene[open] > .scene-summary { background: var(--selected); box-shadow: inset 2px 0 var(--accent); }
+    .scene-sequence { padding-top: 2px; color: var(--faint); font: 9px var(--font-time); text-align: center; }
+    .scene-time strong, .scene-time small { display: block; }
+    .scene-time strong { color: var(--accent); font: 10px var(--font-time); }
+    .scene-time small { margin-top: 5px; color: var(--faint); font: 8px var(--font-time); }
+    .scene-thumb { position: relative; width: 112px; height: 66px; overflow: hidden; border: 1px solid var(--line); background: #090a0b; }
+    .scene-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .scene-thumb i { position: absolute; right: 3px; bottom: 3px; padding: 2px 4px; color: #fff; background: rgba(0, 0, 0, .72); font: normal 8px var(--font-time); }
+    .scene-primary, .scene-dialogue { min-width: 0; }
+    .scene-primary strong { display: block; margin: 1px 0 4px; font-size: 12px; font-weight: 650; }
+    .scene-primary p, .scene-dialogue p { display: -webkit-box; margin: 0; overflow: hidden; color: var(--muted); font-size: 9px; line-height: 1.5; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+    .scene-dialogue { padding-left: 9px; border-left: 1px solid var(--line); }
+    .scene-dialogue b { display: block; margin-bottom: 4px; color: var(--audio); font-size: 8px; font-weight: 650; }
+    .scene-state { display: grid; justify-items: end; gap: 4px; padding-top: 1px; color: var(--faint); font: 8px var(--font-time); }
+    .scene-state > b { padding: 2px 5px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); font-size: 8px; font-weight: 500; }
+    .scene-state .highlight-state { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+    .scene-state i { width: 7px; height: 7px; margin: 3px 3px 0 0; border-right: 1px solid var(--muted); border-bottom: 1px solid var(--muted); transform: rotate(45deg); transition: transform 160ms cubic-bezier(.2, .7, .2, 1); }
+    .scene[open] .scene-state i { transform: translateY(3px) rotate(225deg); }
+
+    .scene-depth { padding: 0 12px 15px 51px; background: #121518; }
+    .analysis-grid { display: grid; grid-template-columns: 1fr 1fr minmax(250px, .85fr); border-top: 1px solid var(--line-strong); border-bottom: 1px solid var(--line); }
+    .analysis-grid > section { min-width: 0; padding: 10px 12px; border-right: 1px solid var(--line); }
+    .analysis-grid > section:first-child { padding-left: 0; }
+    .analysis-grid > section:last-child { padding-right: 0; border-right: 0; }
+    .depth-label, .cell-label { display: block; margin-bottom: 5px; color: var(--muted); font-size: 8px; font-weight: 650; }
+    .depth-label--audio { color: var(--audio); }
+    .depth-label--edit { color: var(--accent); }
+    .analysis-grid h3 { margin: 0 0 4px; font-size: 12px; }
+    .analysis-grid p { margin: 0; color: var(--text-2); font-size: 9px; line-height: 1.55; }
+    .scene-reconciled { max-height: 120px; margin-top: 7px; padding-top: 6px; overflow-y: auto; border-top: 1px solid var(--line); }
+    .scene-reconciled > b { display: block; margin-bottom: 4px; color: var(--audio); font-size: 8px; }
+    .notable-item { display: grid; grid-template-columns: 48px 1fr; gap: 7px; padding: 5px 0; border-top: 1px solid var(--line); }
+    .notable-item:first-of-type { border-top: 0; }
+    .notable-item > span { color: var(--accent); font: 8px var(--font-time); }
+    .notable-item strong { display: block; font-size: 9px; }
+    .notable-item p { margin-top: 2px; color: var(--muted); }
+    .notable-item small { display: block; margin-top: 3px; color: var(--text-2); font-size: 8px; }
+    .empty-detail { margin: 0; color: var(--faint); font-size: 9px; }
+
+    .segment-section, .storyboard-section { margin-top: 12px; }
+    .segment-section > header, .storyboard-section > header { display: flex; align-items: end; justify-content: space-between; min-height: 31px; padding-bottom: 6px; }
+    .segment-section header div, .storyboard-section header div { min-width: 0; }
+    .segment-section header strong, .storyboard-section header strong { margin-right: 8px; font-size: 10px; }
+    .segment-section header div span, .storyboard-section header div span { color: var(--muted); font-size: 8px; }
+    .segment-section header > span, .storyboard-section header > span { color: var(--faint); font: 8px var(--font-time); white-space: nowrap; }
+    .segment-list { border-top: 1px solid var(--line-strong); }
+    .segment-row { display: grid; grid-template-columns: 68px 104px minmax(170px, .9fr) minmax(220px, 1.1fr); gap: 9px; min-height: 78px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+    .segment-time strong, .segment-time span, .segment-time small { display: block; }
+    .segment-time strong { color: var(--text-2); font: 9px var(--font-time); }
+    .segment-time span { color: var(--muted); font: 8px var(--font-time); }
+    .segment-time small { margin-top: 7px; color: var(--faint); font: 8px var(--font-time); }
+    .segment-frame { display: grid; width: 104px; height: 59px; place-items: center; overflow: hidden; border: 1px solid var(--line); color: var(--faint); background: #090a0b; font: 8px var(--font-time); }
+    .segment-frame img { width: 100%; height: 100%; object-fit: cover; }
+    .segment-action { min-width: 0; }
+    .segment-action p { margin: 0; color: var(--text-2); font-size: 9px; line-height: 1.5; }
+    .action-tags { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 5px; }
+    .action-tags span { padding: 1px 4px; border: 1px solid var(--line); border-radius: 2px; color: var(--muted); font-size: 8px; }
+    .segment-stt { min-width: 0; padding-left: 9px; border-left: 1px solid var(--line); }
+    .segment-stt .cell-label { color: var(--audio); }
+    .stt-line { display: grid; grid-template-columns: 18px 42px minmax(0, 1fr); gap: 4px; margin: 0 0 3px; color: var(--text-2); font-size: 9px; line-height: 1.4; }
+    .stt-language { color: var(--audio); font: 8px var(--font-time); text-transform: uppercase; }
+    .stt-time { color: var(--faint); font: 8px var(--font-time); }
+    .stt-line--low { opacity: .62; }
+    .no-stt { margin: 0; color: var(--faint); font-size: 9px; }
+
+    .story-strip { display: grid; grid-template-columns: repeat(auto-fill, minmax(126px, 1fr)); gap: 5px; }
+    .story-frame { min-width: 0; margin: 0; }
+    .story-frame img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; border: 1px solid var(--line); }
+    .story-frame.is-representative img { border-color: var(--accent); }
+    .story-frame figcaption { display: flex; justify-content: space-between; gap: 5px; margin-top: 3px; color: var(--muted); font-size: 8px; }
+    .story-frame figcaption b { color: var(--text-2); font: 8px var(--font-time); }
+    .story-frame figcaption span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .monitor-panel { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); background: var(--panel); }
+    .source-frame { position: relative; aspect-ratio: 16 / 9; margin: 0; overflow: hidden; border-bottom: 1px solid var(--line); background: #090a0b; }
+    .source-frame img, .source-frame video { width: 100%; height: 100%; object-fit: contain; background: #090a0b; }
+    .source-frame figcaption { position: absolute; top: 0; right: 0; left: 0; z-index: 2; display: flex; justify-content: space-between; padding: 7px 8px 24px; color: #fff; background: linear-gradient(rgba(0, 0, 0, .78), transparent); font: 9px var(--font-time); pointer-events: none; }
+    .proxy-state { padding: 2px 5px; border: 1px solid rgba(255, 255, 255, .35); border-radius: 3px; font: 8px var(--font-ui); }
+    .transport { display: grid; grid-template-columns: 27px 1fr auto; align-items: center; gap: 8px; min-height: 36px; padding: 0 8px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
+    .play { display: grid; width: 25px; height: 25px; padding: 0; place-items: center; border: 1px solid var(--line-strong); border-radius: 4px; background: transparent; }
+    .play:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+    .play:disabled { color: var(--faint); cursor: not-allowed; opacity: .55; }
+    .play svg { width: 11px; }
+    .play [data-icon-pause] { display: none; }
+    .play[aria-pressed="true"] [data-icon-play] { display: none; }
+    .play[aria-pressed="true"] [data-icon-pause] { display: block; }
+    .scrub { position: relative; height: 3px; background: var(--line-strong); }
+    .scrub::before { display: block; width: var(--range-progress, 0%); height: 100%; background: var(--accent); content: ""; }
+    .monitor-time { color: var(--text-2); font: 9px var(--font-time); }
+    .monitor-copy { min-height: 0; padding: 11px; overflow: auto; }
+    .monitor-copy > span { color: var(--faint); font: 8px var(--font-time); }
+    .monitor-copy h3 { margin: 4px 0 5px; font-size: 14px; }
+    .monitor-copy p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.55; }
+    .monitor-facts { display: grid; grid-template-columns: 1fr 1fr; margin: 12px 0 0; border-top: 1px solid var(--line); }
+    .monitor-facts div { padding: 7px 0; border-bottom: 1px solid var(--line); }
+    .monitor-facts div:nth-child(odd) { border-right: 1px solid var(--line); }
+    .monitor-facts div:nth-child(even) { padding-left: 8px; }
+    .monitor-facts dt { color: var(--faint); font-size: 8px; }
+    .monitor-facts dd { margin: 2px 0 0; color: var(--text-2); font: 9px var(--font-time); }
+
+    .statusbar { display: flex; align-items: center; justify-content: space-between; height: 24px; padding: 0 8px; border-top: 1px solid var(--line-strong); color: var(--faint); background: #16191c; font: 8px var(--font-time); }
+    .statusbar span:first-child::before { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: var(--success); content: ""; }
+    .toast { position: fixed; right: 12px; bottom: 35px; z-index: 100; max-width: 360px; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: 5px; color: var(--text); background: var(--panel-3); box-shadow: 0 8px 26px rgba(0, 0, 0, .28); opacity: 0; pointer-events: none; transform: translateY(6px); transition: opacity 160ms cubic-bezier(.2, .7, .2, 1), transform 160ms cubic-bezier(.2, .7, .2, 1); }
+    .toast.is-visible { opacity: 1; transform: translateY(0); }
+
+    @media (max-width: 1240px) {
+      .workspace { grid-template-columns: 210px minmax(480px, 1fr) 300px; }
+      .scene-summary { grid-template-columns: 38px 60px 96px minmax(170px, 1fr) 76px; }
+      .scene-thumb { width: 96px; height: 58px; }
+      .scene-dialogue { display: none; }
+      .analysis-grid { grid-template-columns: 1fr 1fr; }
+      .analysis-grid > section:nth-child(2) { border-right: 0; }
+      .analysis-grid > section:last-child { grid-column: 1 / -1; padding-left: 0; border-top: 1px solid var(--line); }
     }
-    .topbar {
-      position: relative;
-      z-index: 1;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      min-height: 72px;
-      padding: 0 clamp(28px,5vw,78px);
-      border-bottom: 1px solid rgba(239,244,235,.15);
-      font-family: var(--condensed);
-      font-size: 11px;
-      letter-spacing: .15em;
-      text-transform: uppercase;
-    }
-    .brand { display: flex; align-items: center; gap: 13px; font-weight: 800; }
-    .brand i { display: grid; width: 32px; height: 32px; place-items: center; color: var(--night); background: var(--acid); font-style: normal; letter-spacing: 0; }
-    .topbar > span { color: rgba(239,244,235,.5); }
-    .hero {
-      position: relative;
-      z-index: 1;
-      display: grid;
-      grid-template-columns: minmax(0,1.25fr) minmax(420px,.75fr);
-      gap: clamp(40px,8vw,130px);
-      max-width: 1580px;
-      margin: auto;
-      padding: clamp(64px,7vw,104px) clamp(28px,5vw,78px) 74px;
-    }
-    .kicker, .section-label { color: var(--signal); font-family: var(--condensed); font-size: 10px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; }
-    .hero h1 { max-width: 880px; margin: 16px 0 24px; font-family: var(--serif); font-size: clamp(50px,6vw,92px); font-weight: 400; letter-spacing: -.045em; line-height: .94; word-break: keep-all; }
-    .hero-copy > p { max-width: 680px; margin: 0; color: rgba(239,244,235,.62); font-size: 16px; }
-    .hero-facts { align-self: end; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); margin: 0; border-top: 1px solid rgba(239,244,235,.34); }
-    .hero-facts div { padding: 15px 0; border-bottom: 1px solid rgba(239,244,235,.13); }
-    .hero-facts div:nth-child(odd) { padding-right: 24px; border-right: 1px solid rgba(239,244,235,.13); }
-    .hero-facts div:nth-child(even) { padding-left: 24px; }
-    .hero-facts dt { color: rgba(239,244,235,.42); font-family: var(--condensed); font-size: 9px; letter-spacing: .14em; text-transform: uppercase; }
-    .hero-facts dd { margin: 3px 0 0; font-family: var(--condensed); font-size: 18px; font-weight: 800; }
 
-    .run-sheet { color: var(--ink); background: var(--acid); }
-    .run-inner { display: grid; grid-template-columns: 180px 1fr; gap: 30px; max-width: 1580px; margin: auto; padding: 28px clamp(28px,5vw,78px); }
-    .run-title { padding-top: 4px; font-family: var(--condensed); font-size: 11px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
-    .run-sheet ol { display: grid; grid-template-columns: repeat(__VIDEO_COUNT__,minmax(230px,1fr)); gap: 0; margin: 0; padding: 0; overflow-x: auto; list-style: none; }
-    .run-sheet li { min-width: 0; padding: 3px 18px 3px 14px; border-left: 1px solid rgba(20,33,30,.3); }
-    .run-sheet li span { color: var(--signal); font-family: var(--condensed); font-size: 10px; font-weight: 800; }
-    .run-sheet li strong, .run-sheet li small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .run-sheet li strong { margin: 2px 0; font-size: 12px; }
-    .run-sheet li small { color: rgba(20,33,30,.62); font-size: 9px; }
-
-    .library { max-width: 1580px; margin: auto; padding: 58px clamp(28px,5vw,78px) 120px; }
-    .toolbar {
-      position: sticky;
-      top: 0;
-      z-index: 50;
-      display: grid;
-      grid-template-columns: minmax(280px,580px) auto;
-      justify-content: space-between;
-      align-items: center;
-      gap: 30px;
-      margin-bottom: 26px;
-      padding: 13px 0 16px;
-      border-bottom: 1px solid var(--line-strong);
-      background: rgba(242,239,229,.94);
-      backdrop-filter: blur(14px);
-    }
-    .search { position: relative; }
-    .search::before { position: absolute; top: 50%; left: 3px; content: "⌕"; font-size: 22px; transform: translateY(-54%); }
-    .search input { width: 100%; padding: 10px 12px 10px 32px; border: 0; border-bottom: 1px solid var(--line-strong); outline: 0; color: var(--ink); background: transparent; }
-    .search input:focus { border-color: var(--signal); }
-    .result { color: var(--muted); font-family: var(--condensed); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
-
-    .clip {
-      position: relative;
-      display: grid;
-      grid-template-columns: 145px minmax(0,1fr);
-      max-width: 100%;
-      border-top: 1px solid var(--line-strong);
-    }
-    .clip:last-child { border-bottom: 1px solid var(--line-strong); }
-    .clip[hidden] { display: none; }
-    .clip-sequence { position: relative; display: flex; flex-direction: column; padding: 32px 24px 28px 0; }
-    .clip-sequence::after { position: absolute; top: 0; right: 20px; bottom: 0; width: 1px; background: var(--line); content: ""; }
-    .clip-sequence span { position: relative; z-index: 1; display: grid; width: 34px; height: 34px; place-items: center; color: #fff; border-radius: 50%; background: var(--signal); font-family: var(--condensed); font-size: 12px; font-weight: 800; }
-    .clip-sequence strong { margin-top: 24px; font-family: var(--condensed); font-size: 21px; }
-    .clip-sequence small { margin-top: 4px; color: var(--muted); font-family: var(--condensed); font-size: 9px; }
-    .clip-body { min-width: 0; padding: 30px 0 38px 24px; }
-    .clip-head { display: grid; grid-template-columns: minmax(240px,330px) minmax(320px,1fr) 128px; gap: clamp(24px,3.2vw,48px); align-items: stretch; }
-    .clip-head figure { position: relative; min-width: 0; min-height: 205px; margin: 0; overflow: hidden; background: #d9d5ca; }
-    .clip-head figure img { width: 100%; height: 100%; object-fit: cover; filter: saturate(.9); transition: transform .6s cubic-bezier(.2,.7,.2,1); }
-    .clip:hover .clip-head figure img { transform: scale(1.025); }
-    .clip-head figcaption { position: absolute; right: 8px; bottom: 8px; padding: 3px 7px; color: #fff; background: rgba(13,23,20,.78); font-family: var(--condensed); font-size: 9px; }
-    .clip-intro { min-width: 0; align-self: center; }
-    .clip-kicker { display: flex; justify-content: space-between; gap: 16px; color: var(--signal); font-family: var(--condensed); font-size: 9px; font-weight: 800; letter-spacing: .09em; }
-    .clip-kicker span:last-child { overflow: hidden; color: var(--muted); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
-    .clip-intro h2 { margin: 8px 0 8px; font-family: var(--serif); font-size: clamp(30px,3vw,45px); font-weight: 400; line-height: 1; letter-spacing: -.025em; word-break: keep-all; }
-    .one-line { margin: 0; font-size: 14px; font-weight: 700; word-break: keep-all; }
-    .synopsis { max-width: 760px; margin: 12px 0 0; color: var(--muted); font-size: 12px; word-break: keep-all; }
-    .tag-row { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 15px; }
-    .tag-row span { padding: 3px 7px; border: 1px solid var(--line); color: var(--muted); font-size: 9px; }
-    .clip-stats { margin: 0; padding-left: 18px; border-left: 1px solid var(--line); }
-    .clip-stats div { display: flex; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
-    .clip-stats dt { color: var(--muted); font-size: 9px; }
-    .clip-stats dd { margin: 0; font-family: var(--condensed); font-size: 12px; font-weight: 800; }
-
-    .clip-detail { margin-top: 25px; padding-top: 22px; border-top: 1px solid var(--line); }
-    .clip-detail:has(.clip-notables) { display: grid; grid-template-columns: minmax(0,1.5fr) minmax(300px,.5fr); gap: clamp(28px,4vw,64px); }
-    .clip-section-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 15px; }
-    .clip-section-head strong { font-family: var(--serif); font-size: 20px; font-weight: 400; }
-    .clip-events ol { position: relative; display: grid; grid-template-columns: repeat(auto-fit,minmax(210px,1fr)); gap: 0; margin: 0; padding: 0; list-style: none; }
-    .event { display: grid; grid-template-columns: 42px 10px 1fr; gap: 8px; min-width: 0; padding: 11px 16px 11px 0; border-top: 1px solid var(--line); }
-    .event-time { color: var(--signal); font-family: var(--condensed); font-size: 10px; font-weight: 800; }
-    .event-marker { width: 7px; height: 7px; margin-top: 5px; border: 1px solid var(--signal); border-radius: 50%; background: var(--paper); }
-    .event.is-highlight .event-marker { background: var(--signal); }
-    .event-id { display: block; margin-bottom: 3px; color: var(--muted); font-family: var(--condensed); font-size: 8px; letter-spacing: .09em; }
-    .event strong { display: block; font-size: 11px; line-height: 1.4; word-break: keep-all; }
-    .event p { margin: 6px 0 0; color: var(--muted); font-size: 9px; line-height: 1.5; word-break: keep-all; }
-
-    .clip-notables { padding: 17px 19px; color: #edf3e9; background: var(--night); }
-    .clip-notables .section-label { color: var(--acid); }
-    .clip-notables ul { display: grid; gap: 0; margin: 13px 0 0; padding: 0; list-style: none; }
-    .clip-notables li { display: grid; grid-template-columns: 48px 1fr; gap: 4px 10px; padding: 10px 0; border-top: 1px solid rgba(255,255,255,.13); }
-    .clip-notables li > span { color: var(--signal); font-family: var(--condensed); font-size: 9px; }
-    .clip-notables strong { font-family: var(--serif); font-size: 15px; font-weight: 400; line-height: 1.25; word-break: keep-all; }
-    .clip-notables small { grid-column: 2; color: rgba(237,243,233,.5); font-size: 8px; line-height: 1.45; word-break: keep-all; }
-    .clip-body footer { display: flex; justify-content: flex-end; margin-top: 21px; }
-    .detail-link { padding: 8px 0; border-bottom: 1px solid var(--ink); font-family: var(--condensed); font-size: 10px; font-weight: 800; letter-spacing: .04em; text-decoration: none; }
-    .detail-link span { color: var(--signal); }
-    .detail-link.is-disabled { opacity: .4; border: 0; }
-
-    .page-footer { display: flex; justify-content: space-between; gap: 30px; padding: 30px clamp(28px,5vw,78px); color: rgba(239,244,235,.48); background: var(--night); font-family: var(--condensed); font-size: 9px; letter-spacing: .1em; }
-
-    @media (max-width: 1100px) {
-      .hero { grid-template-columns: 1fr; }
-      .run-inner { grid-template-columns: 1fr; }
-      .clip { grid-template-columns: 105px minmax(0,1fr); }
-      .clip-head { grid-template-columns: 250px minmax(0,1fr); }
-      .clip-stats { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3,1fr); padding: 0; border-top: 1px solid var(--line); border-left: 0; }
-      .clip-stats div { padding: 8px 12px; }
-      .clip-detail:has(.clip-notables) { grid-template-columns: 1fr; }
+    @media (max-width: 980px) {
+      body { overflow: auto; }
+      .appbar { position: sticky; top: 0; z-index: 20; grid-template-columns: 1fr auto; }
+      .dataset { display: none; }
+      .workspace { display: block; height: auto; }
+      .footage-panel { max-height: 250px; border-right: 0; border-bottom: 1px solid var(--line-strong); }
+      .timeline-panel { display: block; overflow: visible; border-right: 0; }
+      .timeline-scroll { height: auto; overflow: visible; }
+      .monitor-panel { min-height: 540px; border-top: 1px solid var(--line-strong); }
+      .statusbar { display: none; }
     }
 
-    @media (max-width: 720px) {
-      .topbar { min-height: 60px; padding: 0 18px; }
-      .topbar > span { display: none; }
-      .hero { padding: 52px 20px 55px; }
-      .hero h1 { font-size: 46px; }
-      .hero-facts { grid-template-columns: 1fr 1fr; }
-      .run-inner { padding: 22px 20px; }
-      .run-sheet ol { grid-template-columns: 1fr; }
-      .run-sheet li { padding: 8px 0; border-top: 1px solid rgba(20,33,30,.24); border-left: 0; }
-      .library { padding: 34px 14px 70px; }
-      .toolbar { grid-template-columns: 1fr; gap: 8px; }
-      .result { text-align: right; }
-      .clip { grid-template-columns: 34px minmax(0,1fr); }
-      .clip-sequence { padding: 18px 0; }
-      .clip-sequence::after { right: 15px; }
-      .clip-sequence span { width: 29px; height: 29px; font-size: 10px; }
-      .clip-sequence strong, .clip-sequence small { display: none; }
-      .clip-body { padding: 18px 0 28px 10px; }
-      .clip-head { grid-template-columns: 1fr; gap: 18px; }
-      .clip-head figure { min-height: 0; aspect-ratio: 16/9; }
-      .clip-intro h2 { font-size: 31px; }
-      .clip-stats { grid-template-columns: 1fr; }
-      .clip-events ol { grid-template-columns: 1fr; }
-      .clip-notables { padding: 15px; }
-      .page-footer { flex-direction: column; }
+    @media (max-width: 680px) {
+      .app-meta { display: none; }
+      .appbar { grid-template-columns: 1fr; }
+      .identity span:last-child { display: none; }
+      .clip-header { grid-template-columns: 1fr; }
+      .clip-header dl { display: none; }
+      .video-summary { grid-template-columns: 1fr; }
+      .tag-row, .detail-link { display: none; }
+      .scene-summary { grid-template-columns: 40px 55px 82px minmax(0, 1fr); }
+      .scene-thumb { width: 82px; height: 50px; }
+      .scene-state { display: none; }
+      .scene-depth { padding-left: 10px; }
+      .analysis-grid { grid-template-columns: 1fr; }
+      .analysis-grid > section { padding: 9px 0; border-right: 0; border-bottom: 1px solid var(--line); }
+      .analysis-grid > section:last-child { grid-column: auto; }
+      .segment-row { grid-template-columns: 60px 84px minmax(0, 1fr); }
+      .segment-frame { width: 84px; height: 50px; }
+      .segment-stt { grid-column: 2 / -1; padding: 7px 0 0; border-top: 1px solid var(--line); border-left: 0; }
     }
 
     @media (prefers-reduced-motion: reduce) {
-      html { scroll-behavior: auto; }
-      *, *::before, *::after { transition-duration: .01ms !important; }
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
     }
   </style>
 </head>
 <body>
-  <header class="masthead">
-    <div class="topbar">
-      <div class="brand"><i>TV</i><strong>Travel Video · Tape Log</strong></div>
-      <span>Chronological video intelligence</span>
-    </div>
-    <div class="hero">
-      <div class="hero-copy">
-        <span class="kicker">MULTI-VIDEO INDEX / PHASE 01</span>
-        <h1>__TITLE__</h1>
-        <p>장면별 분석이 끝난 영상을 다시 종합해, 각 파일의 전체 흐름과 실제로 일어난 사건을 촬영 시각 순서대로 연결한 데스크톱 편집 로그입니다.</p>
-      </div>
-      <dl class="hero-facts">
-        <div><dt>Date metadata</dt><dd>__DATE_LABEL__</dd></div>
-        <div><dt>Capture range</dt><dd>__TIME_RANGE__</dd></div>
-        <div><dt>Videos</dt><dd>__VIDEO_COUNT__</dd></div>
-        <div><dt>Total runtime</dt><dd>__TOTAL_DURATION__</dd></div>
-        <div><dt>Scene events</dt><dd>__TOTAL_SCENES__</dd></div>
-        <div><dt>Notable beats</dt><dd>__TOTAL_NOTABLES__</dd></div>
-      </dl>
-    </div>
+  <a class="skip-link" href="#timeline">장면 타임라인으로 건너뛰기</a>
+  <header class="appbar">
+    <div class="identity"><span class="mark" aria-hidden="true"><i></i><i></i></span><strong>Travel Video Editor</strong><span>__TITLE__</span></div>
+    <div class="dataset"><span><b>__VIDEO_COUNT__</b> CLIPS</span><span><b>__TOTAL_SCENES__</b> SCENES</span><span><b>__TOTAL_DURATION__</b></span></div>
+    <div class="app-meta"><span>__DATE_LABEL__ · __TIME_RANGE__</span><span class="key">/ 검색</span></div>
   </header>
 
-  <section class="run-sheet" aria-label="영상 순서 요약">
-    <div class="run-inner">
-      <div class="run-title">Run of day / 시간순</div>
-      <ol>__RUN_LINES__</ol>
-    </div>
-  </section>
+  <main class="workspace">
+    <aside class="panel footage-panel" aria-label="영상 목록">
+      <div class="panel-titlebar"><h2>Footage</h2><span><b data-count>__VIDEO_COUNT__</b> clips</span></div>
+      <label class="search"><span hidden>영상과 장면 검색</span><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="4.5" stroke="currentColor"/><path d="m10.5 10.5 3 3" stroke="currentColor" stroke-linecap="round"/></svg><input type="search" placeholder="클립·장면·대화 검색" autocomplete="off" data-search></label>
+      <div class="footage-scroll"><ol class="footage-list">__FOOTAGE_ITEMS__</ol><p class="empty-search" data-empty hidden><strong>일치하는 장면이 없습니다.</strong><span>다른 장면명, 행동, 대사로 검색해보세요.</span></p></div>
+    </aside>
 
-  <main class="library">
-    <div class="toolbar">
-      <label class="search"><span hidden>영상 검색</span><input type="search" placeholder="영상, 사건, 장소, 태그 검색" autocomplete="off" data-search></label>
-      <span class="result"><b data-count>__VIDEO_COUNT__</b> / __VIDEO_COUNT__ videos</span>
-    </div>
-    <section aria-label="시간순 영상 목록" data-clips>__CLIPS__</section>
+    <section class="panel timeline-panel" id="timeline" tabindex="-1" aria-label="장면 타임라인">
+      <div class="timeline-scroll">__CLIP_PANELS__</div>
+    </section>
+
+    <aside class="panel monitor-panel" aria-label="선택 장면 소스 모니터">
+      <div class="panel-titlebar"><h2>Source Monitor</h2><span data-preview-code>FRAME</span></div>
+      <figure class="source-frame"><img src="__INITIAL_PREVIEW_URL__" alt="__INITIAL_PREVIEW_TITLE__ 대표 프레임" data-preview-image><video controls playsinline preload="metadata" data-preview-video hidden></video><figcaption><span data-preview-timecode>__INITIAL_PREVIEW_TIMECODE__</span><span class="proxy-state" data-proxy-state>프록시 확인 중</span></figcaption></figure>
+      <div class="transport"><button class="play" type="button" data-play aria-label="선택 구간 재생" aria-pressed="false" disabled><svg viewBox="0 0 12 12" fill="none" aria-hidden="true" data-icon-play><path d="M3 2.2v7.6L9.2 6 3 2.2Z" fill="currentColor"/></svg><svg viewBox="0 0 12 12" fill="none" aria-hidden="true" data-icon-pause><path d="M2.5 2.2h2.4v7.6H2.5zM7.1 2.2h2.4v7.6H7.1z" fill="currentColor"/></svg></button><div class="scrub" aria-hidden="true" data-scrub></div><span class="monitor-time" data-preview-time>__INITIAL_PREVIEW_TIME__</span></div>
+      <div class="monitor-copy"><span>SELECTED SCENE</span><h3 data-preview-title>__INITIAL_PREVIEW_TITLE__</h3><p>장면을 펼치면 해석, 대화 종합, 세부 구간별 행동과 원시 STT 후보가 해당 행 아래에 표시됩니다.</p><dl class="monitor-facts"><div><dt>미디어</dt><dd>ORIGINAL 4K</dd></div><div><dt>재생</dt><dd data-media-state>확인 중</dd></div><div><dt>분석</dt><dd>CONTEXT REVIEWED</dd></div><div><dt>원본</dt><dd>UNCHANGED</dd></div></dl></div>
+    </aside>
   </main>
 
-  <footer class="page-footer">
-    <span>DESKTOP-FIRST · LOCAL-FIRST · SOURCE MEDIA WAS NOT MODIFIED</span>
-    <span>Generated by travel-video-editor / summarized timeline</span>
-  </footer>
+  <footer class="statusbar"><span>분석 데이터 연결됨 · 원본 미변경</span><span>장면 클릭: 상세 펼치기 · ↑↓: 장면 이동 · /: 검색</span></footer>
+  <div class="toast" role="status" aria-live="polite" data-toast></div>
 
   <script>
     (() => {
-      const clips = [...document.querySelectorAll('.clip')];
+      const clipButtons = [...document.querySelectorAll('[data-select-clip]')];
+      const clipPanels = [...document.querySelectorAll('[data-clip-panel]')];
       const search = document.querySelector('[data-search]');
       const count = document.querySelector('[data-count]');
-      search?.addEventListener('input', () => {
-        const query = search.value.trim().toLocaleLowerCase('ko');
-        let visible = 0;
-        clips.forEach(clip => {
-          const matches = !query || clip.dataset.search.includes(query);
-          clip.hidden = !matches;
-          if (matches) visible += 1;
+      const previewImage = document.querySelector('[data-preview-image]');
+      const previewVideo = document.querySelector('[data-preview-video]');
+      const previewTitle = document.querySelector('[data-preview-title]');
+      const previewTime = document.querySelector('[data-preview-time]');
+      const previewTimecode = document.querySelector('[data-preview-timecode]');
+      const previewCode = document.querySelector('[data-preview-code]');
+      const proxyState = document.querySelector('[data-proxy-state]');
+      const mediaState = document.querySelector('[data-media-state]');
+      const playButton = document.querySelector('[data-play]');
+      const scrub = document.querySelector('[data-scrub]');
+      const timelineScroll = document.querySelector('.timeline-scroll');
+      const toast = document.querySelector('[data-toast]');
+      const empty = document.querySelector('[data-empty]');
+      let selectedStart = 0;
+      let selectedEnd = 0;
+      let rangePlayback = false;
+      let loadedMediaUrl = '';
+
+      const activePanel = () => clipPanels.find(panel => !panel.hidden);
+      const visibleScenes = () => [...(activePanel()?.querySelectorAll('[data-scene]:not([hidden])') || [])];
+
+      const showToast = message => {
+        toast.textContent = message;
+        toast.classList.add('is-visible');
+        clearTimeout(window.__toastTimer);
+        window.__toastTimer = setTimeout(() => toast.classList.remove('is-visible'), 2600);
+      };
+
+      const updatePlayState = () => {
+        const playing = !previewVideo.paused && !previewVideo.ended;
+        playButton.setAttribute('aria-pressed', String(playing));
+        playButton.setAttribute('aria-label', playing ? '선택 구간 일시 정지' : '선택 구간 재생');
+      };
+
+      const seekToSelectedStart = () => {
+        if (!Number.isFinite(selectedStart)) return;
+        const seek = () => { previewVideo.currentTime = Math.min(selectedStart, previewVideo.duration || selectedStart); };
+        if (previewVideo.readyState >= 1) seek();
+        else previewVideo.addEventListener('loadedmetadata', seek, { once: true });
+      };
+
+      const updateSourceMedia = (scene, imageUrl) => {
+        const mediaUrl = activePanel()?.dataset.mediaUrl || '';
+        selectedStart = Number(scene.dataset.previewStart || 0);
+        selectedEnd = Number(scene.dataset.previewEnd || selectedStart);
+        rangePlayback = false;
+        scrub.style.setProperty('--range-progress', '0%');
+        previewVideo.pause();
+        previewVideo.poster = imageUrl;
+        if (!mediaUrl) {
+          loadedMediaUrl = '';
+          previewVideo.removeAttribute('src');
+          previewVideo.hidden = true;
+          previewImage.hidden = false;
+          playButton.disabled = true;
+          proxyState.textContent = '프록시 없음 · 스틸 프리뷰';
+          mediaState.textContent = 'STILL ONLY';
+          updatePlayState();
+          return;
+        }
+        previewImage.hidden = true;
+        previewVideo.hidden = false;
+        playButton.disabled = false;
+        proxyState.textContent = '프록시 준비 · 1080P H.264';
+        mediaState.textContent = '1080P PROXY';
+        if (loadedMediaUrl !== mediaUrl) {
+          loadedMediaUrl = mediaUrl;
+          previewVideo.src = mediaUrl;
+          previewVideo.load();
+        }
+        seekToSelectedStart();
+        updatePlayState();
+      };
+
+      const updatePreview = scene => {
+        if (!scene) return;
+        const image = scene.querySelector('.scene-thumb img');
+        previewImage.src = image.src;
+        previewImage.alt = `${scene.dataset.previewTitle} 대표 프레임`;
+        previewTitle.textContent = scene.dataset.previewTitle;
+        previewTime.textContent = scene.dataset.previewTime;
+        previewTimecode.textContent = scene.dataset.previewTimecode;
+        previewCode.textContent = scene.id.split('-').at(-1);
+        updateSourceMedia(scene, image.src);
+        activePanel()?.querySelectorAll('[data-jump-scene]').forEach(button => {
+          button.setAttribute('aria-current', String(button.dataset.jumpScene === scene.id));
         });
-        count.textContent = String(visible);
+      };
+
+      const scrollSceneIntoTimeline = scene => requestAnimationFrame(() => {
+        if (window.matchMedia('(max-width: 980px)').matches) {
+          scene.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          return;
+        }
+        const containerRect = timelineScroll.getBoundingClientRect();
+        const sceneRect = scene.getBoundingClientRect();
+        timelineScroll.scrollBy({ top: sceneRect.top - containerRect.top - 6, behavior: 'smooth' });
       });
+
+      const openScene = (scene, scroll = false) => {
+        if (!scene) return;
+        activePanel()?.querySelectorAll('[data-scene][open]').forEach(item => {
+          if (item !== scene) item.open = false;
+        });
+        scene.open = true;
+        updatePreview(scene);
+        if (scroll) scrollSceneIntoTimeline(scene);
+      };
+
+      const selectClip = id => {
+        clipPanels.forEach(panel => { panel.hidden = panel.dataset.clipPanel !== id; });
+        clipButtons.forEach(button => button.setAttribute('aria-current', String(button.dataset.selectClip === id)));
+        const panel = activePanel();
+        timelineScroll.scrollTop = 0;
+        const scene = panel?.querySelector('[data-scene][open]:not([hidden])') || panel?.querySelector('[data-scene]:not([hidden])');
+        openScene(scene);
+      };
+
+      clipButtons.forEach(button => button.addEventListener('click', () => selectClip(button.dataset.selectClip)));
+      document.querySelectorAll('[data-scene]').forEach(scene => scene.addEventListener('toggle', () => {
+        if (scene.open && !scene.closest('[data-clip-panel]').hidden) openScene(scene, true);
+      }));
+      document.querySelectorAll('[data-jump-scene]').forEach(button => button.addEventListener('click', () => {
+        const scene = document.getElementById(button.dataset.jumpScene);
+        openScene(scene, true);
+      }));
+
+      const applySearch = () => {
+        const query = search.value.trim().toLocaleLowerCase('ko');
+        let visibleClips = 0;
+        clipButtons.forEach(button => {
+          const item = button.closest('.footage-item');
+          const panel = clipPanels.find(candidate => candidate.dataset.clipPanel === button.dataset.selectClip);
+          const clipMatch = !query || panel.dataset.search.includes(query);
+          let sceneMatch = false;
+          panel.querySelectorAll('[data-scene]').forEach(scene => {
+            const matches = clipMatch || scene.dataset.search.includes(query);
+            scene.hidden = !matches;
+            if (matches) sceneMatch = true;
+          });
+          item.hidden = !sceneMatch;
+          if (sceneMatch) visibleClips += 1;
+        });
+        count.textContent = String(visibleClips);
+        empty.hidden = visibleClips > 0;
+        const currentButton = clipButtons.find(button => button.getAttribute('aria-current') === 'true');
+        if (currentButton?.closest('.footage-item').hidden) {
+          const next = clipButtons.find(button => !button.closest('.footage-item').hidden);
+          if (next) selectClip(next.dataset.selectClip);
+        } else {
+          const scene = visibleScenes().find(item => item.open) || visibleScenes()[0];
+          if (scene) openScene(scene);
+        }
+      };
+
+      search.addEventListener('input', applySearch);
+      playButton.addEventListener('click', async () => {
+        if (!loadedMediaUrl) return;
+        if (!previewVideo.paused) {
+          rangePlayback = false;
+          previewVideo.pause();
+          return;
+        }
+        if (previewVideo.currentTime < selectedStart || previewVideo.currentTime >= selectedEnd) seekToSelectedStart();
+        rangePlayback = true;
+        try {
+          await previewVideo.play();
+        } catch (error) {
+          rangePlayback = false;
+          showToast('프록시 재생을 시작하지 못했습니다. 영상의 기본 재생 버튼을 다시 눌러보세요.');
+        }
+      });
+      previewVideo.addEventListener('play', updatePlayState);
+      previewVideo.addEventListener('pause', updatePlayState);
+      previewVideo.addEventListener('ended', updatePlayState);
+      previewVideo.addEventListener('timeupdate', () => {
+        if (!rangePlayback) return;
+        const duration = Math.max(.001, selectedEnd - selectedStart);
+        const progress = Math.max(0, Math.min(1, (previewVideo.currentTime - selectedStart) / duration));
+        scrub.style.setProperty('--range-progress', `${progress * 100}%`);
+        if (previewVideo.currentTime >= selectedEnd) {
+          rangePlayback = false;
+          previewVideo.pause();
+          scrub.style.setProperty('--range-progress', '100%');
+        }
+      });
+      previewVideo.addEventListener('error', () => {
+        previewVideo.hidden = true;
+        previewImage.hidden = false;
+        playButton.disabled = true;
+        proxyState.textContent = '프록시 로드 실패 · 스틸 프리뷰';
+        mediaState.textContent = 'LOAD ERROR';
+        showToast('프록시 영상을 열 수 없습니다. 외장 SSD 연결과 파일 경로를 확인해주세요.');
+      });
+      document.addEventListener('keydown', event => {
+        const typing = event.target.matches('input, textarea, [contenteditable]');
+        if (!typing && event.key === '/') { event.preventDefault(); search.focus(); return; }
+        if (typing && event.key === 'Escape') { search.value = ''; applySearch(); search.blur(); return; }
+        if (typing || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+        const scenes = visibleScenes();
+        const current = scenes.findIndex(scene => scene.open);
+        const direction = event.key === 'ArrowDown' ? 1 : -1;
+        const next = scenes[Math.max(0, Math.min(scenes.length - 1, current + direction))];
+        if (next) { event.preventDefault(); openScene(next, true); next.querySelector('summary').focus(); }
+      });
+
+      openScene(document.querySelector('[data-scene][open]') || document.querySelector('[data-scene]'));
     })();
   </script>
 </body>

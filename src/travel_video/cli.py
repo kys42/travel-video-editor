@@ -4,10 +4,20 @@ import argparse
 import sys
 from pathlib import Path
 
+from .apple_speech import AppleSTTConfig, process_apple_stt
 from .context import build_context_packet, merge_context_review, validate_context_review
 from .library import render_video_library
 from .phase1 import Phase1Config, process_assets
+from .proxy import ProxyConfig, build_proxy_batch
 from .review import load_json, merge_review, validate_review
+from .speech import AdaptiveSTTConfig, process_adaptive_stt
+from .transcript_reconcile import (
+    build_reconciliation_packet,
+    merge_reconciliation,
+    render_reconciliation_html,
+    validate_reconciliation_review,
+)
+from .transcript_attach import attach_reconciled_transcript
 from .video_summary import (
     build_video_summary_packet,
     merge_video_summary,
@@ -41,6 +51,101 @@ def build_parser() -> argparse.ArgumentParser:
         default="ko,en",
         help="Comma-separated language candidates to transcribe and preserve",
     )
+
+    adaptive_stt = subparsers.add_parser(
+        "stt-adaptive",
+        help="Run VAD-bounded language detection and routed MLX transcription",
+    )
+    adaptive_stt.add_argument("source", type=Path)
+    adaptive_stt.add_argument("--output-dir", type=Path, required=True)
+    adaptive_stt.add_argument("--model", default="mlx-community/whisper-small-mlx")
+    adaptive_stt.add_argument("--expected-languages", default="ko,en")
+    adaptive_stt.add_argument("--silence-db", type=int, default=-35)
+    adaptive_stt.add_argument("--silence-duration", type=float, default=0.6)
+    adaptive_stt.add_argument("--max-chunk", type=float, default=15.0)
+    adaptive_stt.add_argument("--min-chunk", type=float, default=1.0)
+    adaptive_stt.add_argument("--language-probability", type=float, default=0.80)
+    adaptive_stt.add_argument("--language-margin", type=float, default=0.20)
+    adaptive_stt.add_argument(
+        "--no-uncertain-fallback",
+        action="store_false",
+        dest="fallback_on_uncertain",
+        help="Do not generate alternate-language candidates for uncertain chunks",
+    )
+
+    apple_stt = subparsers.add_parser(
+        "stt-apple",
+        help="Run Apple SpeechDetector with locale-specific SpeechTranscribers",
+    )
+    apple_stt.add_argument("source", type=Path)
+    apple_stt.add_argument("--output-dir", type=Path, required=True)
+    apple_stt.add_argument(
+        "--locales",
+        default="ko-KR,en-US",
+        help="Comma-separated Apple Speech locales; each raw result is preserved",
+    )
+    apple_stt.add_argument(
+        "--detector-sensitivity",
+        choices=("low", "medium", "high"),
+        default="medium",
+    )
+    apple_stt.add_argument(
+        "--swift-package",
+        type=Path,
+        help="Override the bundled apple-speech Swift package path",
+    )
+
+    reconciliation_packet = subparsers.add_parser(
+        "build-transcript-reconciliation-packet",
+        help="Align Apple locale candidates with optional MLX and scene evidence",
+    )
+    reconciliation_packet.add_argument("apple_transcript", type=Path)
+    reconciliation_packet.add_argument("--output", type=Path, required=True)
+    reconciliation_packet.add_argument("--mlx-normalized", type=Path)
+    reconciliation_packet.add_argument("--timeline", type=Path)
+    reconciliation_packet.add_argument("--max-window", type=float, default=6.0)
+
+    validate_reconciliation = subparsers.add_parser(
+        "validate-transcript-reconciliation",
+        help="Validate original-language transcript reconciliation",
+    )
+    validate_reconciliation.add_argument("packet", type=Path)
+    validate_reconciliation.add_argument("review", type=Path)
+
+    merge_transcript = subparsers.add_parser(
+        "merge-transcript-reconciliation",
+        help="Merge a validated reconciliation while keeping translations separate",
+    )
+    merge_transcript.add_argument("packet", type=Path)
+    merge_transcript.add_argument("review", type=Path)
+    merge_transcript.add_argument("--output", type=Path, required=True)
+
+    render_transcript = subparsers.add_parser(
+        "render-transcript-reconciliation",
+        help="Render side-by-side raw candidates and reconciled utterances",
+    )
+    render_transcript.add_argument("packet", type=Path)
+    render_transcript.add_argument("--review", type=Path)
+    render_transcript.add_argument("--output", type=Path, required=True)
+
+    attach_transcript = subparsers.add_parser(
+        "attach-reconciled-transcript",
+        help="Attach a validated reconciled transcript to timeline scenes",
+    )
+    attach_transcript.add_argument("timeline", type=Path)
+    attach_transcript.add_argument("transcript", type=Path)
+    attach_transcript.add_argument("--output", type=Path, required=True)
+
+    proxy_batch = subparsers.add_parser(
+        "proxy-batch",
+        help="Create verified, resumable 1080p H.264 proxies",
+    )
+    proxy_batch.add_argument("source_root", type=Path)
+    proxy_batch.add_argument("--output-root", type=Path, required=True)
+    proxy_batch.add_argument("--max-dimension", type=int, default=1920)
+    proxy_batch.add_argument("--bitrate-kbps", type=int, default=6000)
+    proxy_batch.add_argument("--high-fps-bitrate-kbps", type=int, default=8000)
+    proxy_batch.add_argument("--limit", type=int)
 
     validate = subparsers.add_parser(
         "validate-review", help="Validate Codex/human review JSON"
@@ -117,6 +222,11 @@ def build_parser() -> argparse.ArgumentParser:
     render_library.add_argument("--output-dir", type=Path, required=True)
     render_library.add_argument("--title", default="Travel video field log")
     render_library.add_argument(
+        "--proxy-root",
+        type=Path,
+        help="Directory containing completed H.264 proxy videos",
+    )
+    render_library.add_argument(
         "--assets",
         choices=("embed", "relative"),
         default="embed",
@@ -150,6 +260,80 @@ def main(argv: list[str] | None = None) -> int:
             )
             for output in process_assets(args.sources, args.output_root, config):
                 print(output)
+        elif args.command == "stt-adaptive":
+            expected_languages = tuple(
+                item.strip()
+                for item in args.expected_languages.split(",")
+                if item.strip()
+            )
+            config = AdaptiveSTTConfig(
+                model=args.model,
+                expected_languages=expected_languages,
+                silence_db=args.silence_db,
+                silence_duration=args.silence_duration,
+                min_chunk=args.min_chunk,
+                max_chunk=args.max_chunk,
+                min_language_probability=args.language_probability,
+                min_language_margin=args.language_margin,
+                fallback_on_uncertain=args.fallback_on_uncertain,
+            )
+            print(process_adaptive_stt(args.source, args.output_dir, config))
+        elif args.command == "stt-apple":
+            locales = tuple(
+                item.strip() for item in args.locales.split(",") if item.strip()
+            )
+            config = AppleSTTConfig(
+                locales=locales,
+                detector_sensitivity=args.detector_sensitivity,
+                swift_package=args.swift_package,
+            )
+            print(process_apple_stt(args.source, args.output_dir, config))
+        elif args.command == "build-transcript-reconciliation-packet":
+            output = build_reconciliation_packet(
+                args.apple_transcript,
+                args.output,
+                mlx_normalized_path=args.mlx_normalized,
+                timeline_path=args.timeline,
+                max_window=args.max_window,
+            )
+            print(output)
+        elif args.command == "validate-transcript-reconciliation":
+            packet = load_json(args.packet)
+            review = load_json(args.review)
+            validate_reconciliation_review(packet, review)
+            print("transcript reconciliation valid")
+        elif args.command == "merge-transcript-reconciliation":
+            print(merge_reconciliation(args.packet, args.review, args.output))
+        elif args.command == "render-transcript-reconciliation":
+            print(
+                render_reconciliation_html(
+                    args.packet,
+                    args.output,
+                    review_path=args.review,
+                )
+            )
+        elif args.command == "attach-reconciled-transcript":
+            print(
+                attach_reconciled_transcript(
+                    args.timeline,
+                    args.transcript,
+                    args.output,
+                )
+            )
+        elif args.command == "proxy-batch":
+            config = ProxyConfig(
+                max_dimension=args.max_dimension,
+                bitrate_kbps=args.bitrate_kbps,
+                high_fps_bitrate_kbps=args.high_fps_bitrate_kbps,
+            )
+            print(
+                build_proxy_batch(
+                    args.source_root,
+                    args.output_root,
+                    config,
+                    limit=args.limit,
+                )
+            )
         elif args.command == "validate-review":
             validate_review(load_json(args.machine), load_json(args.review))
             print("review valid")
@@ -195,6 +379,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.output_dir,
                 title=args.title,
                 asset_mode=args.assets,
+                proxy_root=args.proxy_root,
             )
             print(output)
     except Exception as exc:  # noqa: BLE001 - CLI boundary converts failures to exit codes.

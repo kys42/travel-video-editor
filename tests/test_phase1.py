@@ -3,6 +3,10 @@ from pathlib import Path
 
 import pytest
 
+from travel_video.apple_speech import (
+    derive_activity_ranges,
+    normalize_apple_transcripts,
+)
 from travel_video.context import select_storyboard_samples, validate_context_review
 from travel_video.phase1 import (
     Phase1Config,
@@ -14,6 +18,14 @@ from travel_video.phase1 import (
     validate_coverage,
 )
 from travel_video.review import validate_review
+from travel_video.speech import (
+    AdaptiveSTTConfig,
+    build_vad_chunks,
+    decide_language_route,
+    expand_contextual_fallbacks,
+    resolve_candidate_language,
+)
+from travel_video.transcript_reconcile import validate_reconciliation_review
 from travel_video.web import render_timeline_web
 
 
@@ -37,6 +49,114 @@ def test_format_time() -> None:
     assert format_time(0) == "00:00.000"
     assert format_time(65.432) == "01:05.432"
     assert format_time(3661.2) == "01:01:01.200"
+
+
+def test_apple_transcripts_preserve_locale_candidates_and_confidence() -> None:
+    raw = {
+        "ko-KR": {
+            "selected_locale": "ko_KR",
+            "transcripts": [
+                {
+                    "start": 1.0,
+                    "end": 2.2,
+                    "text": " 만다린 주세요 ",
+                    "alternatives": ["만다린으로 주세요"],
+                    "spans": [
+                        {
+                            "start": 1.0,
+                            "end": 1.6,
+                            "text": " 만다린",
+                            "confidence": 0.8,
+                        },
+                        {
+                            "start": 1.6,
+                            "end": 2.2,
+                            "text": " 주세요",
+                            "confidence": 0.6,
+                        },
+                    ],
+                    "is_final": True,
+                }
+            ],
+        },
+        "en-US": {
+            "selected_locale": "en_US",
+            "transcripts": [
+                {
+                    "start": 1.1,
+                    "end": 2.1,
+                    "text": "Mandarin, please.",
+                    "alternatives": [],
+                    "spans": [],
+                    "is_final": True,
+                }
+            ],
+        },
+    }
+    candidates = normalize_apple_transcripts(raw)
+    assert [item["requested_locale"] for item in candidates] == ["ko-KR", "en-US"]
+    assert candidates[0]["text"] == "만다린 주세요"
+    assert candidates[0]["mean_confidence"] == 0.7
+    assert candidates[1]["text"] == "Mandarin, please."
+
+
+def test_apple_activity_ranges_are_labeled_as_derived_detector_evidence() -> None:
+    candidates = [
+        {"start": 1.0, "end": 2.0, "text": "hello"},
+        {"start": 1.1, "end": 2.1, "text": "안녕"},
+        {"start": 4.0, "end": 5.0, "text": "again"},
+    ]
+    activity = derive_activity_ranges(
+        candidates,
+        duration=6.0,
+        padding=0.1,
+        merge_gap=0.2,
+    )
+    assert [(item["start"], item["end"]) for item in activity] == [
+        (0.9, 2.2),
+        (3.9, 5.1),
+    ]
+    assert all(
+        item["source"] == "detector_gated_transcriber_time_union"
+        for item in activity
+    )
+
+
+def test_transcript_reconciliation_requires_exact_windows_and_source_ids() -> None:
+    packet = {
+        "windows": [
+            {
+                "window_id": "RW0001",
+                "start": 1.0,
+                "end": 3.0,
+                "apple_candidates": {
+                    "en-US": {"source_candidate_ids": ["APPLE-en-US-T0001"]}
+                },
+            }
+        ]
+    }
+    review = {
+        "schema_version": "transcript-reconciliation-review/v1",
+        "windows": [
+            {
+                "window_id": "RW0001",
+                "utterances": [
+                    {
+                        "start": 1.2,
+                        "end": 2.8,
+                        "language": "en",
+                        "original_text": "Can I get one Coke?",
+                        "translations": {"ko": "콜라 하나 주세요."},
+                        "source_candidate_ids": ["APPLE-en-US-T0001"],
+                    }
+                ],
+            }
+        ],
+    }
+    validate_reconciliation_review(packet, review)
+    review["windows"][0]["utterances"][0]["source_candidate_ids"] = ["invented"]
+    with pytest.raises(ValueError, match="source candidate IDs"):
+        validate_reconciliation_review(packet, review)
 
 
 def test_segments_cover_asset_without_gaps() -> None:
@@ -171,6 +291,114 @@ def test_parallel_transcript_candidates_are_both_preserved() -> None:
     )
     assert segments[0]["transcript_machine_preference"] == "mixed_or_uncertain"
     assert set(stats) == {"ko", "en"}
+
+
+def test_vad_chunks_preserve_speech_regions_and_bound_long_audio() -> None:
+    config = AdaptiveSTTConfig(
+        speech_padding=0,
+        merge_gap=0,
+        min_chunk=1,
+        max_chunk=10,
+    )
+    chunks = build_vad_chunks(
+        [{"start": 5, "end": 8}, {"start": 18, "end": 20}],
+        duration=40,
+        config=config,
+    )
+    assert [(item["start"], item["end"]) for item in chunks] == [
+        (0.0, 5.0),
+        (8.0, 18.0),
+        (20.0, 30.0),
+        (30.0, 40),
+    ]
+
+
+def test_language_route_keeps_confident_result_and_expands_uncertain_result() -> None:
+    config = AdaptiveSTTConfig(
+        expected_languages=("ko", "en"),
+        min_language_probability=0.65,
+        min_language_margin=0.2,
+    )
+    confident = decide_language_route({"ko": 0.88, "en": 0.08, "ja": 0.04}, 12, config)
+    assert confident["selected_language"] == "ko"
+    assert confident["uncertain"] is False
+    assert confident["candidate_languages"] == ["ko"]
+
+    uncertain = decide_language_route({"ko": 0.48, "en": 0.44, "ja": 0.08}, 12, config)
+    assert uncertain["uncertain"] is True
+    assert uncertain["candidate_languages"] == ["ko", "en"]
+    assert set(uncertain["uncertainty_reasons"]) == {
+        "low_language_probability",
+        "low_language_margin",
+    }
+
+
+def test_contextual_fallback_expands_neighbors_without_cascading() -> None:
+    config = AdaptiveSTTConfig(expected_languages=("ko", "en"))
+    routes = [
+        {
+            "selected_language": "ko",
+            "uncertain": False,
+            "uncertainty_reasons": [],
+            "candidate_languages": ["ko"],
+        },
+        {
+            "selected_language": "ko",
+            "uncertain": True,
+            "uncertainty_reasons": ["low_language_probability"],
+            "candidate_languages": ["ko", "en"],
+        },
+        {
+            "selected_language": "ko",
+            "uncertain": False,
+            "uncertainty_reasons": [],
+            "candidate_languages": ["ko"],
+        },
+        {
+            "selected_language": "ko",
+            "uncertain": False,
+            "uncertainty_reasons": [],
+            "candidate_languages": ["ko"],
+        },
+    ]
+    expand_contextual_fallbacks(routes, config)
+    assert [route["uncertain"] for route in routes] == [True, True, True, False]
+    assert routes[0]["candidate_languages"] == ["ko", "en"]
+    assert routes[3]["candidate_languages"] == ["ko"]
+
+
+def test_candidate_resolution_marks_multiple_usable_languages_for_review() -> None:
+    candidates = {
+        "ko": {
+            "segments": [
+                {"accepted": True, "text": "만다린으로 할까", "avg_logprob": -0.5}
+            ]
+        },
+        "en": {
+            "segments": [
+                {"accepted": True, "text": "Mandarin, please", "avg_logprob": -0.4}
+            ]
+        },
+    }
+    resolution = resolve_candidate_language(candidates, "ko")
+    assert resolution["spoken_language"] == "mixed_or_uncertain"
+    assert resolution["provisional_language"] == "ko"
+    assert resolution["needs_reconciliation"] is True
+
+    strong = resolve_candidate_language(
+        candidates,
+        "ko",
+        language_probability=0.98,
+        language_margin=0.9,
+    )
+    assert strong["spoken_language"] == "ko"
+    assert strong["needs_reconciliation"] is False
+
+    candidates["ko"]["segments"][0]["accepted"] = False
+    resolution = resolve_candidate_language(candidates, "ko")
+    assert resolution["spoken_language"] == "en"
+    assert resolution["provisional_language"] == "en"
+    assert resolution["needs_reconciliation"] is False
 
 
 def test_storyboard_selection_is_diverse_and_bounded() -> None:

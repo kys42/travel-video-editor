@@ -63,54 +63,344 @@ def _detail_url(timeline_path: Path, output_dir: Path) -> str | None:
     return quote(relative.replace(os.sep, "/"), safe="/.:@-_")
 
 
+def _discover_proxies(proxy_root: Path | None) -> dict[str, Path]:
+    if proxy_root is None or not proxy_root.is_dir():
+        return {}
+    candidates: dict[str, list[Path]] = {}
+    for path in proxy_root.rglob("*"):
+        if (
+            path.is_file()
+            and path.suffix.casefold() == ".mp4"
+            and not path.stem.casefold().endswith(".partial")
+        ):
+            candidates.setdefault(path.name.casefold(), []).append(path.resolve())
+    return {name: paths[0] for name, paths in candidates.items() if len(paths) == 1}
+
+
+def _link_proxy(proxy: Path, output_dir: Path, asset_id: str) -> str:
+    media_dir = output_dir / "media"
+    media_dir.mkdir(parents=True, exist_ok=True)
+    link = media_dir / f"{asset_id}.mp4"
+    target = proxy.resolve()
+    if os.path.lexists(link):
+        if not link.is_symlink():
+            raise FileExistsError(
+                f"Refusing to replace non-symlink proxy asset: {link}"
+            )
+        if link.resolve(strict=False) != target:
+            temporary = link.with_suffix(".next.mp4")
+            if os.path.lexists(temporary):
+                temporary.unlink()
+            temporary.symlink_to(target)
+            os.replace(temporary, link)
+    else:
+        link.symlink_to(target)
+    return quote(f"media/{link.name}", safe="/.:@-_")
+
+
+def _short_time(seconds: float) -> str:
+    return format_time(seconds).split(".", 1)[0]
+
+
+def _group_segments(
+    timeline: dict[str, Any], group: dict[str, Any]
+) -> list[dict[str, Any]]:
+    segment_map = {segment["segment_id"]: segment for segment in timeline["segments"]}
+    return [
+        segment_map[segment_id]
+        for segment_id in group.get("segment_ids", [])
+        if segment_id in segment_map
+    ]
+
+
+def _transcript_quality(item: dict[str, Any]) -> str:
+    score = float(item.get("avg_logprob", -2.0))
+    if score >= -0.5:
+        return "high"
+    if score >= -0.85:
+        return "medium"
+    return "low"
+
+
+def _reconciled_quality(item: dict[str, Any]) -> str:
+    score = float(item.get("confidence", 0.0))
+    if score >= 0.8:
+        return "high"
+    if score >= 0.65:
+        return "medium"
+    return "low"
+
+
+def _render_segment_transcripts(segment: dict[str, Any]) -> str:
+    reconciled = segment.get("reconciled_utterances", [])
+    if reconciled:
+        return "".join(
+            f"""
+            <p class="stt-line stt-line--{_reconciled_quality(item)}">
+              <span class="stt-language">{_escape(str(item.get("language", "—")).upper())}</span>
+              <span class="stt-time">{_escape(_short_time(float(item["source_start"])))}</span>
+              <span>{_escape(item.get("original_text", ""))}</span>
+            </p>
+            """
+            for item in reconciled
+            if str(item.get("original_text", "")).strip()
+        ) or '<p class="no-stt">종합된 발화 없음</p>'
+    candidates = segment.get("transcript_candidates", {})
+    lines: list[str] = []
+    for language in ("ko", "en"):
+        for item in candidates.get(language, []):
+            text = str(item.get("text", "")).strip()
+            if not text:
+                continue
+            lines.append(
+                f"""
+                <p class="stt-line stt-line--{_transcript_quality(item)}">
+                  <span class="stt-language">{_escape(language)}</span>
+                  <span class="stt-time">{_escape(_short_time(float(item.get("start", segment["start"]))))}</span>
+                  <span>{_escape(text)}</span>
+                </p>
+                """
+            )
+    for language in sorted(set(candidates) - {"ko", "en"}):
+        for item in candidates.get(language, []):
+            text = str(item.get("text", "")).strip()
+            if text:
+                lines.append(
+                    f"""
+                    <p class="stt-line stt-line--{_transcript_quality(item)}">
+                      <span class="stt-language">{_escape(language)}</span>
+                      <span class="stt-time">{_escape(_short_time(float(item.get("start", segment["start"]))))}</span>
+                      <span>{_escape(text)}</span>
+                    </p>
+                    """
+                )
+    return "".join(lines) or '<p class="no-stt">유효한 STT 후보 없음</p>'
+
+
+def _render_segment_rows(
+    segments: list[dict[str, Any]], assets: ImageAssetResolver
+) -> str:
+    if not segments:
+        return '<p class="empty-detail">세부 분석 구간이 아직 없습니다.</p>'
+    rows: list[str] = []
+    for segment in segments:
+        start = float(segment["start"])
+        end = float(segment["end"])
+        review = segment.get("review") or {}
+        frame = segment.get("representative_frame")
+        frame_html = (
+            f'<img loading="lazy" src="{assets.url(frame)}" alt="{_escape(segment["segment_id"])} 대표 프레임">'
+            if frame
+            else '<span class="missing-frame">NO FRAME</span>'
+        )
+        actions = "".join(
+            f"<span>{_escape(action)}</span>" for action in review.get("actions", [])
+        )
+        rows.append(
+            f"""
+            <article class="segment-row">
+              <div class="segment-time">
+                <strong>{_escape(_short_time(start))}</strong>
+                <span>— {_escape(_short_time(end))}</span>
+                <small>{_escape(segment["segment_id"])}</small>
+              </div>
+              <div class="segment-frame">{frame_html}</div>
+              <div class="segment-action">
+                <span class="cell-label">화면 · 행동</span>
+                <p>{_escape(review.get("visual_summary", "화면 설명 없음"))}</p>
+                <div class="action-tags">{actions}</div>
+              </div>
+              <div class="segment-stt">
+                <span class="cell-label">{"종합 원문 대본" if segment.get("reconciled_utterances") else "STT 원문 후보 · 미검증"}</span>
+                {_render_segment_transcripts(segment)}
+              </div>
+            </article>
+            """
+        )
+    return "".join(rows)
+
+
+def _render_storyboard(
+    context: dict[str, Any],
+    sample_map: dict[str, dict[str, Any]],
+    assets: ImageAssetResolver,
+) -> str:
+    frames: list[str] = []
+    representative_id = context["representative_sample_id"]
+    for moment in context.get("key_moments", []):
+        sample = sample_map.get(moment["sample_id"])
+        if not sample:
+            continue
+        classes = (
+            "story-frame is-representative"
+            if sample["sample_id"] == representative_id
+            else "story-frame"
+        )
+        frames.append(
+            f"""
+            <figure class="{classes}">
+              <img loading="lazy" src="{assets.url(sample["frame"])}" alt="{_escape(moment.get("role", "핵심 장면"))}">
+              <figcaption><b>{_escape(sample["timecode"])}</b><span>{_escape(moment.get("role", "핵심 장면"))}</span></figcaption>
+            </figure>
+            """
+        )
+    return (
+        "".join(frames) or '<p class="empty-detail">선정된 맥락 프레임이 없습니다.</p>'
+    )
+
+
+def _render_notables(
+    context: dict[str, Any], sample_map: dict[str, dict[str, Any]]
+) -> str:
+    items: list[str] = []
+    for notable in context.get("notable_moments", []):
+        sample = sample_map.get(notable["sample_id"], {})
+        items.append(
+            f"""
+            <article class="notable-item">
+              <span>{_escape(sample.get("timecode", "—"))}</span>
+              <div><strong>{_escape(notable["title"])}</strong><p>{_escape(notable["description"])}</p><small>편집: {_escape(notable["edit_hint"])}</small></div>
+            </article>
+            """
+        )
+    return "".join(items) or '<p class="empty-detail">별도 특이 포인트 없음</p>'
+
+
+def _reconciled_dialogue(group: dict[str, Any], *, limit: int | None = None) -> str:
+    items = [
+        item
+        for item in group.get("reconciled_utterances", [])
+        if str(item.get("original_text", "")).strip()
+    ]
+    if limit is not None:
+        items = items[:limit]
+    return " ".join(str(item["original_text"]).strip() for item in items)
+
+
+def _render_group_reconciled(group: dict[str, Any]) -> str:
+    items = group.get("reconciled_utterances", [])
+    lines = [
+        f'<p class="stt-line stt-line--{_reconciled_quality(item)}"><span class="stt-language">{_escape(str(item.get("language", "—")).upper())}</span><span class="stt-time">{_escape(_short_time(float(item["source_start"])))}</span><span>{_escape(item.get("original_text", ""))}</span></p>'
+        for item in items
+        if str(item.get("original_text", "")).strip()
+    ]
+    if not lines:
+        return ""
+    return '<div class="scene-reconciled"><b>종합 원문</b>' + "".join(lines) + "</div>"
+
+
+def _render_scene(
+    timeline: dict[str, Any],
+    group: dict[str, Any],
+    event: dict[str, Any],
+    index: int,
+    assets: ImageAssetResolver,
+    *,
+    highlighted: bool,
+    initially_open: bool,
+) -> str:
+    context = group["context_review"]
+    sample_map = {sample["sample_id"]: sample for sample in timeline["samples"]}
+    representative = sample_map[context["representative_sample_id"]]
+    segments = _group_segments(timeline, group)
+    start = float(group["start"])
+    end = float(group["end"])
+    confidence = float(context.get("confidence", 0.0))
+    languages = context.get("dialogue_evidence", [])
+    language_label = " + ".join(str(item).upper() for item in languages) or "현장음"
+    reconciled_summary = _reconciled_dialogue(group, limit=2)
+    notable_count = len(context.get("notable_moments", []))
+    search_parts = [
+        str(group.get("label", "")),
+        str(event.get("headline", "")),
+        str(event.get("description", "")),
+        str(context.get("narrative_summary", "")),
+        str(context.get("dialogue_summary", "")),
+    ]
+    for segment in segments:
+        review = segment.get("review") or {}
+        search_parts.append(str(review.get("visual_summary", "")))
+        search_parts.extend(str(item) for item in review.get("actions", []))
+        for candidates in segment.get("transcript_candidates", {}).values():
+            search_parts.extend(str(item.get("text", "")) for item in candidates)
+    for utterance in group.get("reconciled_utterances", []):
+        search_parts.append(str(utterance.get("original_text", "")))
+        search_parts.extend(
+            str(value) for value in utterance.get("translations", {}).values()
+        )
+    for notable in context.get("notable_moments", []):
+        search_parts.extend(
+            str(notable.get(key, "")) for key in ("title", "description", "edit_hint")
+        )
+    preview_url = assets.url(representative["frame"])
+    return f"""
+      <details class="scene" id="scene-{_escape(timeline["asset_id"])}-{_escape(group["group_id"])}"
+               data-scene data-search="{_escape(" ".join(search_parts).lower())}"
+               data-preview-title="{_escape(event.get("headline", group["label"]))}"
+               data-preview-time="{_escape(_short_time(start))} — {_escape(_short_time(end))}"
+               data-preview-timecode="{_escape(representative["timecode"])}"
+               data-preview-start="{start:.3f}"
+               data-preview-end="{end:.3f}"
+               {"open" if initially_open else ""}>
+        <summary class="scene-summary">
+          <span class="scene-sequence">{index:02d}</span>
+          <span class="scene-time"><strong>{_escape(_short_time(start))}</strong><small>+{round(end - start)}s</small></span>
+          <span class="scene-thumb"><img loading="lazy" src="{preview_url}" alt="{_escape(group["label"])} 대표 프레임"><i>{_escape(representative["timecode"])}</i></span>
+          <span class="scene-primary"><strong>{_escape(event.get("headline", group["label"]))}</strong><p>{_escape(context["narrative_summary"])}</p></span>
+          <span class="scene-dialogue"><b>{"종합 원문" if reconciled_summary else "대화 · " + _escape(language_label)}</b><p>{_escape(reconciled_summary or context.get("dialogue_summary", "유효한 대화 없음"))}</p></span>
+          <span class="scene-state">{'<b class="highlight-state">HIGHLIGHT</b>' if highlighted else "<b>SCENE</b>"}{f"<small>{notable_count} notable</small>" if notable_count else ""}<small>{round(confidence * 100)}%</small><i aria-hidden="true"></i></span>
+        </summary>
+        <div class="scene-depth">
+          <div class="analysis-grid">
+            <section><span class="depth-label">장면 해석</span><h3>{_escape(group["label"])}</h3><p>{_escape(context["narrative_summary"])}</p></section>
+            <section><span class="depth-label depth-label--audio">대화 종합 · {_escape(language_label)}</span><p>{_escape(context.get("dialogue_summary", "확인 가능한 대화가 없습니다."))}</p>{_render_group_reconciled(group)}</section>
+            <section><span class="depth-label depth-label--edit">특이 포인트 / 편집 가치</span>{_render_notables(context, sample_map)}</section>
+          </div>
+          <section class="segment-section">
+            <header><div><strong>세부 구간</strong><span>행동 해석과 {"종합 원문 대본" if group.get("reconciled_utterances") else "원시 STT 후보"}를 같은 시간축으로 비교</span></div><span>{len(segments)} segments</span></header>
+            <div class="segment-list">{_render_segment_rows(segments, assets)}</div>
+          </section>
+          <section class="storyboard-section">
+            <header><div><strong>맥락 프레임</strong><span>{_escape(context.get("representative_reason", ""))}</span></div><span>{len(context.get("key_moments", []))} frames</span></header>
+            <div class="story-strip">{_render_storyboard(context, sample_map, assets)}</div>
+          </section>
+        </div>
+      </details>
+    """
+
+
 def _render_video(
     timeline: dict[str, Any],
     timeline_path: Path,
     index: int,
     output_dir: Path,
     assets: ImageAssetResolver,
-) -> str:
+    proxy_url: str | None,
+) -> tuple[str, str]:
     summary = timeline["video_summary"]
     sample_map = {sample["sample_id"]: sample for sample in timeline["samples"]}
     group_map = {group["group_id"]: group for group in timeline["context_groups"]}
     representative = sample_map[summary["representative_sample_id"]]
     capture_time, capture_date = _capture_parts(timeline["media"].get("creation_time"))
     highlight_ids = set(summary.get("highlight_group_ids", []))
-    events: list[str] = []
-    for event in summary["chronological_events"]:
+    scenes: list[str] = []
+    for scene_index, event in enumerate(summary["chronological_events"], start=1):
         group = group_map[event["group_id"]]
         highlighted = event["group_id"] in highlight_ids
-        events.append(
-            f"""
-            <li class="event{" is-highlight" if highlighted else ""}">
-              <span class="event-time">{_escape(format_time(float(group["start"])).split(".", 1)[0])}</span>
-              <span class="event-marker" aria-hidden="true"></span>
-              <div>
-                <span class="event-id">{_escape(event["group_id"])}{" · HIGHLIGHT" if highlighted else ""}</span>
-                <strong>{_escape(event["headline"])}</strong>
-                <p>{_escape(event["description"])}</p>
-              </div>
-            </li>
-            """
-        )
-
-    notable_items: list[str] = []
-    for group in timeline["context_groups"]:
-        for notable in group["context_review"].get("notable_moments", []):
-            sample = sample_map[notable["sample_id"]]
-            notable_items.append(
-                f"""
-                <li>
-                  <span>{_escape(sample["timecode"])}</span>
-                  <strong>{_escape(notable["title"])}</strong>
-                  <small>{_escape(notable["edit_hint"])}</small>
-                </li>
-                """
+        scenes.append(
+            _render_scene(
+                timeline,
+                group,
+                event,
+                scene_index,
+                assets,
+                highlighted=highlighted,
+                initially_open=index == 1 and scene_index == 1,
             )
-    notable_html = (
-        f'<aside class="clip-notables"><span class="section-label">NOTABLE BEATS</span><ul>{"".join(notable_items)}</ul></aside>'
-        if notable_items
-        else ""
+        )
+    notable_count = sum(
+        len(group["context_review"].get("notable_moments", []))
+        for group in timeline["context_groups"]
     )
     tags = "".join(f"<span>{_escape(tag)}</span>" for tag in summary["tags"])
     detail_url = _detail_url(timeline_path, output_dir)
@@ -120,7 +410,6 @@ def _render_video(
         else '<span class="detail-link is-disabled">개별 타임라인 미생성</span>'
     )
     duration = float(timeline["media"]["duration"])
-    notable_count = len(notable_items)
     search_text = " ".join(
         [
             summary["title"],
@@ -135,43 +424,31 @@ def _render_video(
             ),
         ]
     ).lower()
-    return f"""
-    <article class="clip" id="clip-{_escape(timeline["asset_id"])}" data-search="{_escape(search_text)}">
-      <div class="clip-sequence">
-        <span>{index:02d}</span>
-        <strong>{_escape(capture_time)}</strong>
-        <small>{_escape(capture_date)}</small>
-      </div>
-      <div class="clip-body">
-        <header class="clip-head">
-          <figure>
-            <img loading="lazy" src="{assets.url(representative["frame"])}" alt="{_escape(summary["title"])} 대표 프레임">
-            <figcaption>{_escape(representative["timecode"])} · {_escape(summary["representative_sample_id"])}</figcaption>
-          </figure>
-          <div class="clip-intro">
-            <div class="clip-kicker"><span>VIDEO {index:02d}</span><span>{_escape(timeline["source"]["name"])}</span></div>
-            <h2>{_escape(summary["title"])}</h2>
-            <p class="one-line">{_escape(summary["one_line_summary"])}</p>
-            <p class="synopsis">{_escape(summary["narrative_summary"])}</p>
-            <div class="tag-row">{tags}</div>
-          </div>
-          <dl class="clip-stats">
-            <div><dt>길이</dt><dd>{_escape(_duration_text(duration))}</dd></div>
-            <div><dt>사건</dt><dd>{len(timeline["context_groups"])}</dd></div>
-            <div><dt>특이 포인트</dt><dd>{notable_count}</dd></div>
-          </dl>
-        </header>
-        <div class="clip-detail">
-          <section class="clip-events">
-            <div class="clip-section-head"><span class="section-label">WHAT HAPPENED</span><strong>시간순 사건</strong></div>
-            <ol>{"".join(events)}</ol>
-          </section>
-          {notable_html}
-        </div>
-        <footer>{detail_link}</footer>
-      </div>
-    </article>
+    preview_url = assets.url(representative["frame"])
+    nav = f"""
+      <li class="footage-item" data-search="{_escape(search_text)}">
+        <button type="button" data-select-clip="{_escape(timeline["asset_id"])}" aria-current="{"true" if index == 1 else "false"}">
+          <img loading="lazy" src="{preview_url}" alt="">
+          <span><strong>{_escape(summary["title"])}</strong><small>{_escape(timeline["source"]["name"])}</small><i><b>{index:02d} · {_escape(capture_time)}</b><b>{_escape(_short_time(duration))}</b></i></span>
+        </button>
+      </li>
     """
+    ruler = "".join(
+        f'<button type="button" data-jump-scene="scene-{_escape(timeline["asset_id"])}-{_escape(group["group_id"])}" style="flex:{max(8.0, float(group["end"]) - float(group["start"])):.3f}"><b>{_escape(group["group_id"])}</b><span>{_escape(_short_time(float(group["start"])))}</span></button>'
+        for group in timeline["context_groups"]
+    )
+    panel = f"""
+      <article class="clip-panel" data-clip-panel="{_escape(timeline["asset_id"])}" data-search="{_escape(search_text)}" data-media-url="{_escape(proxy_url or "")}" {"" if index == 1 else "hidden"}>
+        <header class="clip-header">
+          <div class="clip-title"><span>VIDEO {index:02d} · {_escape(capture_date)}</span><h1>{_escape(summary["title"])}</h1><p>{_escape(summary["one_line_summary"])}</p></div>
+          <dl><div><dt>촬영</dt><dd>{_escape(capture_time)}</dd></div><div><dt>길이</dt><dd>{_escape(_short_time(duration))}</dd></div><div><dt>장면</dt><dd>{len(timeline["context_groups"])}</dd></div><div><dt>특이</dt><dd>{notable_count}</dd></div></dl>
+        </header>
+        <div class="video-summary"><p>{_escape(summary["narrative_summary"])}</p><div class="tag-row">{tags}</div>{detail_link}</div>
+        <nav class="scene-ruler" aria-label="{_escape(summary["title"])} 구간 탐색">{ruler}</nav>
+        <section class="scene-list" aria-label="시간순 장면 목록">{"".join(scenes)}</section>
+      </article>
+    """
+    return nav, panel
 
 
 def render_video_library(
@@ -180,6 +457,7 @@ def render_video_library(
     *,
     title: str = "Travel video field log",
     asset_mode: str = "embed",
+    proxy_root: Path | None = None,
 ) -> Path:
     if not timeline_paths:
         raise ValueError("render-library requires at least one summarized timeline")
@@ -202,10 +480,28 @@ def render_video_library(
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     assets = ImageAssetResolver(output_dir, asset_mode)
-    clips = "".join(
-        _render_video(timeline, timeline_path, index, output_dir, assets)
+    resolved_proxy_root = proxy_root.expanduser().resolve() if proxy_root else None
+    proxies = _discover_proxies(resolved_proxy_root)
+    proxy_urls: dict[str, str] = {}
+    for _, timeline in loaded:
+        proxy = proxies.get(str(timeline["source"]["name"]).casefold())
+        if proxy:
+            proxy_urls[timeline["asset_id"]] = _link_proxy(
+                proxy, output_dir, timeline["asset_id"]
+            )
+    rendered = [
+        _render_video(
+            timeline,
+            timeline_path,
+            index,
+            output_dir,
+            assets,
+            proxy_urls.get(timeline["asset_id"]),
+        )
         for index, (timeline_path, timeline) in enumerate(loaded, start=1)
-    )
+    ]
+    footage_items = "".join(item[0] for item in rendered)
+    clip_panels = "".join(item[1] for item in rendered)
     total_duration = sum(float(item[1]["media"]["duration"]) for item in loaded)
     total_scenes = sum(len(item[1]["context_groups"]) for item in loaded)
     total_notables = sum(
@@ -217,9 +513,13 @@ def render_video_library(
         loaded[0][1]["media"].get("creation_time"),
         loaded[-1][1]["media"].get("creation_time"),
     )
-    run_lines = "".join(
-        f"<li><span>{index:02d}</span><strong>{_escape(timeline['video_summary']['title'])}</strong><small>{_escape(timeline['video_summary']['one_line_summary'])}</small></li>"
-        for index, (_, timeline) in enumerate(loaded, start=1)
+    initial_timeline = loaded[0][1]
+    initial_group = initial_timeline["context_groups"][0]
+    initial_context = initial_group["context_review"]
+    initial_sample = next(
+        sample
+        for sample in initial_timeline["samples"]
+        if sample["sample_id"] == initial_context["representative_sample_id"]
     )
     template = (
         files("travel_video.templates").joinpath("library.html").read_text("utf-8")
@@ -233,8 +533,14 @@ def render_video_library(
         "__TOTAL_NOTABLES__": str(total_notables),
         "__DATE_LABEL__": _escape(date_label),
         "__TIME_RANGE__": _escape(time_range),
-        "__RUN_LINES__": run_lines,
-        "__CLIPS__": clips,
+        "__FOOTAGE_ITEMS__": footage_items,
+        "__CLIP_PANELS__": clip_panels,
+        "__INITIAL_PREVIEW_URL__": assets.url(initial_sample["frame"]),
+        "__INITIAL_PREVIEW_TITLE__": _escape(initial_group["label"]),
+        "__INITIAL_PREVIEW_TIME__": _escape(
+            f"{_short_time(float(initial_group['start']))} — {_short_time(float(initial_group['end']))}"
+        ),
+        "__INITIAL_PREVIEW_TIMECODE__": _escape(initial_sample["timecode"]),
     }
     document = template
     for token, value in replacements.items():
@@ -251,6 +557,11 @@ def render_video_library(
         "video_count": len(loaded),
         "scene_count": total_scenes,
         "notable_moment_count": total_notables,
+        "proxy_root": str(resolved_proxy_root) if resolved_proxy_root else None,
+        "proxy_video_count": len(proxy_urls),
+        "reconciled_transcript_video_count": sum(
+            "reconciled_transcript" in timeline for _, timeline in loaded
+        ),
         "timelines": [str(path) for path, _ in loaded],
     }
     atomic_json(output_dir / "manifest.json", manifest)

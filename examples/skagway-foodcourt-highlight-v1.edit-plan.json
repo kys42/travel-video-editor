@@ -1,0 +1,186 @@
+{
+  "schema_version": "video-edit-plan/v1",
+  "title": "Skagway 푸드코트 아침 — 90초 하이라이트",
+  "description": "검토 완료된 네 영상의 특이 포인트를 장소 발견, 음료 주문, 가격 리액션, 시음, 음식 공개 순으로 재구성한 첫 자동 편집 샘플.",
+  "provenance": {
+    "library_manifest": "/Users/kys/projects/travel-video-editor/work/food-sequence/library/manifest.json",
+    "selection_basis": "timeline.summarized.json의 context_groups, context_review.notable_moments, transcript_candidates",
+    "caption_policy": "STT 후보에서 의미가 비교적 분명한 짧은 대사만 사용하고 kind=stt로 표시"
+  },
+  "output": {
+    "width": 1920,
+    "height": 1080,
+    "fps": "30000/1001",
+    "video_encoder": "h264_videotoolbox",
+    "video_bitrate": "10M",
+    "audio_bitrate": "192k",
+    "loudness_lufs": -16,
+    "fade_in": 0.25,
+    "fade_out": 0.6,
+    "font_file": "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+    "caption_font_size": 48,
+    "title_font_size": 68,
+    "label_font_size": 38
+  },
+  "clips": [
+    {
+      "id": "C001",
+      "source": "/Volumes/T7/시애틀알래스카/cam2-0825/DJI_20260826073820_0008_D.MP4",
+      "proxy": "/Volumes/ExternalSSD/travel-video-editor/proxies/1080p-h264/cam2-0825/DJI_20260826073820_0008_D.mp4",
+      "source_in": 3.0,
+      "source_out": 8.0,
+      "label": "화로 공동 좌석",
+      "reason": "테이블 중앙의 실제 불꽃으로 장소를 즉시 설명하는 도입 컷",
+      "metadata": {"group_id": "G001", "notable_sample_id": "F0002"}
+    },
+    {
+      "id": "C002",
+      "source": "/Volumes/T7/시애틀알래스카/cam2-0825/DJI_20260826073820_0008_D.MP4",
+      "proxy": "/Volumes/ExternalSSD/travel-video-editor/proxies/1080p-h264/cam2-0825/DJI_20260826073820_0008_D.mp4",
+      "source_in": 38.0,
+      "source_out": 42.0,
+      "label": "양손 볼 포즈",
+      "reason": "짧고 명확한 인물 리액션으로 도입에 장난기를 추가",
+      "metadata": {"group_id": "G002", "notable_sample_id": "F0009"}
+    },
+    {
+      "id": "C003",
+      "source": "/Volumes/T7/시애틀알래스카/cam2-0825/DJI_20260826073937_0009_D.MP4",
+      "proxy": "/Volumes/ExternalSSD/travel-video-editor/proxies/1080p-h264/cam2-0825/DJI_20260826073937_0009_D.mp4",
+      "source_in": 21.0,
+      "source_out": 25.0,
+      "label": "노란 음료 트럭 발견",
+      "reason": "장소에서 주문 행동으로 넘어가는 연결 컷",
+      "metadata": {"group_id": "G001", "sample_id": "F0005"}
+    },
+    {
+      "id": "C004",
+      "source": "/Volumes/T7/시애틀알래스카/cam2-0825/DJI_20260826073937_0009_D.MP4",
+      "proxy": "/Volumes/ExternalSSD/travel-video-editor/proxies/1080p-h264/cam2-0825/DJI_20260826073937_0009_D.mp4",
+      "source_in": 78.0,
+      "source_out": 82.0,
+      "label": "알래스카 소다 발견",
+      "reason": "지역 음료를 발견하는 선택의 시작",
+      "metadata": {"group_id": "G002", "sample_id": "F0016"}
+    },
+    {
+      "id": "C005",
+      "source": "/Volumes/T7/시애틀알래스카/cam2-0825/DJI_20260826073937_0009_D.MP4",
+      "proxy": "/Volumes/ExternalSSD/travel-video-editor/proxies/1080p-h264/cam2-0825/DJI_20260826073937_0009_D.mp4",
+      "source_in": 90.0,
+      "source_out": 100.0,
+      "label": "맛 추천 대화",
+      "reason": "자몽과 만다린을 비교하는 현지 주문 대화",
+      "metadata": {"group_id": "G003", "notable_sample_id": "F0023"}
+    },
+    {
+      "id": "C006",
+      "source": "/Volumes/T7/시애틀알래스카/cam2-0825/DJI_20260826073937_0009_D.MP4",
+      "proxy": "/Volumes/ExternalSSD/travel-video-editor/proxies/1080p-h264/cam2-0825/DJI_20260826073937_0009_D.mp4",
+      "source_in": 121.0,
+      "source_out": 130.0,
+      "label": "결제와 음료 수령",
+      "reason": "주문 행동이 음료 수령으로 완결되는 순간",
+      "metadata": {"group_id": "G003", "notable_sample_id": "F0026"}
+    },
+    {
+      "id": "C007",
+      "source": "/Volumes/T7/시애틀알래스카/cam2-0825/DJI_20260826073937_0009_D.MP4",
+      "proxy": "/Volumes/ExternalSSD/travel-video-editor/proxies/1080p-h264/cam2-0825/DJI_20260826073937_0009_D.mp4",
+      "source_in": 143.0,
+      "source_out": 150.0,
+      "label": "가격과 팁 리액션",
+      "reason": "가격 반응과 뒤늦은 팁 걱정이 붙는 생활형 코미디 비트",
+      "metadata": {"group_id": "G004", "notable_sample_id": "F0029"}
+    },
+    {
+      "id": "C008",
+      "source": "/Volumes/T7/시애틀알래스카/cam2-0825/DJI_20260826073937_0009_D.MP4",
+      "proxy": "/Volumes/ExternalSSD/travel-video-editor/proxies/1080p-h264/cam2-0825/DJI_20260826073937_0009_D.mp4",
+      "source_in": 187.0,
+      "source_out": 193.0,
+      "label": "더위와 화로",
+      "reason": "덥다는 대사와 활활 타는 화로의 아이러니",
+      "metadata": {"group_id": "G005", "notable_sample_id": "F0039"}
+    },
+    {
+      "id": "C009",
+      "source": "/Volumes/T7/시애틀알래스카/cam2-0825/DJI_20260826074332_0010_D.MP4",
+      "proxy": "/Volumes/ExternalSSD/travel-video-editor/proxies/1080p-h264/cam2-0825/DJI_20260826074332_0010_D.mp4",
+      "source_in": 2.0,
+      "source_out": 14.0,
+      "label": "건배와 첫맛",
+      "reason": "건배부터 첫맛 반응까지 하나의 완결된 음식 비트",
+      "metadata": {"group_id": "G001", "notable_sample_id": "F0004"}
+    },
+    {
+      "id": "C010",
+      "source": "/Volumes/T7/시애틀알래스카/cam2-0825/DJI_20260826074332_0010_D.MP4",
+      "proxy": "/Volumes/ExternalSSD/travel-video-editor/proxies/1080p-h264/cam2-0825/DJI_20260826074332_0010_D.mp4",
+      "source_in": 21.0,
+      "source_out": 26.0,
+      "label": "권태기 농담",
+      "reason": "음료 시음 직후 예상 밖으로 튀는 짧은 관계 농담",
+      "metadata": {"group_id": "G002", "notable_sample_id": "F0006"}
+    },
+    {
+      "id": "C011",
+      "source": "/Volumes/T7/시애틀알래스카/cam2-0825/DJI_20260826074453_0011_D.MP4",
+      "proxy": "/Volumes/ExternalSSD/travel-video-editor/proxies/1080p-h264/cam2-0825/DJI_20260826074453_0011_D.mp4",
+      "source_in": 4.0,
+      "source_out": 9.0,
+      "label": "지역풍 소스대",
+      "reason": "알래스카 캐릭터 라벨을 보여주는 여행지 디테일",
+      "metadata": {"group_id": "G001", "notable_sample_id": "F0002"}
+    },
+    {
+      "id": "C012",
+      "source": "/Volumes/T7/시애틀알래스카/cam2-0825/DJI_20260826074453_0011_D.MP4",
+      "proxy": "/Volumes/ExternalSSD/travel-video-editor/proxies/1080p-h264/cam2-0825/DJI_20260826074453_0011_D.mp4",
+      "source_in": 35.0,
+      "source_out": 42.0,
+      "label": "전체 상차림 공개",
+      "reason": "전체 식사를 먼저 보여주는 결말의 시작",
+      "metadata": {"group_id": "G003", "sample_id": "F0008"}
+    },
+    {
+      "id": "C013",
+      "source": "/Volumes/T7/시애틀알래스카/cam2-0825/DJI_20260826074453_0011_D.MP4",
+      "proxy": "/Volumes/ExternalSSD/travel-video-editor/proxies/1080p-h264/cam2-0825/DJI_20260826074453_0011_D.mp4",
+      "source_in": 44.0,
+      "source_out": 56.5,
+      "label": "감자튀김과 피시 타코",
+      "reason": "두 대표 메뉴의 질감과 토핑이 보이는 뷰티 컷",
+      "metadata": {"group_id": "G003", "notable_sample_ids": ["F0010", "F0011"]}
+    }
+  ],
+  "captions": [
+    {"start": 17.4, "end": 21.4, "text": "추천 맛이 뭐예요?", "kind": "stt"},
+    {"start": 21.5, "end": 26.7, "text": "만다린이나 자몽을 좋아해요", "kind": "stt"},
+    {"start": 27.3, "end": 31.8, "text": "7.35달러예요", "kind": "stt"},
+    {"start": 32.1, "end": 35.7, "text": "Thank you!", "kind": "verified"},
+    {"start": 36.3, "end": 39.2, "text": "비싸다, 근데?", "kind": "stt"},
+    {"start": 39.3, "end": 42.7, "text": "7.5달러… 팁 안 줬어", "kind": "stt"},
+    {"start": 43.3, "end": 46.0, "text": "너무 더운데?", "kind": "stt"},
+    {"start": 49.4, "end": 53.0, "text": "짠! Cheers!", "kind": "verified"},
+    {"start": 55.0, "end": 60.6, "text": "오, 맛있는데?", "kind": "stt"},
+    {"start": 61.3, "end": 63.3, "text": "권태기가 맞는가 봐", "kind": "stt"},
+    {"start": 63.4, "end": 65.8, "text": "그냥 다 미워 보이지?", "kind": "stt"},
+    {"start": 66.2, "end": 68.6, "text": "알래스칸 소스가 있네요", "kind": "stt"},
+    {"start": 68.6, "end": 70.8, "text": "신기한 색깔", "kind": "stt"},
+    {"start": 84.5, "end": 90.2, "text": "피시 타코가 맛있다고 후기가 정말 좋더라고요", "kind": "stt"}
+  ],
+  "overlays": [
+    {"start": 0.25, "end": 3.8, "text": "SKAGWAY, ALASKA\n푸드코트 아침", "style": "title"},
+    {"start": 5.2, "end": 8.8, "text": "갑자기 포즈", "style": "label"},
+    {"start": 13.2, "end": 16.8, "text": "알래스카 소다 발견", "style": "label"},
+    {"start": 49.2, "end": 52.4, "text": "첫 모금", "style": "label"},
+    {"start": 71.2, "end": 74.4, "text": "드디어 음식 도착", "style": "label"},
+    {"start": 86.5, "end": 90.2, "text": "SKAGWAY FOOD COURT · HIGHLIGHT 01", "style": "label"}
+  ],
+  "notes": [
+    "배경음악은 사용하지 않고 현장음을 유지했다.",
+    "자막은 검토된 STT 후보를 짧게 정리한 1차 초안이며 공개 전 실제 음성과 대조해야 한다.",
+    "렌더는 1080p 샘플이지만 모든 컷은 T7 원본 경로와 source_in/source_out을 보존한다."
+  ]
+}
