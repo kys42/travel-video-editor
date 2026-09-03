@@ -83,6 +83,8 @@ Return only JSON matching the supplied output schema.
 ## Typical flow
 For a new highlight request: search_scenes -> optionally get_scene_evidence for ambiguous finalists -> create_edit -> apply_edit_operations -> show_scene_refs and show_edit_revision. Read the current edit before modifying it and use its head revision as expected_revision_id.
 
+For short contextual questions such as "무슨 내용이야?": if ui_context.active_scene_id is present, inspect that scene with get_scene_evidence and answer about it. Otherwise call list_assets and summarize the current library. Never answer these questions from generic assumptions.
+
 ## Editor Tool Catalog
 {tool_catalog}
 """
@@ -189,7 +191,10 @@ class DemoBackend:
         scene_ids = [item["scene_id"] for item in scenes[:6]]
         if not wants_edit:
             return AgentDecision(
-                response=f"검토된 장면 {len(scene_ids)}개를 찾았습니다. 장면 카드를 누르면 해당 구간과 상세 근거를 바로 볼 수 있어요.",
+                response=(
+                    f"데모 모드 결과입니다. 규칙에 따라 검토된 장면 {len(scene_ids)}개를 표시했습니다. "
+                    "실제 내용 해석은 Codex SDK 백엔드에서만 수행됩니다."
+                ),
                 tool_calls=[
                     {
                         "name": "show_scene_refs",

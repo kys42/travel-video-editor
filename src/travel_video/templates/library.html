@@ -209,6 +209,8 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
     .inspector-runtime { display: flex; align-items: center; gap: 6px; padding: 0 9px; color: var(--faint); font: 8px var(--font-time); }
     .inspector-runtime::before { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); content: ""; }
     .inspector-runtime.is-ready::before { background: var(--success); }
+    .inspector-runtime.is-demo { color: var(--accent); }
+    .inspector-runtime.is-demo::before { background: var(--accent); }
     .inspector-runtime.is-busy::before { background: var(--accent); animation: agent-pulse 1.1s ease-in-out infinite; }
     .inspector-runtime.is-error::before { background: var(--danger); }
     .inspector-view { min-width: 0; min-height: 0; }
@@ -386,7 +388,7 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
       <section class="inspector-view inspector-view--ai" id="inspector-ai" role="tabpanel" data-inspector-panel="ai" hidden>
         <div class="agent-context"><div><span>ACTIVE CONTEXT</span><strong data-agent-context>선택 장면과 분석 데이터</strong></div><b data-active-edit>NO EDIT</b></div>
         <div class="chat-scroll" data-chat-scroll aria-live="polite">
-          <article class="chat-message chat-message--assistant"><header><b>AI EDITOR</b><span>LOCAL AGENT</span></header><div class="chat-bubble">검토된 장면과 대화를 검색하고, 원본 타임코드에 연결된 편집 초안을 revision으로 만들 수 있습니다.</div></article>
+          <article class="chat-message chat-message--assistant"><header><b>AI EDITOR</b><span>LOCAL AGENT</span></header><div class="chat-bubble" data-agent-intro>에이전트 연결 상태를 확인하는 중입니다.</div></article>
           <div class="suggestions" data-suggestions><button type="button">이 영상들로 60초 하이라이트 초안 만들어줘</button><button type="button">음식 주문과 웃긴 반응 장면을 찾아줘</button></div>
         </div>
         <form class="chat-composer" data-chat-form><div class="composer-field"><textarea rows="1" maxlength="4000" placeholder="장면 찾기, 초안 만들기, 컷 수정…" aria-label="AI 편집 요청" data-chat-input></textarea><button class="composer-send" type="submit" aria-label="보내기" data-chat-send><svg viewBox="0 0 16 16" fill="none" aria-hidden="true" data-icon-send><path d="m3 8 9-5-2.4 10-2-3L3 8Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="m7.6 10 4.4-7" stroke="currentColor" stroke-width="1.3"/></svg><svg viewBox="0 0 16 16" fill="none" aria-hidden="true" data-icon-stop><rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor"/></svg></button></div><div class="composer-meta"><span>Enter 전송 · Shift+Enter 줄바꿈</span><span>REVISION SAFE</span></div></form>
@@ -420,6 +422,7 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
       const inspectorTabs = [...document.querySelectorAll('[data-inspector-tab]')];
       const inspectorPanels = [...document.querySelectorAll('[data-inspector-panel]')];
       const agentRuntime = document.querySelector('[data-agent-runtime]');
+      const agentIntro = document.querySelector('[data-agent-intro]');
       const agentContext = document.querySelector('[data-agent-context]');
       const activeEdit = document.querySelector('[data-active-edit]');
       const chatScroll = document.querySelector('[data-chat-scroll]');
@@ -807,7 +810,10 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
         chatSend.classList.toggle('is-cancel', busy);
         chatSend.setAttribute('aria-label', busy ? '응답 중지' : '보내기');
         chatInput.disabled = busy;
-        setRuntime(busy ? 'WORKING' : (location.protocol === 'file:' ? 'SERVER OFF' : agentRuntime.dataset.readyLabel || 'READY'), busy ? 'busy' : (location.protocol === 'file:' ? 'error' : 'ready'));
+        setRuntime(
+          busy ? 'WORKING' : (location.protocol === 'file:' ? 'SERVER OFF' : agentRuntime.dataset.readyLabel || 'READY'),
+          busy ? 'busy' : (location.protocol === 'file:' ? 'error' : agentRuntime.dataset.readyState || 'ready')
+        );
       };
 
       const sendChat = async () => {
@@ -924,9 +930,14 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
         fetch('/health', { headers: { 'Accept': 'application/json' } })
           .then(response => response.ok ? response.json() : Promise.reject(new Error(String(response.status))))
           .then(data => {
-            const label = data.backend === 'codex-sdk' ? 'CODEX SDK' : 'DEMO AGENT';
+            const isCodex = data.backend === 'codex-sdk';
+            const label = isCodex ? 'CODEX SDK · LIVE' : 'DEMO · RULES';
             agentRuntime.dataset.readyLabel = label;
-            setRuntime(label, 'ready');
+            agentRuntime.dataset.readyState = isCodex ? 'ready' : 'demo';
+            agentIntro.textContent = isCodex
+              ? 'Codex SDK가 분석 데이터를 도구로 읽고, 근거가 확인된 답변과 안전한 edit revision을 만듭니다.'
+              : '데모 모드입니다. 실제 모델 판단 없이 UI·도구·revision 흐름만 규칙으로 재현합니다.';
+            setRuntime(label, agentRuntime.dataset.readyState);
           })
           .catch(() => setRuntime('SERVER ERROR', 'error'));
       }
