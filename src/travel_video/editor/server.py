@@ -237,6 +237,13 @@ def create_editor_app(
     async def index() -> FileResponse:
         return FileResponse(catalog.library_dir / "index.html", media_type="text/html")
 
+    @app.get("/guide", include_in_schema=False)
+    async def guide() -> FileResponse:
+        guide_path = (
+            Path(__file__).resolve().parents[1] / "templates" / "agent-guide.html"
+        )
+        return FileResponse(guide_path, media_type="text/html")
+
     return app
 
 

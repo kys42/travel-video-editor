@@ -1,11 +1,88 @@
 {
   "schema_version": "editor-tool-catalog/v1",
   "service": "travel-video-editor",
+  "identity": {
+    "name": "AI Editor",
+    "role": "Reviewed travel-video evidence assistant and non-destructive rough-cut operator.",
+    "scope": "Search analyzed footage, inspect shortlisted evidence, create immutable edit revisions, and coordinate the Edit Desk review UI."
+  },
   "principles": [
     "Query compact scene metadata before requesting detailed evidence.",
     "Never expose arbitrary filesystem, shell, FFmpeg, or source mutation capabilities.",
     "Every edit mutation creates a new immutable revision.",
     "All source ranges remain linked to asset_id, scene_id, source_in, and source_out."
+  ],
+  "capabilities": [
+    {
+      "id": "understand-footage",
+      "title": "촬영분 파악",
+      "summary": "촬영 시각순 영상 목록과 영상별 요약을 확인해 사용 가능한 소스 범위를 빠르게 파악합니다.",
+      "examples": ["어제 촬영한 영상이 몇 개인지 알려줘", "이 네 영상에서 무슨 일이 있었는지 요약해줘"],
+      "tools": ["list_assets"],
+      "outcome": "영상 전체를 모델에 다시 넣지 않고 분석된 메타데이터만으로 촬영분을 설명합니다."
+    },
+    {
+      "id": "find-moments",
+      "title": "장면·대화 찾기",
+      "summary": "장면 설명, 행동, 특이 포인트, 태그와 원문 대화를 함께 검색하고 후보를 근거와 함께 좁힙니다.",
+      "examples": ["음식 주문하는 장면 찾아줘", "웃긴 표정 다음에 나온 대화가 뭐였지?"],
+      "tools": ["search_scenes", "get_scene_evidence", "show_scene_refs"],
+      "outcome": "후보 장면 카드와 원본 타임코드를 반환하며, 상세 데이터는 선택한 장면에만 요청합니다."
+    },
+    {
+      "id": "create-rough-cut",
+      "title": "러프컷 초안 만들기",
+      "summary": "목적과 목표 길이에 맞는 장면을 골라 원본 타임코드에 연결된 편집 초안을 만듭니다.",
+      "examples": ["이 영상들로 60초 여행 하이라이트 만들어줘", "음식 위주로 30초 쇼츠 초안을 만들어줘"],
+      "tools": ["search_scenes", "create_edit", "apply_edit_operations", "show_edit_revision"],
+      "outcome": "원본을 건드리지 않는 새 edit와 immutable revision을 생성합니다."
+    },
+    {
+      "id": "revise-cut",
+      "title": "컷 구성 수정",
+      "summary": "기존 초안의 컷을 자르고, 순서를 바꾸고, 제거하거나 추가하며 제목과 목표 길이를 조정합니다.",
+      "examples": ["주문 장면은 줄이고 반응을 더 길게 해줘", "마지막 컷을 앞으로 옮기고 전체를 45초로 맞춰줘"],
+      "tools": ["get_edit", "apply_edit_operations", "show_edit_revision"],
+      "outcome": "이전 결과를 덮어쓰지 않고 변경 요약이 포함된 다음 revision을 생성합니다."
+    },
+    {
+      "id": "review-source",
+      "title": "원본 맥락 검토",
+      "summary": "채팅에서 고른 장면을 타임라인에서 펼치거나 공용 소스 모니터의 해당 구간으로 이동해 재생합니다.",
+      "examples": ["첫 번째 후보를 재생해줘", "이 장면을 상세 타임라인에서 보여줘"],
+      "tools": ["play_source_range", "focus_scene", "open_inspector_tab"],
+      "outcome": "영상 플레이어를 중복 생성하지 않고 현재 Edit Desk의 검토 맥락만 전환합니다."
+    },
+    {
+      "id": "explain-decisions",
+      "title": "선택 근거 설명",
+      "summary": "왜 특정 장면을 골랐는지 행동, 대화, 특이 포인트와 품질 신호를 바탕으로 설명합니다.",
+      "examples": ["왜 이 여섯 컷을 골랐어?", "살릴 대사가 있는 장면만 근거와 같이 보여줘"],
+      "tools": ["search_scenes", "get_scene_evidence", "get_edit", "show_scene_refs"],
+      "outcome": "분석된 근거와 실제 revision 내용을 연결해 답하며 보지 않은 장면을 추측하지 않습니다."
+    }
+  ],
+  "boundaries": [
+    {
+      "id": "source-immutable",
+      "title": "원본은 읽기 전용",
+      "description": "T7의 4K 원본을 이동, 이름 변경, 덮어쓰기 또는 삭제하지 않습니다."
+    },
+    {
+      "id": "contract-only",
+      "title": "계약된 도구만 실행",
+      "description": "편집 작업 중 임의 셸, 파일시스템, FFmpeg 또는 웹 검색 권한을 사용하지 않습니다."
+    },
+    {
+      "id": "reviewed-evidence",
+      "title": "검토 데이터가 근거",
+      "description": "장면 검색과 설명은 분석·검토된 타임라인을 기준으로 하며, 없는 내용은 추측하지 않습니다."
+    },
+    {
+      "id": "draft-not-export",
+      "title": "현재는 러프컷 단계",
+      "description": "edit revision 생성과 검토까지 지원합니다. 최종 4K 렌더, 공개 업로드와 NLE 동기화는 별도 승인·작업 경로입니다."
+    }
   ],
   "tools": [
     {

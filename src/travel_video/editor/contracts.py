@@ -36,7 +36,15 @@ class ToolDefinition:
 
 
 class ToolCatalog:
-    def __init__(self, definitions: list[ToolDefinition], principles: list[str]):
+    def __init__(
+        self,
+        definitions: list[ToolDefinition],
+        principles: list[str],
+        *,
+        identity: dict[str, str] | None = None,
+        capabilities: list[dict[str, Any]] | None = None,
+        boundaries: list[dict[str, str]] | None = None,
+    ):
         if not definitions:
             raise ValueError("tool catalog must define at least one tool")
         names = [item.name for item in definitions]
@@ -44,6 +52,38 @@ class ToolCatalog:
             raise ValueError("tool catalog contains duplicate tool names")
         self._definitions = {item.name: item for item in definitions}
         self.principles = tuple(principles)
+        self.identity = dict(identity or {})
+        self.capabilities = tuple(dict(item) for item in (capabilities or []))
+        self.boundaries = tuple(dict(item) for item in (boundaries or []))
+        capability_ids = [str(item.get("id", "")) for item in self.capabilities]
+        if not all(capability_ids) or len(capability_ids) != len(set(capability_ids)):
+            raise ValueError("capabilities must have unique non-empty IDs")
+        for capability in self.capabilities:
+            required_fields = ("title", "summary", "examples", "tools", "outcome")
+            if any(not capability.get(field) for field in required_fields):
+                raise ValueError(
+                    f"capability {capability.get('id')} is missing required content"
+                )
+            if not isinstance(capability["examples"], list) or not isinstance(
+                capability["tools"], list
+            ):
+                raise ValueError(
+                    f"capability {capability.get('id')} examples and tools must be arrays"
+                )
+            unknown = set(capability.get("tools", [])) - self.names
+            if unknown:
+                raise ValueError(
+                    f"capability {capability.get('id')} references unknown tools: "
+                    + ", ".join(sorted(unknown))
+                )
+        boundary_ids = [str(item.get("id", "")) for item in self.boundaries]
+        if not all(boundary_ids) or len(boundary_ids) != len(set(boundary_ids)):
+            raise ValueError("boundaries must have unique non-empty IDs")
+        if any(
+            not item.get("title") or not item.get("description")
+            for item in self.boundaries
+        ):
+            raise ValueError("boundaries must define title and description")
 
     @classmethod
     def load(cls, path: Path | None = None) -> "ToolCatalog":
@@ -69,7 +109,13 @@ class ToolCatalog:
                     output=str(item["output"]),
                 )
             )
-        return cls(definitions, list(raw.get("principles", [])))
+        return cls(
+            definitions,
+            list(raw.get("principles", [])),
+            identity=dict(raw.get("identity", {})),
+            capabilities=list(raw.get("capabilities", [])),
+            boundaries=list(raw.get("boundaries", [])),
+        )
 
     @property
     def definitions(self) -> tuple[ToolDefinition, ...]:
@@ -88,7 +134,10 @@ class ToolCatalog:
     def public_document(self) -> dict[str, Any]:
         return {
             "schema_version": TOOL_CATALOG_SCHEMA,
+            "identity": self.identity,
             "principles": list(self.principles),
+            "capabilities": list(self.capabilities),
+            "boundaries": list(self.boundaries),
             "tools": [item.prompt_view() for item in self.definitions],
         }
 

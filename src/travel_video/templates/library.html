@@ -356,7 +356,7 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
   <header class="appbar">
     <div class="identity"><span class="mark" aria-hidden="true"><i></i><i></i></span><strong>Travel Video Editor</strong><span>__TITLE__</span></div>
     <div class="dataset"><span><b>__VIDEO_COUNT__</b> CLIPS</span><span><b>__TOTAL_SCENES__</b> SCENES</span><span><b>__TOTAL_DURATION__</b></span></div>
-    <div class="app-meta"><span>__DATE_LABEL__ · __TIME_RANGE__</span><span class="key">/ 검색</span></div>
+    <div class="app-meta"><span>__DATE_LABEL__ · __TIME_RANGE__</span><a class="key" href="/guide" data-guide-link>AI GUIDE</a><span class="key">/ 검색</span></div>
   </header>
 
   <main class="workspace">
@@ -893,6 +893,14 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
         if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendChat(); }
       });
 
+      const guidePrompt = new URLSearchParams(window.location.search).get('prompt');
+      if (guidePrompt) {
+        setInspectorTab('ai');
+        chatInput.value = guidePrompt.slice(0, 4000);
+        chatInput.dispatchEvent(new Event('input'));
+        showToast('가이드의 예시 요청을 입력했습니다. 확인 후 전송하세요.');
+      }
+
       document.addEventListener('keydown', event => {
         const typing = event.target.matches('input, textarea, [contenteditable]');
         if (!typing && event.key === '/') { event.preventDefault(); search.focus(); return; }
@@ -909,6 +917,9 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
       openScene(document.querySelector('[data-scene][open]') || document.querySelector('[data-scene]'));
       if (location.protocol === 'file:') {
         setRuntime('SERVER OFF', 'error');
+        const guideLink = document.querySelector('[data-guide-link]');
+        guideLink.href = '#';
+        guideLink.addEventListener('click', event => { event.preventDefault(); showToast('AI 가이드는 Edit Desk 서버에서 열 수 있습니다.'); });
       } else {
         fetch('/health', { headers: { 'Accept': 'application/json' } })
           .then(response => response.ok ? response.json() : Promise.reject(new Error(String(response.status))))

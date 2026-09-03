@@ -27,6 +27,8 @@ The authoritative boundaries are:
 
 Changes start in the contracts. A tool name, category, approval rule, or event shape must not be changed in only the prompt or only the frontend.
 
+The tool catalog also owns the user-facing identity, capability workflows, example requests, and safety boundaries. The agent prompt, `/api/contracts/tools`, and `/guide` consume that same document so operational guidance cannot drift independently from the executable catalog. See the [AI Editor capability guide](agent-capabilities.md).
+
 ## Runtime topology
 
 ```text
@@ -85,6 +87,7 @@ Supported operations are `add_scene`, `trim_clip`, `move_clip`, `remove_clip`, `
 - `GET /api/edits/{edit_id}` — read edit and revision history.
 - `POST /api/edits/{edit_id}/operations` — optimistic-concurrency mutation.
 - `POST /api/agent/chat` — SSE stream using the seven event types in the event contract.
+- `GET /guide` — live operations manual rendered from the current tool contract and runtime health.
 
 The normal SSE order is `status* → card/action* → text* → suggestions? → done`. An `error` terminates the stream. The UI treats a transport close without `done` as an incomplete turn.
 

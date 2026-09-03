@@ -128,6 +128,8 @@ def test_contract_matches_gateway_and_event_schema(tmp_path: Path) -> None:
     tools = ToolCatalog.load()
     gateway = ToolGateway(catalog, store, tools)
 
+    assert len(tools.capabilities) == 6
+    assert len(tools.boundaries) == 4
     assert gateway.tools.names == {
         "list_assets",
         "search_scenes",
@@ -231,3 +233,9 @@ def test_demo_agent_runs_search_cards_and_revision_over_sse(tmp_path: Path) -> N
     assert "event: done" in response.text
     assert '"backend":"demo"' in response.text
     assert client.get("/openapi.json").status_code == 200
+    guide = client.get("/guide")
+    assert guide.status_code == 200
+    assert 'data-capabilities' in guide.text
+    live_contract = client.get("/api/contracts/tools").json()
+    assert len(live_contract["capabilities"]) == 6
+    assert live_contract["identity"]["name"] == "AI Editor"

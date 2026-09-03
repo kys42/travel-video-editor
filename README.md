@@ -54,6 +54,7 @@
 - [영상 단위 요약과 시간순 다중 영상 라이브러리](docs/video-library.md)
 - [채팅 기반 AI 영상 편집 플랫폼 설계](docs/agentic-editor-platform.md)
 - [Editor Service 실행 가능한 기술 계약](docs/technical/editor-service.md)
+- [AI Editor 기능 및 운영 가이드](docs/technical/agent-capabilities.md)
 - [에이전트 도구 카탈로그](docs/contracts/editor-tools.v1.json)
 - [SSE 이벤트 계약](docs/contracts/agent-events.v1.schema.json)
 - [`kyungdoc/video-summary` 검토](docs/upstream-video-summary-review.md)

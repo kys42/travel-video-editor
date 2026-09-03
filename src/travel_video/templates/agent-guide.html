@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Editor Operations Manual · Travel Video Editor</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101315; --panel: #15191c; --panel-2: #191e22;
+      --line: #2b3237; --line-strong: #3b454c;
+      --text: #edf0ec; --text-2: #c9d0cc; --muted: #89938f; --faint: #5f6965;
+      --orange: #efaa4b; --teal: #56b9a6; --blue: #75a7d8; --red: #d4776e; --violet: #a394d6;
+      --mono: "SFMono-Regular", "Cascadia Mono", "Liberation Mono", monospace;
+      --ui: "Avenir Next", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
+      --condensed: "Avenir Next Condensed", "Apple SD Gothic Neo", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; color: var(--text); background: var(--bg); font-family: var(--ui); }
+    a { color: inherit; text-decoration: none; }
+    button, input { font: inherit; }
+    button, a { -webkit-tap-highlight-color: transparent; }
+    :focus-visible { outline: 1px solid var(--orange); outline-offset: 2px; }
+
+    .topbar { position: sticky; top: 0; z-index: 20; display: grid; grid-template-columns: minmax(310px, 1fr) auto minmax(310px, 1fr); align-items: center; height: 44px; padding: 0 12px; border-bottom: 1px solid var(--line-strong); background: rgba(20, 24, 27, .96); backdrop-filter: blur(16px); }
+    .brand { display: flex; align-items: center; min-width: 0; gap: 8px; }
+    .mark { position: relative; width: 15px; height: 15px; border: 1px solid var(--line-strong); }
+    .mark::before { content: ""; position: absolute; inset: 3px 7px 3px 3px; background: var(--orange); }
+    .mark::after { content: ""; position: absolute; inset: 3px 3px 3px 9px; background: var(--teal); }
+    .brand strong { font: 650 11px var(--condensed); letter-spacing: .02em; white-space: nowrap; }
+    .brand span { overflow: hidden; color: var(--muted); font: 9px var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+    .top-stats { display: flex; align-items: center; gap: 13px; color: var(--muted); font: 8px var(--mono); }
+    .top-stats b { color: var(--text-2); font-weight: 500; }
+    .top-actions { display: flex; justify-content: flex-end; gap: 6px; }
+    .top-actions a { padding: 4px 7px; border: 1px solid var(--line); border-radius: 2px; color: var(--muted); font: 8px var(--mono); }
+    .top-actions a:hover { color: var(--text); border-color: var(--line-strong); background: var(--panel-2); }
+    .top-actions a.primary { color: #18130b; border-color: var(--orange); background: var(--orange); }
+
+    .shell { display: grid; grid-template-columns: 214px minmax(0, 1fr); min-height: calc(100vh - 44px); }
+    .rail { position: sticky; top: 44px; align-self: start; height: calc(100vh - 44px); padding: 14px 10px; overflow-y: auto; border-right: 1px solid var(--line-strong); background: #121619; }
+    .rail-label { display: block; margin: 0 7px 7px; color: var(--faint); font: 7px var(--mono); letter-spacing: .12em; }
+    .rail nav { display: grid; gap: 1px; }
+    .rail nav a { display: grid; grid-template-columns: 23px 1fr; align-items: center; min-height: 29px; padding: 0 7px; border-left: 1px solid transparent; color: var(--muted); font-size: 9px; }
+    .rail nav a span { color: var(--faint); font: 8px var(--mono); }
+    .rail nav a:hover, .rail nav a.is-active { color: var(--text); border-left-color: var(--orange); background: var(--panel-2); }
+    .runtime { margin-top: 18px; border: 1px solid var(--line); background: var(--panel); }
+    .runtime header { display: flex; align-items: center; justify-content: space-between; min-height: 28px; padding: 0 8px; border-bottom: 1px solid var(--line); }
+    .runtime header strong { font: 8px var(--mono); }
+    .runtime-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); box-shadow: 0 0 0 3px color-mix(in srgb, var(--faint) 12%, transparent); }
+    .runtime-dot.is-live { background: var(--teal); box-shadow: 0 0 0 3px color-mix(in srgb, var(--teal) 12%, transparent); }
+    .runtime dl { display: grid; grid-template-columns: 1fr auto; gap: 7px 8px; margin: 0; padding: 9px 8px; font: 8px var(--mono); }
+    .runtime dt { color: var(--faint); }
+    .runtime dd { margin: 0; color: var(--text-2); }
+
+    main { min-width: 0; padding-bottom: 80px; }
+    .section { scroll-margin-top: 58px; border-bottom: 1px solid var(--line-strong); }
+    .section-inner { max-width: 1190px; margin: 0 auto; padding: 28px 32px; }
+    .section-head { display: grid; grid-template-columns: 54px minmax(0, 1fr) minmax(240px, .7fr); gap: 16px; margin-bottom: 18px; }
+    .section-no { color: var(--orange); font: 9px var(--mono); }
+    .section-title h2 { margin: 0 0 4px; font: 650 22px/1.1 var(--condensed); letter-spacing: -.02em; }
+    .section-title p, .section-note { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.6; }
+    .section-note { padding-left: 12px; border-left: 1px solid var(--line); }
+
+    .hero { position: relative; overflow: hidden; background: #111518; }
+    .hero::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .25; background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px); background-size: 44px 44px; mask-image: linear-gradient(to right, #000, transparent 78%); }
+    .hero .section-inner { position: relative; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(300px, .8fr); gap: 28px; padding-top: 36px; padding-bottom: 31px; }
+    .eyebrow { display: flex; align-items: center; gap: 8px; margin-bottom: 13px; color: var(--orange); font: 8px var(--mono); letter-spacing: .08em; }
+    .eyebrow::before { content: ""; width: 22px; height: 1px; background: var(--orange); }
+    h1 { max-width: 750px; margin: 0; font: 650 clamp(30px, 3.5vw, 46px)/.99 var(--condensed); letter-spacing: -.04em; }
+    .hero-copy { max-width: 670px; margin: 16px 0 0; color: var(--text-2); font-size: 12px; line-height: 1.7; }
+    .hero-copy b { color: var(--orange); font-weight: 600; }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 19px; }
+    .button { display: inline-flex; align-items: center; gap: 8px; min-height: 30px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 2px; color: var(--text-2); background: var(--panel); font-size: 9px; }
+    .button:hover { color: var(--text); background: var(--panel-2); }
+    .button.primary { color: #1a140c; border-color: var(--orange); background: var(--orange); font-weight: 650; }
+    .button span { color: var(--faint); font: 8px var(--mono); }
+    .button.primary span { color: #684615; }
+    .scope-board { align-self: end; border: 1px solid var(--line-strong); background: rgba(20, 25, 28, .88); box-shadow: 10px 10px 0 rgba(0, 0, 0, .12); }
+    .scope-board header { display: flex; justify-content: space-between; align-items: center; min-height: 31px; padding: 0 9px; border-bottom: 1px solid var(--line); }
+    .scope-board header strong { font: 8px var(--mono); }
+    .scope-board header span { color: var(--teal); font: 7px var(--mono); }
+    .scope-line { display: grid; grid-template-columns: 20px 1fr auto; gap: 8px; align-items: center; min-height: 35px; padding: 0 9px; border-bottom: 1px solid var(--line); font-size: 9px; }
+    .scope-line:last-child { border-bottom: 0; }
+    .scope-line i { width: 7px; height: 7px; border: 1px solid currentColor; border-radius: 50%; color: var(--teal); }
+    .scope-line span { color: var(--muted); }
+    .scope-line b { color: var(--faint); font: 7px var(--mono); font-weight: 500; }
+
+    .capability-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--line-strong); border-left: 1px solid var(--line-strong); }
+    .capability { min-width: 0; min-height: 205px; padding: 13px; border-right: 1px solid var(--line-strong); border-bottom: 1px solid var(--line-strong); background: var(--panel); }
+    .capability-index { display: flex; justify-content: space-between; align-items: center; color: var(--faint); font: 8px var(--mono); }
+    .capability-index span { color: var(--teal); }
+    .capability h3 { margin: 24px 0 5px; font: 650 15px var(--condensed); }
+    .capability > p { min-height: 43px; margin: 0; color: var(--muted); font-size: 9px; line-height: 1.55; }
+    .tool-chips { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 9px; }
+    .tool-chip { padding: 2px 4px; border: 1px solid var(--line); border-radius: 2px; color: var(--blue); font: 7px var(--mono); }
+    .capability details { margin-top: 12px; border-top: 1px solid var(--line); }
+    .capability summary { padding: 7px 0 2px; color: var(--text-2); font-size: 8px; cursor: pointer; }
+    .example-list { display: grid; gap: 4px; margin-top: 5px; }
+    .example-list a { display: grid; grid-template-columns: 13px 1fr; gap: 5px; color: var(--muted); font-size: 8px; line-height: 1.45; }
+    .example-list a::before { content: ">"; color: var(--orange); font: 8px var(--mono); }
+    .example-list a:hover { color: var(--text); }
+
+    .workflow { display: grid; grid-template-columns: repeat(5, 1fr); border: 1px solid var(--line-strong); }
+    .workflow article { position: relative; min-height: 138px; padding: 12px; border-right: 1px solid var(--line); background: var(--panel); }
+    .workflow article:last-child { border-right: 0; }
+    .workflow article:not(:last-child)::after { content: "→"; position: absolute; top: 10px; right: -8px; z-index: 2; color: var(--orange); background: var(--panel); font: 12px var(--mono); }
+    .workflow span { color: var(--faint); font: 8px var(--mono); }
+    .workflow h3 { margin: 22px 0 5px; font-size: 10px; }
+    .workflow p { margin: 0; color: var(--muted); font-size: 8px; line-height: 1.55; }
+
+    .toolbar { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-bottom: 8px; }
+    .tool-search { min-width: 0; height: 31px; padding: 0 10px; border: 1px solid var(--line); border-radius: 2px; outline: 0; color: var(--text); background: var(--panel); font-size: 9px; }
+    .tool-search:focus { border-color: var(--line-strong); }
+    .filters { display: flex; gap: 3px; }
+    .filter { padding: 0 8px; border: 1px solid var(--line); border-radius: 2px; color: var(--muted); background: var(--panel); font: 7px var(--mono); cursor: pointer; }
+    .filter:hover, .filter.is-active { color: var(--text); border-color: var(--line-strong); background: var(--panel-2); }
+    .tool-table { border: 1px solid var(--line-strong); }
+    .tool-header, .tool-summary { display: grid; grid-template-columns: 39px 146px 92px minmax(220px, 1fr) 88px; gap: 10px; align-items: center; }
+    .tool-header { min-height: 28px; padding: 0 9px; color: var(--faint); background: #111518; font: 7px var(--mono); }
+    .tool-row { border-top: 1px solid var(--line); background: var(--panel); }
+    .tool-row[hidden] { display: none; }
+    .tool-summary { min-height: 49px; padding: 7px 9px; list-style: none; cursor: pointer; }
+    .tool-summary::-webkit-details-marker { display: none; }
+    .tool-summary:hover, .tool-row[open] .tool-summary { background: var(--panel-2); }
+    .tool-no { color: var(--faint); font: 8px var(--mono); }
+    .tool-name { overflow: hidden; color: var(--text-2); font: 8px var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+    .category { width: fit-content; padding: 2px 4px; border: 1px solid currentColor; border-radius: 2px; color: var(--teal); font: 7px var(--mono); }
+    .category--durable_action { color: var(--orange); }
+    .category--display { color: var(--blue); }
+    .category--ui_action { color: var(--violet); }
+    .tool-intent { overflow: hidden; color: var(--muted); font-size: 8px; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
+    .approval { color: var(--faint); font: 7px var(--mono); text-align: right; }
+    .tool-detail { display: grid; grid-template-columns: minmax(220px, .8fr) minmax(300px, 1.2fr); gap: 18px; padding: 12px 12px 14px 58px; border-top: 1px solid var(--line); background: #121619; }
+    .detail-block label { display: block; margin-bottom: 5px; color: var(--faint); font: 7px var(--mono); letter-spacing: .08em; }
+    .detail-block p { margin: 0 0 10px; color: var(--text-2); font-size: 8px; line-height: 1.6; }
+    .param-list { display: grid; gap: 4px; }
+    .param { display: grid; grid-template-columns: 118px 62px 1fr; gap: 8px; color: var(--muted); font-size: 8px; }
+    .param code { color: var(--blue); font: 7px var(--mono); }
+    .param b { color: var(--faint); font: 7px var(--mono); font-weight: 500; }
+    .empty-tools { padding: 22px; color: var(--muted); font-size: 9px; text-align: center; }
+
+    .safety-grid { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--line-strong); }
+    .safety { min-height: 185px; padding: 12px; border-right: 1px solid var(--line); background: var(--panel); }
+    .safety:last-child { border-right: 0; }
+    .safety > span { color: var(--teal); font: 7px var(--mono); }
+    .safety.is-write > span { color: var(--orange); }
+    .safety.is-blocked > span { color: var(--red); }
+    .safety h3 { margin: 20px 0 8px; font-size: 11px; }
+    .safety ul { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+    .safety li { display: grid; grid-template-columns: 10px 1fr; color: var(--muted); font-size: 8px; line-height: 1.45; }
+    .safety li::before { content: "—"; color: var(--faint); }
+    .boundary-list { margin-top: 10px; border: 1px solid var(--line-strong); }
+    .boundary { display: grid; grid-template-columns: 180px 1fr; gap: 16px; min-height: 46px; padding: 9px 11px; border-bottom: 1px solid var(--line); background: #121619; }
+    .boundary:last-child { border-bottom: 0; }
+    .boundary strong { color: var(--red); font-size: 9px; }
+    .boundary p { margin: 0; color: var(--muted); font-size: 8px; line-height: 1.55; }
+
+    .event-strip { display: grid; grid-template-columns: repeat(7, 1fr); border: 1px solid var(--line-strong); }
+    .event { min-width: 0; padding: 10px; border-right: 1px solid var(--line); background: var(--panel); }
+    .event:last-child { border-right: 0; }
+    .event code { color: var(--blue); font: 8px var(--mono); }
+    .event p { margin: 12px 0 0; color: var(--muted); font-size: 8px; line-height: 1.45; }
+    .contract-note { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 16px; margin-top: 10px; padding: 11px; border: 1px solid var(--line); background: #121619; }
+    .contract-note p { margin: 0; color: var(--muted); font-size: 8px; line-height: 1.55; }
+    .contract-note code { color: var(--orange); font: 8px var(--mono); }
+    .statusbar { position: fixed; right: 0; bottom: 0; left: 214px; z-index: 15; display: flex; justify-content: space-between; align-items: center; height: 24px; padding: 0 10px; border-top: 1px solid var(--line-strong); color: var(--faint); background: rgba(17, 21, 24, .96); font: 7px var(--mono); }
+    .statusbar b { color: var(--teal); font-weight: 500; }
+
+    @media (max-width: 980px) {
+      .topbar { grid-template-columns: 1fr auto; } .top-stats { display: none; }
+      .shell { grid-template-columns: 1fr; } .rail { display: none; }
+      .hero .section-inner { grid-template-columns: 1fr; }
+      .capability-grid { grid-template-columns: repeat(2, 1fr); }
+      .workflow { grid-template-columns: 1fr 1fr; }
+      .workflow article { border-bottom: 1px solid var(--line); }
+      .workflow article::after { display: none; }
+      .tool-header, .tool-summary { grid-template-columns: 34px 130px 88px 1fr; }
+      .approval { display: none; }
+      .safety-grid { grid-template-columns: repeat(2, 1fr); }
+      .safety { border-bottom: 1px solid var(--line); }
+      .event-strip { grid-template-columns: repeat(4, 1fr); }
+      .event { border-bottom: 1px solid var(--line); }
+      .statusbar { left: 0; }
+    }
+    @media (max-width: 620px) {
+      .topbar { height: auto; min-height: 44px; }
+      .brand span, .top-actions a:not(.primary) { display: none; }
+      .section-inner { padding: 24px 14px; }
+      .section-head { grid-template-columns: 38px 1fr; }
+      .section-note { display: none; }
+      .hero .section-inner { padding-top: 32px; }
+      .capability-grid, .safety-grid { grid-template-columns: 1fr; }
+      .workflow { grid-template-columns: 1fr; }
+      .tool-header { display: none; }
+      .tool-summary { grid-template-columns: 30px 1fr auto; }
+      .tool-intent { grid-column: 2 / -1; white-space: normal; }
+      .tool-detail { grid-template-columns: 1fr; padding-left: 12px; }
+      .filters { display: none; }
+      .event-strip { grid-template-columns: repeat(2, 1fr); }
+      .boundary { grid-template-columns: 1fr; gap: 4px; }
+      .statusbar span:last-child { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="mark" aria-hidden="true"></span><strong>Travel Video Editor</strong><span>/ Agent Operations Manual</span></div>
+    <div class="top-stats"><span><b data-tool-count>—</b> TOOLS</span><span><b data-capability-count>—</b> WORKFLOWS</span><span>CONTRACT v1</span></div>
+    <div class="top-actions"><a href="/openapi.json" target="_blank" rel="noopener">OPENAPI</a><a href="/api/contracts/tools" target="_blank" rel="noopener">RAW CONTRACT</a><a class="primary" href="/">EDIT DESK →</a></div>
+  </header>
+  <div class="shell">
+    <aside class="rail">
+      <span class="rail-label">OPERATIONS MANUAL</span>
+      <nav aria-label="가이드 섹션">
+        <a href="#overview" class="is-active"><span>00</span>개요</a><a href="#capabilities"><span>01</span>할 수 있는 일</a><a href="#workflow"><span>02</span>작동 방식</a><a href="#tools"><span>03</span>도구 인벤토리</a><a href="#safety"><span>04</span>권한과 안전 경계</a><a href="#protocol"><span>05</span>응답 프로토콜</a>
+      </nav>
+      <section class="runtime" aria-label="에이전트 런타임 상태">
+        <header><strong>RUNTIME</strong><i class="runtime-dot" data-runtime-dot></i></header>
+        <dl><dt>STATUS</dt><dd data-runtime-status>CHECKING</dd><dt>BACKEND</dt><dd data-runtime-backend>—</dd><dt>FOOTAGE</dt><dd data-asset-count>—</dd><dt>SCENES</dt><dd data-scene-count>—</dd></dl>
+      </section>
+    </aside>
+    <main>
+      <section class="section hero" id="overview"><div class="section-inner">
+        <div><div class="eyebrow">AI EDITOR · OPERATING SCOPE</div><h1>찾고, 이해하고,<br>러프컷을 조립합니다.</h1><p class="hero-copy">이 에이전트는 일반적인 챗봇이 아니라 <b>분석된 여행 영상과 Edit Desk에 연결된 편집 오퍼레이터</b>입니다. 검토된 장면과 대화를 검색하고, 필요한 근거만 읽은 뒤, 되돌릴 수 있는 편집 revision을 만듭니다.</p><div class="hero-actions"><a class="button primary" href="/?prompt=이 영상들로 60초 여행 하이라이트 초안을 만들어줘">60초 초안 요청 <span>↗</span></a><a class="button" href="#capabilities">기능 전체 보기 <span>↓</span></a><a class="button" href="#safety">안전 경계 확인 <span>04</span></a></div></div>
+        <aside class="scope-board" aria-label="현재 지원 범위"><header><strong>CURRENT SCOPE</strong><span>● AVAILABLE NOW</span></header><div class="scope-line"><i></i><span>분석된 영상·장면·대화 검색</span><b>READ</b></div><div class="scope-line"><i></i><span>장면별 상세 근거 확인</span><b>READ</b></div><div class="scope-line"><i></i><span>비파괴 러프컷 생성·수정</span><b>REVISION</b></div><div class="scope-line"><i></i><span>소스 모니터·타임라인 제어</span><b>UI ACTION</b></div></aside>
+      </div></section>
+
+      <section class="section" id="capabilities"><div class="section-inner">
+        <header class="section-head"><span class="section-no">01</span><div class="section-title"><h2>에이전트에게 맡길 수 있는 일</h2><p>자연어로 요청하면 계약에 정의된 도구 조합으로 처리합니다.</p></div><p class="section-note">각 예시는 Edit Desk 입력창으로 바로 전달됩니다. 자동 실행하지 않으므로 내용을 확인하고 전송할 수 있습니다.</p></header>
+        <div class="capability-grid" data-capabilities><div class="empty-tools">기능 계약을 불러오는 중…</div></div>
+      </div></section>
+
+      <section class="section" id="workflow"><div class="section-inner">
+        <header class="section-head"><span class="section-no">02</span><div class="section-title"><h2>요청이 편집 revision이 되기까지</h2><p>전체 영상을 모델이 순차 시청하지 않는 토큰 절약형 경로입니다.</p></div><p class="section-note">검색 결과는 먼저 에이전트만 읽고, 사용자에게 유효한 후보만 카드로 표시합니다.</p></header>
+        <div class="workflow"><article><span>01 · CONTEXT</span><h3>현재 맥락 확인</h3><p>선택한 장면, 활성 편집안, 요청한 길이와 목적을 읽습니다.</p></article><article><span>02 · SEARCH</span><h3>요약 인덱스 검색</h3><p>설명, 행동, 대화, 특이 포인트를 작은 검색 결과로 좁힙니다.</p></article><article><span>03 · EVIDENCE</span><h3>후보만 상세 확인</h3><p>모호한 후보에 한해 세부 행동, 원문 발화와 프레임 참조를 읽습니다.</p></article><article><span>04 · REVISE</span><h3>새 revision 생성</h3><p>원본 타임코드 기반 작업을 검증하고 이전 버전을 남긴 채 저장합니다.</p></article><article><span>05 · REVIEW</span><h3>Edit Desk로 검토</h3><p>장면 카드, 변경 요약과 소스 모니터 액션을 같은 SSE 스트림으로 보냅니다.</p></article></div>
+      </div></section>
+
+      <section class="section" id="tools"><div class="section-inner">
+        <header class="section-head"><span class="section-no">03</span><div class="section-title"><h2>실행 가능한 도구 인벤토리</h2><p>아래 목록은 페이지에 복사된 문구가 아니라 현재 서버 계약에서 실시간으로 읽습니다.</p></div><p class="section-note">행을 펼치면 사용 의도, 입력, 출력과 승인 규칙을 볼 수 있습니다.</p></header>
+        <div class="toolbar"><input class="tool-search" type="search" placeholder="도구 이름·용도 검색" aria-label="도구 검색" data-tool-search><div class="filters" role="group" aria-label="도구 종류"><button class="filter is-active" data-filter="all">ALL</button><button class="filter" data-filter="data_query">QUERY</button><button class="filter" data-filter="durable_action">REVISION</button><button class="filter" data-filter="display">DISPLAY</button><button class="filter" data-filter="ui_action">UI</button></div></div>
+        <div class="tool-table"><div class="tool-header"><span>NO.</span><span>TOOL</span><span>TYPE</span><span>WHEN TO USE</span><span>APPROVAL</span></div><div data-tool-list><div class="empty-tools">도구 계약을 불러오는 중…</div></div></div>
+      </div></section>
+
+      <section class="section" id="safety"><div class="section-inner">
+        <header class="section-head"><span class="section-no">04</span><div class="section-title"><h2>권한과 안전 경계</h2><p>모델의 판단과 실제 편집 권한은 서버의 Tool Gateway에서 분리됩니다.</p></div><p class="section-note">Codex는 도구 호출을 제안합니다. 입력 검증, 리비전 충돌 검사와 실제 저장은 서버가 담당합니다.</p></header>
+        <div class="safety-grid"><article class="safety"><span>READ · NO APPROVAL</span><h3>읽을 수 있음</h3><ul><li>영상별 요약과 촬영 순서</li><li>검토된 장면·행동·대화</li><li>특이 포인트와 프레임 참조</li><li>현재 및 과거 편집 revision</li></ul></article><article class="safety is-write"><span>WRITE · DRAFT ONLY</span><h3>변경할 수 있음</h3><ul><li>새 러프컷 초안 만들기</li><li>컷 추가·trim·이동·제거</li><li>편집 제목과 목표 길이</li><li>항상 새 revision으로 저장</li></ul></article><article class="safety"><span>UI · REVERSIBLE</span><h3>화면에서 할 수 있음</h3><ul><li>장면 상세 위치로 이동</li><li>소스 모니터 구간 재생</li><li>Monitor/AI 탭 전환</li><li>장면·편집 참조 카드 표시</li></ul></article><article class="safety is-blocked"><span>BLOCKED · OUT OF SCOPE</span><h3>할 수 없음</h3><ul><li>4K 원본 삭제·이동·덮어쓰기</li><li>임의 셸·파일시스템 실행</li><li>확인되지 않은 장면 추측</li><li>무승인 최종 렌더·업로드</li></ul></article></div>
+        <div class="boundary-list" data-boundaries></div>
+      </div></section>
+
+      <section class="section" id="protocol"><div class="section-inner">
+        <header class="section-head"><span class="section-no">05</span><div class="section-title"><h2>응답과 화면 제어 프로토콜</h2><p>텍스트, 카드와 화면 액션은 같은 cancelable SSE 스트림으로 전달됩니다.</p></div><p class="section-note">브라우저는 서버가 보낸 임의 코드를 실행하지 않고 닫힌 타입의 의미 기반 액션만 처리합니다.</p></header>
+        <div class="event-strip"><article class="event"><code>status</code><p>검색·조회·revision 적용 진행 상태</p></article><article class="event"><code>card</code><p>장면 후보와 편집 결과 참조 카드</p></article><article class="event"><code>action</code><p>재생·포커스·인스펙터 전환</p></article><article class="event"><code>text</code><p>에이전트의 설명과 결과 요약</p></article><article class="event"><code>suggestions</code><p>현재 결과에 맞는 후속 요청</p></article><article class="event"><code>done</code><p>세션·활성 edit와 정상 종료</p></article><article class="event"><code>error</code><p>코드·재시도 가능 여부가 있는 실패</p></article></div>
+        <div class="contract-note"><p>기능·권한·도구 설명의 기준은 <code>editor-tool-catalog/v1</code>입니다. 에이전트 프롬프트, Tool Gateway, 이 가이드와 테스트가 같은 계약을 소비합니다.</p><a class="button" href="/api/contracts/tools" target="_blank" rel="noopener">JSON 계약 열기 <span>↗</span></a></div>
+      </div></section>
+    </main>
+  </div>
+  <footer class="statusbar"><span><b>● CONTRACT CONNECTED</b> · source media remains immutable</span><span>ESC: Edit Desk로 돌아가기 · /: 도구 검색</span></footer>
+
+  <script>
+    (() => {
+      const categoryLabels = { data_query: 'QUERY', durable_action: 'REVISION', display: 'DISPLAY', ui_action: 'UI ACTION' };
+      const approvalLabels = { never: 'NONE', implicit_for_draft: 'DRAFT' };
+      const state = { tools: [], filter: 'all' };
+      const toolList = document.querySelector('[data-tool-list]');
+      const capabilityRoot = document.querySelector('[data-capabilities]');
+      const boundaryRoot = document.querySelector('[data-boundaries]');
+      const search = document.querySelector('[data-tool-search]');
+      const escapeHtml = value => String(value ?? '').replace(/[&<>"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[char]);
+      const typeLabel = schema => schema?.type === 'array' ? `array<${schema.items?.type || 'object'}>` : schema?.type || 'any';
+      const editorUrl = prompt => `/?prompt=${encodeURIComponent(prompt)}`;
+
+      const renderCapabilities = capabilities => {
+        capabilityRoot.innerHTML = capabilities.map((item, index) => `<article class="capability"><div class="capability-index"><span>CAPABILITY ${String(index + 1).padStart(2, '0')}</span><b>AVAILABLE</b></div><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.summary)}</p><div class="tool-chips">${item.tools.map(name => `<span class="tool-chip">${escapeHtml(name)}</span>`).join('')}</div><details><summary>예시 요청 ${item.examples.length}개</summary><div class="example-list">${item.examples.map(example => `<a href="${editorUrl(example)}">${escapeHtml(example)}</a>`).join('')}</div></details></article>`).join('');
+      };
+      const renderBoundaries = boundaries => { boundaryRoot.innerHTML = boundaries.map(item => `<article class="boundary"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.description)}</p></article>`).join(''); };
+      const renderTools = () => {
+        const query = search.value.trim().toLocaleLowerCase('ko');
+        let visible = 0;
+        toolList.innerHTML = state.tools.map((tool, index) => {
+          const haystack = `${tool.name} ${tool.when_to_use} ${tool.output}`.toLocaleLowerCase('ko');
+          const hidden = (state.filter !== 'all' && tool.category !== state.filter) || (query && !haystack.includes(query));
+          if (!hidden) visible += 1;
+          const properties = tool.parameters?.properties || {};
+          const required = new Set(tool.parameters?.required || []);
+          const params = Object.entries(properties).map(([name, schema]) => `<div class="param"><code>${escapeHtml(name)}${required.has(name) ? ' *' : ''}</code><b>${escapeHtml(typeLabel(schema))}</b><span>${escapeHtml(schema.description || schema.enum?.join(' · ') || '')}</span></div>`).join('') || '<p>입력 파라미터 없음</p>';
+          return `<details class="tool-row" data-category="${tool.category}" ${hidden ? 'hidden' : ''}><summary class="tool-summary"><span class="tool-no">${String(index + 1).padStart(2, '0')}</span><code class="tool-name">${escapeHtml(tool.name)}</code><span class="category category--${tool.category}">${categoryLabels[tool.category] || tool.category}</span><span class="tool-intent">${escapeHtml(tool.when_to_use)}</span><span class="approval">${approvalLabels[tool.approval] || escapeHtml(tool.approval)}</span></summary><div class="tool-detail"><div class="detail-block"><label>INTENT / OUTPUT</label><p>${escapeHtml(tool.when_to_use)}</p><label>RETURN</label><p>${escapeHtml(tool.output)}</p><label>SIDE EFFECT</label><p>${escapeHtml(tool.side_effect)}</p></div><div class="detail-block"><label>PARAMETERS · * REQUIRED</label><div class="param-list">${params}</div></div></div></details>`;
+        }).join('');
+        if (!visible) toolList.innerHTML += '<div class="empty-tools">조건에 맞는 도구가 없습니다.</div>';
+      };
+      const setRuntime = (health, project) => {
+        document.querySelector('[data-runtime-dot]').classList.add('is-live');
+        document.querySelector('[data-runtime-status]').textContent = health.status.toUpperCase();
+        document.querySelector('[data-runtime-backend]').textContent = health.backend.toUpperCase();
+        document.querySelector('[data-asset-count]').textContent = String(project.asset_count);
+        document.querySelector('[data-scene-count]').textContent = String(project.scene_count);
+      };
+
+      Promise.all([
+        fetch('/api/contracts/tools').then(response => { if (!response.ok) throw new Error('tool contract'); return response.json(); }),
+        fetch('/health').then(response => { if (!response.ok) throw new Error('health'); return response.json(); }),
+        fetch('/api/project').then(response => { if (!response.ok) throw new Error('project'); return response.json(); })
+      ]).then(([contract, health, project]) => {
+        state.tools = contract.tools || [];
+        document.querySelector('[data-tool-count]').textContent = String(state.tools.length);
+        document.querySelector('[data-capability-count]').textContent = String(contract.capabilities?.length || 0);
+        renderCapabilities(contract.capabilities || []); renderBoundaries(contract.boundaries || []); renderTools(); setRuntime(health, project);
+      }).catch(() => {
+        capabilityRoot.innerHTML = '<div class="empty-tools">서버의 기능 계약을 불러오지 못했습니다.</div>';
+        toolList.innerHTML = '<div class="empty-tools">Edit Desk 서버 상태를 확인해주세요.</div>';
+        boundaryRoot.innerHTML = ''; document.querySelector('[data-runtime-status]').textContent = 'OFFLINE';
+      });
+
+      document.querySelectorAll('[data-filter]').forEach(button => button.addEventListener('click', () => { state.filter = button.dataset.filter; document.querySelectorAll('[data-filter]').forEach(item => item.classList.toggle('is-active', item === button)); renderTools(); }));
+      search.addEventListener('input', renderTools);
+      const navLinks = [...document.querySelectorAll('.rail nav a')];
+      const observer = new IntersectionObserver(entries => { const visible = entries.filter(entry => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0]; if (!visible) return; navLinks.forEach(link => link.classList.toggle('is-active', link.hash === `#${visible.target.id}`)); }, { rootMargin: '-44px 0px -68% 0px', threshold: [0, .25, .6] });
+      document.querySelectorAll('main > section[id]').forEach(section => observer.observe(section));
+      document.addEventListener('keydown', event => {
+        if (event.key === '/' && document.activeElement !== search) { event.preventDefault(); search.focus(); document.querySelector('#tools').scrollIntoView(); }
+        if (event.key === 'Escape' && document.activeElement === search) { search.value = ''; renderTools(); search.blur(); return; }
+        if (event.key === 'Escape') window.location.assign('/');
+      });
+    })();
+  </script>
+</body>
+</html>
