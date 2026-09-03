@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from .agent import AgentOrchestrator, CodexBackend, DemoBackend, new_session_id
 from .catalog import TimelineCatalog
-from .contracts import ToolCatalog, project_root
+from .contracts import EditorAgentContract, project_root
 from .store import EditStore, RevisionConflictError
 from .tools import ToolGateway
 
@@ -60,8 +60,8 @@ def create_editor_app(
     state_dir = state_dir.expanduser().resolve()
     catalog = TimelineCatalog(manifest_path)
     store = EditStore(state_dir / "editor.sqlite3")
-    tool_catalog = ToolCatalog.load()
-    gateway = ToolGateway(catalog, store, tool_catalog)
+    agent_contract = EditorAgentContract.load()
+    gateway = ToolGateway(catalog, store, agent_contract)
     backend_error: str | None = None
     if agent_backend == "demo":
         backend = DemoBackend()
@@ -69,7 +69,7 @@ def create_editor_app(
         try:
             backend = CodexBackend(
                 store=store,
-                tools=tool_catalog,
+                contract=agent_contract,
                 project_root=project_root(),
                 model=codex_model,
             )
@@ -108,12 +108,18 @@ def create_editor_app(
             "asset_count": catalog.asset_count,
             "scene_count": catalog.scene_count,
             "agent_backend": backend.name,
-            "tool_contract": "editor-tool-catalog/v1",
+            "agent_contract": agent_contract.contract_id,
+            "agent_contract_revision": agent_contract.revision,
         }
+
+    @app.get("/api/contracts/agent", tags=["contracts"])
+    async def contract_agent() -> dict[str, Any]:
+        return agent_contract.public_document()
 
     @app.get("/api/contracts/tools", tags=["contracts"])
     async def contract_tools() -> dict[str, Any]:
-        return tool_catalog.public_document()
+        """Compatibility alias for clients created before the unified contract."""
+        return agent_contract.public_document()
 
     @app.get("/api/assets", tags=["catalog"])
     async def assets(
@@ -189,10 +195,13 @@ def create_editor_app(
     async def agent_chat(payload: ChatRequest, request: Request) -> StreamingResponse:
         session_id = payload.session_id or new_session_id()
         raw_context = dict(payload.context)
-        if len(json.dumps(raw_context, ensure_ascii=False)) > 16_000:
+        context_limits = agent_contract.context_policy["limits"]
+        if len(json.dumps(raw_context, ensure_ascii=False)) > int(
+            context_limits["raw_browser_context_bytes"]
+        ):
             raise HTTPException(status_code=413, detail="chat context exceeds 16 KB")
         try:
-            context = catalog.resolve_ui_context(raw_context)
+            context = catalog.resolve_ui_context(raw_context, limits=context_limits)
         except Exception as exc:
             raise _http_error(exc) from exc
 

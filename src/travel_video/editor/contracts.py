@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 ToolCategory = Literal["data_query", "durable_action", "display", "ui_action"]
-TOOL_CATALOG_SCHEMA = "editor-tool-catalog/v1"
+AGENT_CONTRACT_SCHEMA = "editor-agent-contract/v1"
 SSE_EVENT_TYPES = frozenset(
     {"text", "card", "action", "status", "suggestions", "done", "error"}
 )
@@ -35,7 +35,7 @@ class ToolDefinition:
         }
 
 
-class ToolCatalog:
+class EditorAgentContract:
     def __init__(
         self,
         definitions: list[ToolDefinition],
@@ -44,6 +44,16 @@ class ToolCatalog:
         identity: dict[str, str] | None = None,
         capabilities: list[dict[str, Any]] | None = None,
         boundaries: list[dict[str, str]] | None = None,
+        contract_id: str = "",
+        status: str = "",
+        revision: int = 0,
+        service: str = "",
+        owners: list[str] | None = None,
+        context_policy: dict[str, Any] | None = None,
+        decision_policy: dict[str, Any] | None = None,
+        runtime_policy: dict[str, Any] | None = None,
+        event_contract: dict[str, Any] | None = None,
+        change_process: dict[str, Any] | None = None,
     ):
         if not definitions:
             raise ValueError("tool catalog must define at least one tool")
@@ -55,6 +65,42 @@ class ToolCatalog:
         self.identity = dict(identity or {})
         self.capabilities = tuple(dict(item) for item in (capabilities or []))
         self.boundaries = tuple(dict(item) for item in (boundaries or []))
+        self.contract_id = contract_id
+        self.status = status
+        self.revision = revision
+        self.service = service
+        self.owners = tuple(owners or [])
+        self.context_policy = dict(context_policy or {})
+        self.decision_policy = dict(decision_policy or {})
+        self.runtime_policy = dict(runtime_policy or {})
+        self.event_contract = dict(event_contract or {})
+        self.change_process = dict(change_process or {})
+        if not self.contract_id or self.status != "active" or self.revision < 1:
+            raise ValueError("agent contract metadata is incomplete or inactive")
+        if not self.service or not self.owners:
+            raise ValueError("agent contract service and owners are required")
+        for name, policy in (
+            ("context_policy", self.context_policy),
+            ("decision_policy", self.decision_policy),
+            ("runtime_policy", self.runtime_policy),
+            ("event_contract", self.event_contract),
+            ("change_process", self.change_process),
+        ):
+            if not policy:
+                raise ValueError(f"agent contract {name} is required")
+        if set(self.event_contract.get("events", [])) != SSE_EVENT_TYPES:
+            raise ValueError("agent contract event names do not match runtime events")
+        required_limits = {
+            "raw_browser_context_bytes",
+            "selected_scene_count",
+            "visible_asset_id_count",
+            "project_day_rollup_count",
+            "project_asset_index_count",
+            "nearby_asset_count",
+        }
+        limits = self.context_policy.get("limits")
+        if not isinstance(limits, dict) or required_limits - limits.keys():
+            raise ValueError("agent contract context limits are incomplete")
         capability_ids = [str(item.get("id", "")) for item in self.capabilities]
         if not all(capability_ids) or len(capability_ids) != len(set(capability_ids)):
             raise ValueError("capabilities must have unique non-empty IDs")
@@ -86,11 +132,11 @@ class ToolCatalog:
             raise ValueError("boundaries must define title and description")
 
     @classmethod
-    def load(cls, path: Path | None = None) -> "ToolCatalog":
-        contract_path = path or default_tool_catalog_path()
+    def load(cls, path: Path | None = None) -> "EditorAgentContract":
+        contract_path = path or default_agent_contract_path()
         raw = json.loads(contract_path.read_text(encoding="utf-8"))
-        if raw.get("schema_version") != TOOL_CATALOG_SCHEMA:
-            raise ValueError(f"unsupported tool catalog: {raw.get('schema_version')}")
+        if raw.get("schema_version") != AGENT_CONTRACT_SCHEMA:
+            raise ValueError(f"unsupported agent contract: {raw.get('schema_version')}")
         definitions = []
         valid_categories = {"data_query", "durable_action", "display", "ui_action"}
         for item in raw.get("tools", []):
@@ -115,6 +161,16 @@ class ToolCatalog:
             identity=dict(raw.get("identity", {})),
             capabilities=list(raw.get("capabilities", [])),
             boundaries=list(raw.get("boundaries", [])),
+            contract_id=str(raw.get("contract_id", "")),
+            status=str(raw.get("status", "")),
+            revision=int(raw.get("revision", 0)),
+            service=str(raw.get("service", "")),
+            owners=[str(item) for item in raw.get("owners", [])],
+            context_policy=dict(raw.get("context_policy", {})),
+            decision_policy=dict(raw.get("decision_policy", {})),
+            runtime_policy=dict(raw.get("runtime_policy", {})),
+            event_contract=dict(raw.get("event_contract", {})),
+            change_process=dict(raw.get("change_process", {})),
         )
 
     @property
@@ -133,9 +189,19 @@ class ToolCatalog:
 
     def public_document(self) -> dict[str, Any]:
         return {
-            "schema_version": TOOL_CATALOG_SCHEMA,
+            "schema_version": AGENT_CONTRACT_SCHEMA,
+            "contract_id": self.contract_id,
+            "status": self.status,
+            "revision": self.revision,
+            "service": self.service,
+            "owners": list(self.owners),
             "identity": self.identity,
             "principles": list(self.principles),
+            "context_policy": self.context_policy,
+            "decision_policy": self.decision_policy,
+            "runtime_policy": self.runtime_policy,
+            "event_contract": self.event_contract,
+            "change_process": self.change_process,
             "capabilities": list(self.capabilities),
             "boundaries": list(self.boundaries),
             "tools": [item.prompt_view() for item in self.definitions],
@@ -151,12 +217,12 @@ def project_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
-def default_tool_catalog_path() -> Path:
-    source_path = project_root() / "docs" / "contracts" / "editor-tools.v1.json"
+def default_agent_contract_path() -> Path:
+    source_path = project_root() / "docs" / "contracts" / "editor-agent.v1.json"
     if source_path.is_file():
         return source_path
     packaged_path = Path(
-        str(files("travel_video.editor").joinpath("editor-tools.v1.json"))
+        str(files("travel_video.editor").joinpath("editor-agent.v1.json"))
     )
     if packaged_path.is_file():
         return packaged_path

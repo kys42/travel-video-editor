@@ -20,14 +20,14 @@ The authoritative boundaries are:
 
 | Contract | Consumer | Runtime assertion |
 |---|---|---|
-| [`editor-tools.v1.json`](../contracts/editor-tools.v1.json) | Codex prompt, Tool Gateway, API docs | every catalog entry has exactly one registered handler |
+| [`editor-agent.v1.json`](../contracts/editor-agent.v1.json) | Context resolver, Codex prompt, Tool Gateway, API docs, live guide | contract metadata and policy are required; every tool has exactly one handler |
 | [`agent-events.v1.schema.json`](../contracts/agent-events.v1.schema.json) | SSE server and Edit Desk client | event names and payload types are closed sets |
 | FastAPI `/openapi.json` | HTTP clients and tests | generated from request models and route definitions |
 | `video-edit-plan/v1` | edit store and FFmpeg renderer | source ranges are validated before a revision is committed |
 
-Changes start in the contracts. A tool name, category, approval rule, or event shape must not be changed in only the prompt or only the frontend.
+Changes start in the unified Editor Agent Contract. Context limits, reference resolution, tool authority, approval rules, runtime boundaries, or event behavior must not be changed only in code, only in the prompt, or only in the frontend.
 
-The tool catalog also owns the user-facing identity, capability workflows, example requests, and safety boundaries. The agent prompt, `/api/contracts/tools`, and `/guide` consume that same document so operational guidance cannot drift independently from the executable catalog. See the [AI Editor capability guide](agent-capabilities.md).
+The contract also owns the user-facing identity, capability workflows, examples, safety boundaries, context policy, decision policy, runtime policy, event names, and change process. The context resolver, agent prompt, Tool Gateway, `/api/contracts/agent`, and `/guide` consume that same document so operational guidance cannot drift from executable behavior. See the [AI Editor capability guide](agent-capabilities.md).
 
 ## Runtime topology
 
@@ -99,6 +99,8 @@ Supported operations are `add_scene`, `trim_clip`, `move_clip`, `remove_clip`, `
 
 - `GET /health` — process, backend, catalog, and database readiness.
 - `GET /api/project` — compact project metrics and backend mode.
+- `GET /api/contracts/agent` — authoritative live Editor Agent Contract.
+- `GET /api/contracts/tools` — compatibility alias returning the same contract.
 - `GET /api/assets` — compact assets.
 - `GET /api/scenes/search` — deterministic scene search.
 - `GET /api/scenes/{scene_id}` — one evidence packet.

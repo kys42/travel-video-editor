@@ -7,7 +7,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from travel_video.editor.catalog import TimelineCatalog
-from travel_video.editor.contracts import SSE_EVENT_TYPES, ToolCatalog, project_root
+from travel_video.editor.contracts import (
+    SSE_EVENT_TYPES,
+    EditorAgentContract,
+    project_root,
+)
 from travel_video.editor.server import create_editor_app
 from travel_video.editor.store import EditStore, RevisionConflictError
 from travel_video.editor.tools import ToolGateway
@@ -125,12 +129,13 @@ def test_contract_matches_gateway_and_event_schema(tmp_path: Path) -> None:
     manifest = _fixture_project(tmp_path)
     catalog = TimelineCatalog(manifest)
     store = EditStore(tmp_path / "state.sqlite3")
-    tools = ToolCatalog.load()
-    gateway = ToolGateway(catalog, store, tools)
+    contract = EditorAgentContract.load()
+    gateway = ToolGateway(catalog, store, contract)
 
-    assert len(tools.capabilities) == 6
-    assert len(tools.boundaries) == 4
-    assert gateway.tools.names == {
+    assert contract.contract_id == "travel-video-editor/editor-agent/v1"
+    assert len(contract.capabilities) == 6
+    assert len(contract.boundaries) == 4
+    assert gateway.contract.names == {
         "list_assets",
         "search_scenes",
         "get_scene_evidence",
@@ -181,7 +186,8 @@ def test_ui_context_resolves_focus_and_cross_asset_selection(tmp_path: Path) -> 
             "search_query": "반응",
             "selected_range": {"source_in": 2, "source_out": 8},
             "inspector_tab": "ai",
-        }
+        },
+        limits=EditorAgentContract.load().context_policy["limits"],
     )
 
     assert context["schema_version"] == "editor-ui-context/v1"
@@ -223,7 +229,10 @@ def test_ui_context_rejects_unknown_scene(tmp_path: Path) -> None:
     catalog = TimelineCatalog(_fixture_project(tmp_path))
 
     with pytest.raises(KeyError, match="scene not found"):
-        catalog.resolve_ui_context({"selected_scene_ids": ["missing:G001"]})
+        catalog.resolve_ui_context(
+            {"selected_scene_ids": ["missing:G001"]},
+            limits=EditorAgentContract.load().context_policy["limits"],
+        )
 
 
 def test_edit_operations_create_immutable_revision_and_reject_stale_write(
@@ -293,6 +302,13 @@ def test_demo_agent_runs_search_cards_and_revision_over_sse(tmp_path: Path) -> N
     guide = client.get("/guide")
     assert guide.status_code == 200
     assert 'data-capabilities' in guide.text
-    live_contract = client.get("/api/contracts/tools").json()
+    assert 'data-context-levels' in guide.text
+    assert "fetch('/api/contracts/agent')" in guide.text
+    live_contract = client.get("/api/contracts/agent").json()
+    assert live_contract["schema_version"] == "editor-agent-contract/v1"
+    assert live_contract["contract_id"] == "travel-video-editor/editor-agent/v1"
+    assert live_contract["context_policy"]["limits"]["selected_scene_count"] == 24
+    assert set(live_contract["event_contract"]["events"]) == SSE_EVENT_TYPES
     assert len(live_contract["capabilities"]) == 6
+    assert client.get("/api/contracts/tools").json() == live_contract
     assert live_contract["identity"]["name"] == "AI Editor"

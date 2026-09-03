@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from .catalog import TimelineCatalog
-from .contracts import ToolCatalog, ToolDefinition
+from .contracts import EditorAgentContract, ToolDefinition
 from .store import EditStore
 
 
@@ -27,11 +27,14 @@ class ToolResult:
 
 class ToolGateway:
     def __init__(
-        self, catalog: TimelineCatalog, store: EditStore, tools: ToolCatalog
+        self,
+        catalog: TimelineCatalog,
+        store: EditStore,
+        contract: EditorAgentContract,
     ) -> None:
         self.catalog = catalog
         self.store = store
-        self.tools = tools
+        self.contract = contract
         self._handlers: dict[str, Callable[[dict[str, Any], str], ToolResult]] = {
             "list_assets": self._list_assets,
             "search_scenes": self._search_scenes,
@@ -45,15 +48,15 @@ class ToolGateway:
             "focus_scene": self._focus_scene,
             "open_inspector_tab": self._open_inspector_tab,
         }
-        missing = tools.names - self._handlers.keys()
-        extra = self._handlers.keys() - tools.names
+        missing = contract.names - self._handlers.keys()
+        extra = self._handlers.keys() - contract.names
         if missing or extra:
             raise RuntimeError(
                 f"tool contract/handler mismatch; missing={sorted(missing)}, extra={sorted(extra)}"
             )
 
     def definition(self, name: str) -> ToolDefinition:
-        return self.tools.get(name)
+        return self.contract.get(name)
 
     def invoke(
         self, name: str, arguments: dict[str, Any], session_id: str

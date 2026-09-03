@@ -28,7 +28,7 @@ dev = [
 packages = ["src/travel_video"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"docs/contracts/editor-tools.v1.json" = "travel_video/editor/editor-tools.v1.json"
+"docs/contracts/editor-agent.v1.json" = "travel_video/editor/editor-agent.v1.json"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

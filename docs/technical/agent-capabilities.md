@@ -16,16 +16,17 @@ AI Editor는 범용 챗봇이나 원본 영상 파일을 직접 다루는 자동
 
 실행 중인 서비스에서는 [`/guide`](http://127.0.0.1:8765/guide)에서 현재 기능과 도구 계약을 볼 수 있다.
 
-## 기능 설명의 단일 기준
+## 단일 진실 공급원
 
-기능, 권한, 도구 입력과 사용 의도의 기준은 [`editor-tools.v1.json`](../contracts/editor-tools.v1.json)이다. 이 계약은 다음 네 소비자가 함께 사용한다.
+컨텍스트 주입, 기능, 권한, 도구 입력, 판단·revision 정책과 변경 절차의 유일한 기준은 [`editor-agent.v1.json`](../contracts/editor-agent.v1.json)이다. 이 계약은 다음 소비자가 함께 사용한다.
 
 - Codex SDK 에이전트 프롬프트
-- 서버의 `ToolGateway`와 시작 시 검증
-- `/api/contracts/tools` API
+- 서버의 컨텍스트 한도와 `ToolGateway` 시작 시 검증
+- `/api/contracts/agent` API
 - `/guide` 운영 가이드 UI
+- 계약·컨텍스트·SSE·revision 회귀 테스트
 
-기능을 추가할 때 HTML이나 프롬프트에만 설명을 추가하지 않는다. 계약에 capability와 tool을 먼저 정의하고, 서버 핸들러·카드 또는 UI action·테스트를 같은 변경에서 구현한다.
+기능을 추가할 때 HTML이나 프롬프트에만 설명을 추가하지 않는다. 계약을 먼저 변경하고 서버, 에이전트, 웹, 테스트와 가이드를 같은 변경에서 갱신한다. `/api/contracts/tools`는 이전 클라이언트를 위한 호환 별칭이며 동일한 계약을 반환한다.
 
 ## 현재 할 수 있는 일
 
@@ -152,7 +153,7 @@ Codex SDK는 `Sandbox.read_only`와 `ApprovalMode.deny_all`로 시작한다. 이
 
 브라우저의 현재 검토 맥락만 변경한다. 프로젝트 데이터나 원본 파일은 변경하지 않는다.
 
-정확한 파라미터와 출력은 계약 JSON 또는 실행 중인 `/api/contracts/tools`를 기준으로 한다.
+정확한 컨텍스트, 정책, 파라미터와 출력은 계약 JSON 또는 실행 중인 `/api/contracts/agent`를 기준으로 한다.
 
 ## 사용자에게 전달되는 이벤트
 
@@ -182,7 +183,7 @@ Codex SDK는 `Sandbox.read_only`와 `ApprovalMode.deny_all`로 시작한다. 이
 ## 관련 문서
 
 - [Editor Service 실행 가능한 기술 계약](editor-service.md)
-- [에이전트 도구 계약](../contracts/editor-tools.v1.json)
+- [Editor Agent 단일 계약](../contracts/editor-agent.v1.json)
 - [SSE 이벤트 계약](../contracts/agent-events.v1.schema.json)
 - [채팅 기반 AI 영상 편집 플랫폼 설계](../agentic-editor-platform.md)
 - [소스 미디어와 작업 미디어 위치](../media-locations.md)

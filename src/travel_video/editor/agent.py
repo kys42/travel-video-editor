@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, AsyncIterator, Protocol
 
-from .contracts import AGENT_DECISION_SCHEMA, ToolCatalog
+from .contracts import AGENT_DECISION_SCHEMA, EditorAgentContract
 from .store import EditStore, RevisionConflictError
 from .tools import ToolGateway
 
@@ -62,37 +62,17 @@ class AgentBackend(Protocol):
     ) -> AgentDecision: ...
 
 
-EDITOR_AGENT_INSTRUCTIONS = """## Identity
-You are the editing agent embedded in Travel Video Editor. You help a user find reviewed travel-video moments and create reversible rough-cut revisions. Respond in the user's language, normally Korean.
+EDITOR_AGENT_INSTRUCTIONS = """## Runtime adapter
+You are the AI Editor described by the authoritative Editor Agent Contract below. Its identity, context policy, capabilities, tool authority, boundaries, decision policy, runtime policy, event contract, and change process are the single source of truth. Follow them as mandatory instructions and do not invent capabilities outside them.
 
-## Authority boundary
-- Application state may be read or changed only by proposing calls from the Editor Tool Catalog below.
-- Never use shell, filesystem, apply_patch, arbitrary Python, FFmpeg, web search, or guessed file paths for editor work.
-- Source media is immutable. Never propose renaming, moving, overwriting, or deleting it.
-- Search compact scene metadata first. Request detailed evidence only for a small shortlist.
-- Never claim an edit changed unless a durable_action tool result confirms a new revision.
-- Display tools and UI actions are semantic product events, not text commands.
-
-## Decision protocol
 Return only JSON matching the supplied output schema.
 - response: concise user-facing text; leave empty while more data is needed.
-- tool_calls: calls to the exact catalog names. arguments_json must contain one valid JSON object.
+- tool_calls: calls to exact tool names declared by the contract. arguments_json must contain one valid JSON object.
 - suggestions: zero to four short follow-ups, normally only when done is true.
 - done: false if tool results are required before the answer is reliable.
 
-## Typical flow
-For a new highlight request: search_scenes -> optionally get_scene_evidence for ambiguous finalists -> create_edit -> apply_edit_operations -> show_scene_refs and show_edit_revision. Read the current edit before modifying it and use its head revision as expected_revision_id.
-
-## Workspace context
-Every turn includes an authoritative editor-ui-context/v1 snapshot built by the server. It already contains the project-wide date/duration/tag rollup and compact asset index, nearby videos, the current video, the focused scene, and compact metadata for every explicitly selected scene. Do not call a query tool merely to repeat information already present there.
-- "이 장면" means workspace.focused_scene.
-- "선택한 장면들", "이것들", and plural editing requests mean workspace.selected_scenes; explicit multi-selection takes precedence over focus.
-- "이 영상" means workspace.current_asset. The focused scene is navigation state and is not automatically an edit selection.
-- For a selected-scene edit request, use those scene IDs as the initial candidate set. Read detailed evidence only when dialogue, action boundaries, or trim judgment requires it. Search outside the selection only when the user asks for more material.
-- For a short contextual question such as "무슨 내용이야?", answer directly from the matching preloaded summary. Call get_scene_evidence only when the user asks for detail not present in the snapshot. If neither focus nor selection exists, use the current asset summary. Project-wide orientation questions should use project.day_rollups and project.asset_index first; call list_assets only when the compact index is truncated or exact rows outside it are required.
-
-## Editor Tool Catalog
-{tool_catalog}
+## Authoritative Editor Agent Contract
+{agent_contract}
 """
 
 
@@ -103,18 +83,18 @@ class CodexBackend:
         self,
         *,
         store: EditStore,
-        tools: ToolCatalog,
+        contract: EditorAgentContract,
         project_root: Path,
         model: str = "gpt-5.6-terra",
     ) -> None:
         if importlib.util.find_spec("openai_codex") is None:
             raise RuntimeError("openai-codex is not installed")
         self.store = store
-        self.tools = tools
+        self.contract = contract
         self.project_root = project_root.resolve()
         self.model = model
         self.developer_instructions = EDITOR_AGENT_INSTRUCTIONS.format(
-            tool_catalog=tools.prompt_json()
+            agent_contract=contract.prompt_json()
         )
 
     async def decide(

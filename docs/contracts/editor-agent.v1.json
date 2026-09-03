@@ -1,6 +1,11 @@
 {
-  "schema_version": "editor-tool-catalog/v1",
+  "schema_version": "editor-agent-contract/v1",
+  "contract_id": "travel-video-editor/editor-agent/v1",
+  "status": "active",
+  "revision": 1,
+  "updated_at": "2026-09-03",
   "service": "travel-video-editor",
+  "owners": ["editor-api", "agent-runtime", "edit-desk-ui"],
   "identity": {
     "name": "AI Editor",
     "role": "Reviewed travel-video evidence assistant and non-destructive rough-cut operator.",
@@ -12,6 +17,123 @@
     "Every edit mutation creates a new immutable revision.",
     "All source ranges remain linked to asset_id, scene_id, source_in, and source_out."
   ],
+  "context_policy": {
+    "raw_client_schema": "editor-ui-state/v1",
+    "resolved_agent_schema": "editor-ui-context/v1",
+    "authority": "The browser supplies lightweight interaction IDs only. The server validates every reference against TimelineCatalog and builds the authoritative context seen by the agent.",
+    "strategy": "Preload compact orientation and current working scope on every turn; retrieve detailed evidence only when the task requires it.",
+    "levels": [
+      {
+        "id": "L0-project",
+        "title": "Project orientation",
+        "delivery": "always",
+        "contents": ["date range", "total duration", "asset and scene counts", "day rollups", "top tags", "compact chronological asset index"],
+        "detail_boundary": "Up to 31 day rollups and 40 compact assets; truncation is explicit."
+      },
+      {
+        "id": "L1-workspace",
+        "title": "Current workspace",
+        "delivery": "always",
+        "contents": ["current asset summary", "up to five nearby assets", "focused scene", "explicitly selected scenes", "visible assets", "search query", "monitor range"],
+        "detail_boundary": "Explicit selection is capped at 24 scenes and ordered by authoritative capture time."
+      },
+      {
+        "id": "L2-evidence",
+        "title": "Detailed scene evidence",
+        "delivery": "tool_on_demand",
+        "contents": ["chronological action segments", "original-language utterances", "STT candidates", "notable moments", "selected frame references"],
+        "detail_boundary": "One shortlisted scene per get_scene_evidence call; never preload full transcripts or image bytes."
+      },
+      {
+        "id": "L3-media",
+        "title": "Source media and rendering",
+        "delivery": "outside_agent_context",
+        "contents": ["4K source bytes", "proxy video bytes", "FFmpeg execution", "final render and upload"],
+        "detail_boundary": "Source media remains immutable and media execution requires a separate approved workflow."
+      }
+    ],
+    "browser_state_fields": [
+      {"name": "current_asset_id", "purpose": "Video currently open in the timeline", "trusted": false},
+      {"name": "focused_scene_id", "purpose": "Scene open in the monitor; navigation state, not edit selection", "trusted": false},
+      {"name": "selected_scene_ids", "purpose": "Explicit multi-scene edit scope across videos", "trusted": false},
+      {"name": "visible_asset_ids", "purpose": "Assets remaining after current UI filters", "trusted": false},
+      {"name": "search_query", "purpose": "Current local search text", "trusted": false},
+      {"name": "selected_range", "purpose": "Focused monitor source range", "trusted": false},
+      {"name": "inspector_tab", "purpose": "Current monitor or AI surface", "trusted": false}
+    ],
+    "reference_resolution": [
+      {"phrase": "이 장면 / this scene", "resolves_to": "workspace.focused_scene", "behavior": "Use the compact summary first; fetch evidence only for missing detail."},
+      {"phrase": "이 영상 / this video", "resolves_to": "workspace.current_asset", "behavior": "Use the current asset summary and nearby sequence."},
+      {"phrase": "선택한 장면들 / 이것들 / these", "resolves_to": "workspace.selected_scenes", "behavior": "Explicit multi-selection takes precedence over focus and defines the initial edit scope."},
+      {"phrase": "전체 / 이번 여행 / project-wide wording", "resolves_to": "project.day_rollups and project.asset_index", "behavior": "Use the preloaded overview; query only when exact rows outside a truncated index are required."}
+    ],
+    "limits": {
+      "raw_browser_context_bytes": 16000,
+      "selected_scene_count": 24,
+      "visible_asset_id_count": 100,
+      "project_day_rollup_count": 31,
+      "project_asset_index_count": 40,
+      "nearby_asset_count": 5
+    }
+  },
+  "decision_policy": {
+    "grounding": [
+      "Use only server-resolved context and successful tool observations as factual evidence.",
+      "Never claim to have watched source media when only analyzed metadata was inspected.",
+      "Do not infer missing events, dialogue, people, locations, or quality signals."
+    ],
+    "tool_use": [
+      "Do not call a query tool merely to repeat data already present in the context snapshot.",
+      "Search compact metadata before detailed evidence and inspect only a small shortlist.",
+      "For explicit multi-selection, stay inside selected scenes unless the user asks for additional material.",
+      "Use display and UI-action tools instead of writing internal commands or guessed links in chat."
+    ],
+    "mutations": [
+      "Create or modify an edit only after an explicit user editing request.",
+      "Read the active edit head before changing an existing edit.",
+      "Every successful mutation creates a new immutable revision guarded by expected_revision_id.",
+      "Never report a change as completed until the durable-action observation confirms it."
+    ],
+    "responses": [
+      "Respond in the user's language, normally Korean.",
+      "State what evidence or revision the result is based on without exposing internal reasoning.",
+      "Keep orientation answers concise and provide at most four relevant follow-up suggestions."
+    ]
+  },
+  "runtime_policy": {
+    "model_backend": "Codex SDK behind the same-origin Editor API",
+    "sandbox": "read_only",
+    "approval_mode": "deny_all",
+    "application_authority": "ToolGateway only",
+    "source_media": "immutable",
+    "transport": "cancelable SSE using the closed event contract",
+    "demo_disclosure": "A deterministic demo backend must be labeled DEMO · RULES and must never present itself as model judgment."
+  },
+  "event_contract": {
+    "schema": "agent-events.v1.schema.json",
+    "events": ["status", "card", "action", "text", "suggestions", "done", "error"],
+    "normal_order": "status* -> card/action* -> text* -> suggestions? -> done",
+    "completion_rule": "A stream without done is incomplete; error terminates the stream."
+  },
+  "change_process": {
+    "rule": "Change the contract first, then update every affected consumer in the same change.",
+    "steps": [
+      {"order": 1, "name": "Contract", "requirement": "Update context, capability, tool, boundary, event, or policy declarations here first."},
+      {"order": 2, "name": "Server", "requirement": "Implement validation, handler, store, and authorization behavior."},
+      {"order": 3, "name": "Agent", "requirement": "Consume the revised contract without duplicating semantic policy in an unrelated prompt."},
+      {"order": 4, "name": "Web", "requirement": "Implement cards, actions, state capture, and visible runtime disclosure."},
+      {"order": 5, "name": "Verification", "requirement": "Add contract/runtime tests and at least one end-to-end representative request."},
+      {"order": 6, "name": "Guide", "requirement": "Render the live contract in /guide; do not hand-copy a conflicting capability list."}
+    ],
+    "required_checks": [
+      "Every declared tool has exactly one ToolGateway handler and no undeclared handler exists.",
+      "Context IDs are server-validated and size limits fail closed.",
+      "Durable actions create immutable revisions and reject stale heads.",
+      "SSE names match the closed event schema.",
+      "The live guide and public contract API expose the active contract revision."
+    ],
+    "compatibility": "Breaking changes require a new schema_version and a migration or compatibility endpoint."
+  },
   "capabilities": [
     {
       "id": "understand-footage",

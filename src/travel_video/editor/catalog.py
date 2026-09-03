@@ -271,7 +271,9 @@ class TimelineCatalog:
             ]
         return [item.compact() for item in rows[:limit]]
 
-    def resolve_ui_context(self, state: dict[str, Any]) -> dict[str, Any]:
+    def resolve_ui_context(
+        self, state: dict[str, Any], *, limits: dict[str, Any]
+    ) -> dict[str, Any]:
         """Turn lightweight browser state into an authoritative compact snapshot."""
         if not isinstance(state, dict):
             raise ValueError("editor UI context must be an object")
@@ -291,10 +293,19 @@ class TimelineCatalog:
             raise ValueError("selected_scene_ids must be an array")
         if not isinstance(visible_raw, list):
             raise ValueError("visible_asset_ids must be an array")
-        if len(selected_raw) > 24:
-            raise ValueError("selected_scene_ids cannot contain more than 24 items")
-        if len(visible_raw) > 100:
-            raise ValueError("visible_asset_ids cannot contain more than 100 items")
+        selected_limit = int(limits["selected_scene_count"])
+        visible_limit = int(limits["visible_asset_id_count"])
+        day_limit = int(limits["project_day_rollup_count"])
+        asset_limit = int(limits["project_asset_index_count"])
+        nearby_limit = int(limits["nearby_asset_count"])
+        if len(selected_raw) > selected_limit:
+            raise ValueError(
+                f"selected_scene_ids cannot contain more than {selected_limit} items"
+            )
+        if len(visible_raw) > visible_limit:
+            raise ValueError(
+                f"visible_asset_ids cannot contain more than {visible_limit} items"
+            )
 
         selected_ids = list(dict.fromkeys(str(item) for item in selected_raw))
         visible_ids = list(dict.fromkeys(str(item) for item in visible_raw))
@@ -409,16 +420,18 @@ class TimelineCatalog:
                 "title": asset.title,
                 "tags": list(asset.tags[:5]),
             }
-            for asset in self._ordered_assets[:40]
+            for asset in self._ordered_assets[:asset_limit]
         ]
         nearby_assets: list[dict[str, Any]] = []
         if current_asset:
             current_index = self._ordered_assets.index(current_asset)
+            before = nearby_limit // 2
+            window_start = max(0, current_index - before)
+            window_end = min(len(self._ordered_assets), window_start + nearby_limit)
+            window_start = max(0, window_end - nearby_limit)
             nearby_assets = [
                 asset.compact()
-                for asset in self._ordered_assets[
-                    max(0, current_index - 2) : current_index + 3
-                ]
+                for asset in self._ordered_assets[window_start:window_end]
             ]
 
         return {
@@ -441,8 +454,8 @@ class TimelineCatalog:
                         tag_counts.items(), key=lambda item: (-item[1], item[0])
                     )[:10]
                 ],
-                "day_rollups": rollups[:31],
-                "day_rollups_truncated": len(rollups) > 31,
+                "day_rollups": rollups[:day_limit],
+                "day_rollups_truncated": len(rollups) > day_limit,
                 "asset_index": asset_index,
                 "asset_index_truncated": self.asset_count > len(asset_index),
                 "timeline_order": "capture_time_asc",

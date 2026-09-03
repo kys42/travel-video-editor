@@ -109,6 +109,35 @@
     .workflow h3 { margin: 22px 0 5px; font-size: 10px; }
     .workflow p { margin: 0; color: var(--muted); font-size: 8px; line-height: 1.55; }
 
+    .contract-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 9px; }
+    .contract-meta span { padding: 4px 7px; border: 1px solid var(--line); color: var(--muted); background: #121619; font: 7px var(--mono); }
+    .contract-meta b { color: var(--teal); font-weight: 500; }
+    .policy-grid { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line-strong); border-left: 1px solid var(--line-strong); }
+    .policy-card { min-width: 0; min-height: 190px; padding: 11px; border-right: 1px solid var(--line-strong); border-bottom: 1px solid var(--line-strong); background: var(--panel); }
+    .policy-card > span { color: var(--blue); font: 7px var(--mono); }
+    .policy-card > b { display: block; margin-top: 4px; color: var(--faint); font: 7px var(--mono); font-weight: 500; text-transform: uppercase; }
+    .policy-card h3 { margin: 18px 0 7px; font-size: 11px; }
+    .policy-card ul, .rule-group ul { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
+    .policy-card li, .rule-group li { display: grid; grid-template-columns: 9px 1fr; color: var(--muted); font-size: 8px; line-height: 1.45; }
+    .policy-card li::before, .rule-group li::before { content: "—"; color: var(--faint); }
+    .policy-card p { margin: 9px 0 0; padding-top: 7px; border-top: 1px solid var(--line); color: var(--faint); font-size: 7px; line-height: 1.5; }
+    .reference-list { margin-top: 9px; border: 1px solid var(--line-strong); }
+    .reference-row { display: grid; grid-template-columns: 210px 230px minmax(0, 1fr); gap: 12px; min-height: 43px; padding: 8px 10px; border-bottom: 1px solid var(--line); background: #121619; }
+    .reference-row:last-child { border-bottom: 0; }
+    .reference-row code { color: var(--orange); font: 8px var(--mono); }
+    .reference-row b { color: var(--text-2); font: 8px var(--mono); font-weight: 500; }
+    .reference-row span { color: var(--muted); font-size: 8px; line-height: 1.5; }
+    .rule-grid { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 9px; border: 1px solid var(--line-strong); }
+    .rule-group { min-height: 178px; padding: 11px; border-right: 1px solid var(--line); background: var(--panel); }
+    .rule-group:last-child { border-right: 0; }
+    .rule-group h3 { margin: 0 0 13px; color: var(--text-2); font: 8px var(--mono); text-transform: uppercase; }
+    .change-flow { display: grid; grid-template-columns: repeat(6, 1fr); margin-top: 9px; border: 1px solid var(--line-strong); }
+    .change-step { position: relative; min-height: 118px; padding: 10px; border-right: 1px solid var(--line); background: #121619; }
+    .change-step:last-child { border-right: 0; }
+    .change-step span { color: var(--teal); font: 7px var(--mono); }
+    .change-step h3 { margin: 18px 0 5px; font-size: 9px; }
+    .change-step p { margin: 0; color: var(--muted); font-size: 7px; line-height: 1.5; }
+
     .toolbar { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-bottom: 8px; }
     .tool-search { min-width: 0; height: 31px; padding: 0 10px; border: 1px solid var(--line); border-radius: 2px; outline: 0; color: var(--text); background: var(--panel); font-size: 9px; }
     .tool-search:focus { border-color: var(--line-strong); }
@@ -175,6 +204,9 @@
       .workflow { grid-template-columns: 1fr 1fr; }
       .workflow article { border-bottom: 1px solid var(--line); }
       .workflow article::after { display: none; }
+      .policy-grid, .rule-grid { grid-template-columns: repeat(2, 1fr); }
+      .reference-row { grid-template-columns: 180px 190px minmax(0, 1fr); }
+      .change-flow { grid-template-columns: repeat(3, 1fr); }
       .tool-header, .tool-summary { grid-template-columns: 34px 130px 88px 1fr; }
       .approval { display: none; }
       .safety-grid { grid-template-columns: repeat(2, 1fr); }
@@ -192,6 +224,8 @@
       .hero .section-inner { padding-top: 32px; }
       .capability-grid, .safety-grid { grid-template-columns: 1fr; }
       .workflow { grid-template-columns: 1fr; }
+      .policy-grid, .rule-grid, .change-flow { grid-template-columns: 1fr; }
+      .reference-row { grid-template-columns: 1fr; gap: 4px; }
       .tool-header { display: none; }
       .tool-summary { grid-template-columns: 30px 1fr auto; }
       .tool-intent { grid-column: 2 / -1; white-space: normal; }
@@ -208,13 +242,13 @@
   <header class="topbar">
     <div class="brand"><span class="mark" aria-hidden="true"></span><strong>Travel Video Editor</strong><span>/ Agent Operations Manual</span></div>
     <div class="top-stats"><span><b data-tool-count>—</b> TOOLS</span><span><b data-capability-count>—</b> WORKFLOWS</span><span>CONTRACT v1</span></div>
-    <div class="top-actions"><a href="/openapi.json" target="_blank" rel="noopener">OPENAPI</a><a href="/api/contracts/tools" target="_blank" rel="noopener">RAW CONTRACT</a><a class="primary" href="/">EDIT DESK →</a></div>
+    <div class="top-actions"><a href="/openapi.json" target="_blank" rel="noopener">OPENAPI</a><a href="/api/contracts/agent" target="_blank" rel="noopener">RAW CONTRACT</a><a class="primary" href="/">EDIT DESK →</a></div>
   </header>
   <div class="shell">
     <aside class="rail">
       <span class="rail-label">OPERATIONS MANUAL</span>
       <nav aria-label="가이드 섹션">
-        <a href="#overview" class="is-active"><span>00</span>개요</a><a href="#capabilities"><span>01</span>할 수 있는 일</a><a href="#workflow"><span>02</span>작동 방식</a><a href="#tools"><span>03</span>도구 인벤토리</a><a href="#safety"><span>04</span>권한과 안전 경계</a><a href="#protocol"><span>05</span>응답 프로토콜</a>
+        <a href="#overview" class="is-active"><span>00</span>개요</a><a href="#capabilities"><span>01</span>할 수 있는 일</a><a href="#workflow"><span>02</span>작동 방식</a><a href="#contract"><span>03</span>컨텍스트·판단 정책</a><a href="#tools"><span>04</span>도구 인벤토리</a><a href="#safety"><span>05</span>권한과 안전 경계</a><a href="#protocol"><span>06</span>응답 프로토콜</a>
       </nav>
       <section class="runtime" aria-label="에이전트 런타임 상태">
         <header><strong>RUNTIME</strong><i class="runtime-dot" data-runtime-dot></i></header>
@@ -237,22 +271,31 @@
         <div class="workflow"><article><span>01 · CONTEXT</span><h3>작업공간 맥락 확인</h3><p>현재 영상, 포커스 장면과 여러 영상에 걸쳐 명시적으로 선택한 장면 요약을 도구 호출 없이 읽습니다.</p></article><article><span>02 · SEARCH</span><h3>요약 인덱스 검색</h3><p>선택 범위 밖의 소재가 필요할 때만 설명, 행동, 대화와 특이 포인트를 검색합니다.</p></article><article><span>03 · EVIDENCE</span><h3>후보만 상세 확인</h3><p>모호한 후보에 한해 세부 행동, 원문 발화와 프레임 참조를 읽습니다.</p></article><article><span>04 · REVISE</span><h3>새 revision 생성</h3><p>원본 타임코드 기반 작업을 검증하고 이전 버전을 남긴 채 저장합니다.</p></article><article><span>05 · REVIEW</span><h3>Edit Desk로 검토</h3><p>장면 카드, 변경 요약과 소스 모니터 액션을 같은 SSE 스트림으로 보냅니다.</p></article></div>
       </div></section>
 
+      <section class="section" id="contract"><div class="section-inner">
+        <header class="section-head"><span class="section-no">03</span><div class="section-title"><h2>컨텍스트·판단·변경 정책</h2><p>무엇을 매 턴 주입하고, 언제 도구를 쓰며, 계약을 어떻게 변경하는지 정의합니다.</p></div><p class="section-note">아래 내용은 설명용 복사본이 아니라 실행 중인 <code>/api/contracts/agent</code>에서 직접 렌더링됩니다.</p></header>
+        <div class="contract-meta"><span>ID · <b data-contract-id>—</b></span><span>REVISION · <b data-contract-revision>—</b></span><span>STATUS · <b data-contract-status>—</b></span><span>CONTEXT · <b data-context-schema>—</b></span></div>
+        <div class="policy-grid" data-context-levels><div class="empty-tools">컨텍스트 정책을 불러오는 중…</div></div>
+        <div class="reference-list" data-reference-resolution></div>
+        <div class="rule-grid" data-decision-policy></div>
+        <div class="change-flow" data-change-process></div>
+      </div></section>
+
       <section class="section" id="tools"><div class="section-inner">
-        <header class="section-head"><span class="section-no">03</span><div class="section-title"><h2>실행 가능한 도구 인벤토리</h2><p>아래 목록은 페이지에 복사된 문구가 아니라 현재 서버 계약에서 실시간으로 읽습니다.</p></div><p class="section-note">행을 펼치면 사용 의도, 입력, 출력과 승인 규칙을 볼 수 있습니다.</p></header>
+        <header class="section-head"><span class="section-no">04</span><div class="section-title"><h2>실행 가능한 도구 인벤토리</h2><p>아래 목록은 페이지에 복사된 문구가 아니라 현재 서버 계약에서 실시간으로 읽습니다.</p></div><p class="section-note">행을 펼치면 사용 의도, 입력, 출력과 승인 규칙을 볼 수 있습니다.</p></header>
         <div class="toolbar"><input class="tool-search" type="search" placeholder="도구 이름·용도 검색" aria-label="도구 검색" data-tool-search><div class="filters" role="group" aria-label="도구 종류"><button class="filter is-active" data-filter="all">ALL</button><button class="filter" data-filter="data_query">QUERY</button><button class="filter" data-filter="durable_action">REVISION</button><button class="filter" data-filter="display">DISPLAY</button><button class="filter" data-filter="ui_action">UI</button></div></div>
         <div class="tool-table"><div class="tool-header"><span>NO.</span><span>TOOL</span><span>TYPE</span><span>WHEN TO USE</span><span>APPROVAL</span></div><div data-tool-list><div class="empty-tools">도구 계약을 불러오는 중…</div></div></div>
       </div></section>
 
       <section class="section" id="safety"><div class="section-inner">
-        <header class="section-head"><span class="section-no">04</span><div class="section-title"><h2>권한과 안전 경계</h2><p>모델의 판단과 실제 편집 권한은 서버의 Tool Gateway에서 분리됩니다.</p></div><p class="section-note">Codex는 도구 호출을 제안합니다. 입력 검증, 리비전 충돌 검사와 실제 저장은 서버가 담당합니다.</p></header>
+        <header class="section-head"><span class="section-no">05</span><div class="section-title"><h2>권한과 안전 경계</h2><p>모델의 판단과 실제 편집 권한은 서버의 Tool Gateway에서 분리됩니다.</p></div><p class="section-note">Codex는 도구 호출을 제안합니다. 입력 검증, 리비전 충돌 검사와 실제 저장은 서버가 담당합니다.</p></header>
         <div class="safety-grid"><article class="safety"><span>READ · NO APPROVAL</span><h3>읽을 수 있음</h3><ul><li>영상별 요약과 촬영 순서</li><li>검토된 장면·행동·대화</li><li>특이 포인트와 프레임 참조</li><li>현재 및 과거 편집 revision</li></ul></article><article class="safety is-write"><span>WRITE · DRAFT ONLY</span><h3>변경할 수 있음</h3><ul><li>새 러프컷 초안 만들기</li><li>컷 추가·trim·이동·제거</li><li>편집 제목과 목표 길이</li><li>항상 새 revision으로 저장</li></ul></article><article class="safety"><span>UI · REVERSIBLE</span><h3>화면에서 할 수 있음</h3><ul><li>장면 상세 위치로 이동</li><li>소스 모니터 구간 재생</li><li>Monitor/AI 탭 전환</li><li>장면·편집 참조 카드 표시</li></ul></article><article class="safety is-blocked"><span>BLOCKED · OUT OF SCOPE</span><h3>할 수 없음</h3><ul><li>4K 원본 삭제·이동·덮어쓰기</li><li>임의 셸·파일시스템 실행</li><li>확인되지 않은 장면 추측</li><li>무승인 최종 렌더·업로드</li></ul></article></div>
         <div class="boundary-list" data-boundaries></div>
       </div></section>
 
       <section class="section" id="protocol"><div class="section-inner">
-        <header class="section-head"><span class="section-no">05</span><div class="section-title"><h2>응답과 화면 제어 프로토콜</h2><p>텍스트, 카드와 화면 액션은 같은 cancelable SSE 스트림으로 전달됩니다.</p></div><p class="section-note">브라우저는 서버가 보낸 임의 코드를 실행하지 않고 닫힌 타입의 의미 기반 액션만 처리합니다.</p></header>
+        <header class="section-head"><span class="section-no">06</span><div class="section-title"><h2>응답과 화면 제어 프로토콜</h2><p>텍스트, 카드와 화면 액션은 같은 cancelable SSE 스트림으로 전달됩니다.</p></div><p class="section-note">브라우저는 서버가 보낸 임의 코드를 실행하지 않고 닫힌 타입의 의미 기반 액션만 처리합니다.</p></header>
         <div class="event-strip"><article class="event"><code>status</code><p>검색·조회·revision 적용 진행 상태</p></article><article class="event"><code>card</code><p>장면 후보와 편집 결과 참조 카드</p></article><article class="event"><code>action</code><p>재생·포커스·인스펙터 전환</p></article><article class="event"><code>text</code><p>에이전트의 설명과 결과 요약</p></article><article class="event"><code>suggestions</code><p>현재 결과에 맞는 후속 요청</p></article><article class="event"><code>done</code><p>세션·활성 edit와 정상 종료</p></article><article class="event"><code>error</code><p>코드·재시도 가능 여부가 있는 실패</p></article></div>
-        <div class="contract-note"><p>기능·권한·도구 설명의 기준은 <code>editor-tool-catalog/v1</code>입니다. 에이전트 프롬프트, Tool Gateway, 이 가이드와 테스트가 같은 계약을 소비합니다.</p><a class="button" href="/api/contracts/tools" target="_blank" rel="noopener">JSON 계약 열기 <span>↗</span></a></div>
+        <div class="contract-note"><p>모든 에이전트 동작의 단일 기준은 <code>editor-agent-contract/v1</code>입니다. 컨텍스트 resolver, 에이전트 프롬프트, Tool Gateway, 이 가이드와 테스트가 같은 계약을 소비합니다.</p><a class="button" href="/api/contracts/agent" target="_blank" rel="noopener">JSON 계약 열기 <span>↗</span></a></div>
       </div></section>
     </main>
   </div>
@@ -275,6 +318,19 @@
         capabilityRoot.innerHTML = capabilities.map((item, index) => `<article class="capability"><div class="capability-index"><span>CAPABILITY ${String(index + 1).padStart(2, '0')}</span><b>AVAILABLE</b></div><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.summary)}</p><div class="tool-chips">${item.tools.map(name => `<span class="tool-chip">${escapeHtml(name)}</span>`).join('')}</div><details><summary>예시 요청 ${item.examples.length}개</summary><div class="example-list">${item.examples.map(example => `<a href="${editorUrl(example)}">${escapeHtml(example)}</a>`).join('')}</div></details></article>`).join('');
       };
       const renderBoundaries = boundaries => { boundaryRoot.innerHTML = boundaries.map(item => `<article class="boundary"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.description)}</p></article>`).join(''); };
+      const renderContractPolicy = contract => {
+        document.querySelector('[data-contract-id]').textContent = contract.contract_id || '—';
+        document.querySelector('[data-contract-revision]').textContent = String(contract.revision ?? '—');
+        document.querySelector('[data-contract-status]').textContent = String(contract.status || '—').toUpperCase();
+        document.querySelector('[data-context-schema]').textContent = contract.context_policy?.resolved_agent_schema || '—';
+        const levels = contract.context_policy?.levels || [];
+        document.querySelector('[data-context-levels]').innerHTML = levels.map(level => `<article class="policy-card"><span>${escapeHtml(level.id)}</span><b>${escapeHtml(level.delivery)}</b><h3>${escapeHtml(level.title)}</h3><ul>${(level.contents || []).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul><p>${escapeHtml(level.detail_boundary)}</p></article>`).join('');
+        const references = contract.context_policy?.reference_resolution || [];
+        document.querySelector('[data-reference-resolution]').innerHTML = references.map(item => `<article class="reference-row"><code>${escapeHtml(item.phrase)}</code><b>${escapeHtml(item.resolves_to)}</b><span>${escapeHtml(item.behavior)}</span></article>`).join('');
+        const labels = { grounding: 'GROUNDING', tool_use: 'TOOL USE', mutations: 'REVISION', responses: 'RESPONSE' };
+        document.querySelector('[data-decision-policy]').innerHTML = Object.entries(contract.decision_policy || {}).map(([key, rules]) => `<article class="rule-group"><h3>${labels[key] || escapeHtml(key)}</h3><ul>${(rules || []).map(rule => `<li>${escapeHtml(rule)}</li>`).join('')}</ul></article>`).join('');
+        document.querySelector('[data-change-process]').innerHTML = (contract.change_process?.steps || []).map(step => `<article class="change-step"><span>0${escapeHtml(step.order)} · REQUIRED</span><h3>${escapeHtml(step.name)}</h3><p>${escapeHtml(step.requirement)}</p></article>`).join('');
+      };
       const renderTools = () => {
         const query = search.value.trim().toLocaleLowerCase('ko');
         let visible = 0;
@@ -298,14 +354,14 @@
       };
 
       Promise.all([
-        fetch('/api/contracts/tools').then(response => { if (!response.ok) throw new Error('tool contract'); return response.json(); }),
+        fetch('/api/contracts/agent').then(response => { if (!response.ok) throw new Error('agent contract'); return response.json(); }),
         fetch('/health').then(response => { if (!response.ok) throw new Error('health'); return response.json(); }),
         fetch('/api/project').then(response => { if (!response.ok) throw new Error('project'); return response.json(); })
       ]).then(([contract, health, project]) => {
         state.tools = contract.tools || [];
         document.querySelector('[data-tool-count]').textContent = String(state.tools.length);
         document.querySelector('[data-capability-count]').textContent = String(contract.capabilities?.length || 0);
-        renderCapabilities(contract.capabilities || []); renderBoundaries(contract.boundaries || []); renderTools(); setRuntime(health, project);
+        renderCapabilities(contract.capabilities || []); renderBoundaries(contract.boundaries || []); renderContractPolicy(contract); renderTools(); setRuntime(health, project);
       }).catch(() => {
         capabilityRoot.innerHTML = '<div class="empty-tools">서버의 기능 계약을 불러오지 못했습니다.</div>';
         toolList.innerHTML = '<div class="empty-tools">Edit Desk 서버 상태를 확인해주세요.</div>';

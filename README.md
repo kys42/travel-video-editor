@@ -55,7 +55,7 @@
 - [채팅 기반 AI 영상 편집 플랫폼 설계](docs/agentic-editor-platform.md)
 - [Editor Service 실행 가능한 기술 계약](docs/technical/editor-service.md)
 - [AI Editor 기능 및 운영 가이드](docs/technical/agent-capabilities.md)
-- [에이전트 도구 카탈로그](docs/contracts/editor-tools.v1.json)
+- [Editor Agent 단일 계약](docs/contracts/editor-agent.v1.json)
 - [SSE 이벤트 계약](docs/contracts/agent-events.v1.schema.json)
 - [`kyungdoc/video-summary` 검토](docs/upstream-video-summary-review.md)
 - [T7 원본 사전 점검](docs/source-assessment-2026-09-02.md)
@@ -197,7 +197,7 @@ uv run travel-video serve-editor \
   --host 127.0.0.1 --port 8765
 ```
 
-`http://127.0.0.1:8765`에서 Edit Desk를 엽니다. 모델 비용 없이 전체 UI·SSE·도구·revision 흐름을 검증하려면 `--agent-backend demo`를 사용합니다. API 계약은 `/openapi.json`, 실행 중인 도구 카탈로그는 `/api/contracts/tools`에서 확인할 수 있습니다.
+`http://127.0.0.1:8765`에서 Edit Desk를 엽니다. 모델 비용 없이 전체 UI·SSE·도구·revision 흐름을 검증하려면 `--agent-backend demo`를 사용합니다. API 계약은 `/openapi.json`, 실행 중인 단일 Editor Agent 계약은 `/api/contracts/agent`에서 확인할 수 있습니다.
 
 ## 다음 단계
 
