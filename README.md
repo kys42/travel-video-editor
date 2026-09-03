@@ -51,6 +51,7 @@
 - [토큰 효율적인 전수 장면 타임라인](docs/token-efficient-scene-timeline.md)
 - [Phase 1 구현과 파일럿 결과](docs/phase1-pipeline.md)
 - [영상 단위 요약과 시간순 다중 영상 라이브러리](docs/video-library.md)
+- [채팅 기반 AI 영상 편집 플랫폼 설계](docs/agentic-editor-platform.md)
 - [`kyungdoc/video-summary` 검토](docs/upstream-video-summary-review.md)
 - [T7 원본 사전 점검](docs/source-assessment-2026-09-02.md)
 - [소스 미디어와 작업 미디어 위치](docs/media-locations.md)
