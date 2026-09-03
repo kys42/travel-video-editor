@@ -68,7 +68,9 @@ The server logs each tool duration and a compact result summary, not the full tr
 
 The browser sends only lightweight interaction state: current asset ID, focused scene ID, explicitly selected scene IDs, visible asset IDs, search query, and the monitor range. The server validates those IDs against `TimelineCatalog` and expands them into `editor-ui-context/v1` before the model sees them.
 
-The resolved snapshot always includes project counts and compact current-asset metadata. A focused scene describes navigation/monitor state; it is not an edit selection. Explicit selection may span multiple scenes and multiple videos and is passed in capture-time order with title, source range, short scene summary, short dialogue excerpt, notable titles, and highlight state. This lets the agent answer ordinary “this video/scene/these selections” questions without a redundant tool call. Detailed STT, segment actions, frames, and edit state remain on-demand tool data.
+The resolved snapshot always includes a project overview: capture-date range, total duration, top tags, per-day rollups, and a compact chronological asset index. The index includes up to 40 videos; longer libraries retain complete day-level orientation and mark the asset index as truncated. Up to five videos around the current asset are included with slightly richer summaries.
+
+A focused scene describes navigation/monitor state; it is not an edit selection. Explicit selection may span multiple scenes and multiple videos and is passed in capture-time order with title, source range, short scene summary, short dialogue excerpt, notable titles, and highlight state. This lets the agent answer ordinary project/this-video/this-scene/these-selections questions without a redundant tool call. Detailed STT, segment actions, frames, exact rows outside a truncated index, and edit state remain on-demand tool data.
 
 Context references are resolved as follows:
 
@@ -77,7 +79,7 @@ Context references are resolved as follows:
 | “이 장면” | `workspace.focused_scene` | Answer from compact context; fetch evidence only for missing detail |
 | “이 영상” | `workspace.current_asset` | Use the current video summary |
 | “선택한 장면들”, “이것들” | `workspace.selected_scenes` | Treat all explicitly selected scenes as the candidate edit scope |
-| Project-wide wording | `project` | Use project counts; call catalog tools when actual rows are needed |
+| Project-wide wording | `project.day_rollups`, `project.asset_index` | Use the overview first; query only for exact rows outside a truncated index |
 
 The raw browser envelope is limited to 16 KB, explicit selection to 24 scenes, and visible assets to 100 IDs. Unknown IDs fail closed with a client error instead of entering the prompt.
 

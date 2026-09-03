@@ -354,16 +354,102 @@ class TimelineCatalog:
                 "highlighted": scene.highlighted,
             }
 
+        day_rows: dict[str, dict[str, Any]] = {}
+        tag_counts: dict[str, int] = {}
+        for asset in self._ordered_assets:
+            capture_date = (
+                asset.creation_time[:10]
+                if asset.creation_time and len(asset.creation_time) >= 10
+                else "unknown"
+            )
+            row = day_rows.setdefault(
+                capture_date,
+                {
+                    "capture_date": capture_date,
+                    "asset_count": 0,
+                    "scene_count": 0,
+                    "duration": 0.0,
+                    "titles": [],
+                    "tag_counts": {},
+                },
+            )
+            row["asset_count"] += 1
+            row["scene_count"] += asset.scene_count
+            row["duration"] += asset.duration
+            if len(row["titles"]) < 5:
+                row["titles"].append(asset.title)
+            for tag in asset.tags:
+                tag_counts[tag] = tag_counts.get(tag, 0) + 1
+                row["tag_counts"][tag] = row["tag_counts"].get(tag, 0) + 1
+
+        rollups = []
+        for row in day_rows.values():
+            rollups.append(
+                {
+                    "capture_date": row["capture_date"],
+                    "asset_count": row["asset_count"],
+                    "scene_count": row["scene_count"],
+                    "duration": round(row["duration"], 3),
+                    "titles": row["titles"],
+                    "top_tags": [
+                        tag
+                        for tag, _ in sorted(
+                            row["tag_counts"].items(),
+                            key=lambda item: (-item[1], item[0]),
+                        )[:6]
+                    ],
+                }
+            )
+        known_dates = [key for key in day_rows if key != "unknown"]
+        asset_index = [
+            {
+                "asset_id": asset.asset_id,
+                "creation_time": asset.creation_time,
+                "duration": round(asset.duration, 3),
+                "title": asset.title,
+                "tags": list(asset.tags[:5]),
+            }
+            for asset in self._ordered_assets[:40]
+        ]
+        nearby_assets: list[dict[str, Any]] = []
+        if current_asset:
+            current_index = self._ordered_assets.index(current_asset)
+            nearby_assets = [
+                asset.compact()
+                for asset in self._ordered_assets[
+                    max(0, current_index - 2) : current_index + 3
+                ]
+            ]
+
         return {
             "schema_version": "editor-ui-context/v1",
             "project": {
                 "title": self.title,
                 "asset_count": self.asset_count,
                 "scene_count": self.scene_count,
+                "total_duration": round(
+                    sum(asset.duration for asset in self._ordered_assets), 3
+                ),
+                "capture_date_range": {
+                    "start": min(known_dates) if known_dates else None,
+                    "end": max(known_dates) if known_dates else None,
+                },
+                "capture_day_count": len(day_rows),
+                "top_tags": [
+                    tag
+                    for tag, _ in sorted(
+                        tag_counts.items(), key=lambda item: (-item[1], item[0])
+                    )[:10]
+                ],
+                "day_rollups": rollups[:31],
+                "day_rollups_truncated": len(rollups) > 31,
+                "asset_index": asset_index,
+                "asset_index_truncated": self.asset_count > len(asset_index),
                 "timeline_order": "capture_time_asc",
             },
             "workspace": {
                 "current_asset": current_asset.compact() if current_asset else None,
+                "nearby_assets": nearby_assets,
                 "focused_scene": context_scene(focused) if focused else None,
                 "selected_scenes": [context_scene(scene) for scene in selected],
                 "selected_scene_count": len(selected),

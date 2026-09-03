@@ -185,14 +185,29 @@ def test_ui_context_resolves_focus_and_cross_asset_selection(tmp_path: Path) -> 
     )
 
     assert context["schema_version"] == "editor-ui-context/v1"
-    assert context["project"] == {
-        "title": "fixture",
-        "asset_count": 2,
-        "scene_count": 2,
-        "timeline_order": "capture_time_asc",
+    project = context["project"]
+    assert project["title"] == "fixture"
+    assert project["asset_count"] == 2
+    assert project["scene_count"] == 2
+    assert project["total_duration"] == 60.0
+    assert project["capture_date_range"] == {
+        "start": "2026-08-25",
+        "end": "2026-08-25",
     }
+    assert project["capture_day_count"] == 1
+    assert [item["title"] for item in project["asset_index"]] == [
+        "푸드코트 주문",
+        "장난스러운 반응",
+    ]
+    assert project["asset_index_truncated"] is False
+    assert project["day_rollups"][0]["asset_count"] == 2
+    assert project["timeline_order"] == "capture_time_asc"
     workspace = context["workspace"]
     assert workspace["current_asset"]["title"] == "장난스러운 반응"
+    assert [item["title"] for item in workspace["nearby_assets"]] == [
+        "푸드코트 주문",
+        "장난스러운 반응",
+    ]
     assert workspace["focused_scene"]["scene_id"] == "asset-2:G001"
     assert [item["scene_id"] for item in workspace["selected_scenes"]] == [
         "asset-1:G001",
