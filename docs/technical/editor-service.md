@@ -64,6 +64,23 @@ This is defense in depth. The actual edit authority exists only in `ToolGateway`
 
 The server logs each tool duration and a compact result summary, not the full transcript payload.
 
+## Workspace context envelope
+
+The browser sends only lightweight interaction state: current asset ID, focused scene ID, explicitly selected scene IDs, visible asset IDs, search query, and the monitor range. The server validates those IDs against `TimelineCatalog` and expands them into `editor-ui-context/v1` before the model sees them.
+
+The resolved snapshot always includes project counts and compact current-asset metadata. A focused scene describes navigation/monitor state; it is not an edit selection. Explicit selection may span multiple scenes and multiple videos and is passed in capture-time order with title, source range, short scene summary, short dialogue excerpt, notable titles, and highlight state. This lets the agent answer ordinary “this video/scene/these selections” questions without a redundant tool call. Detailed STT, segment actions, frames, and edit state remain on-demand tool data.
+
+Context references are resolved as follows:
+
+| User reference | Snapshot field | Default behavior |
+|---|---|---|
+| “이 장면” | `workspace.focused_scene` | Answer from compact context; fetch evidence only for missing detail |
+| “이 영상” | `workspace.current_asset` | Use the current video summary |
+| “선택한 장면들”, “이것들” | `workspace.selected_scenes` | Treat all explicitly selected scenes as the candidate edit scope |
+| Project-wide wording | `project` | Use project counts; call catalog tools when actual rows are needed |
+
+The raw browser envelope is limited to 16 KB, explicit selection to 24 scenes, and visible assets to 100 IDs. Unknown IDs fail closed with a client error instead of entering the prompt.
+
 ## Write path and concurrency
 
 `create_edit` creates revision 1. `apply_edit_operations` requires `expected_revision_id`; a stale caller receives `revision_conflict` rather than silently overwriting a newer edit. A successful operation batch is applied in a single SQLite transaction and creates one new snapshot.

@@ -188,9 +188,13 @@ def create_editor_app(
     @app.post("/api/agent/chat", tags=["agent"])
     async def agent_chat(payload: ChatRequest, request: Request) -> StreamingResponse:
         session_id = payload.session_id or new_session_id()
-        context = dict(payload.context)
-        if len(json.dumps(context, ensure_ascii=False)) > 16_000:
+        raw_context = dict(payload.context)
+        if len(json.dumps(raw_context, ensure_ascii=False)) > 16_000:
             raise HTTPException(status_code=413, detail="chat context exceeds 16 KB")
+        try:
+            context = catalog.resolve_ui_context(raw_context)
+        except Exception as exc:
+            raise _http_error(exc) from exc
 
         async def stream() -> AsyncIterator[bytes]:
             try:

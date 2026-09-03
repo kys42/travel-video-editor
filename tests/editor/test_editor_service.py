@@ -169,6 +169,48 @@ def test_catalog_search_is_compact_and_evidence_is_on_demand(tmp_path: Path) -> 
     }
 
 
+def test_ui_context_resolves_focus_and_cross_asset_selection(tmp_path: Path) -> None:
+    catalog = TimelineCatalog(_fixture_project(tmp_path))
+
+    context = catalog.resolve_ui_context(
+        {
+            "current_asset_id": "asset-2",
+            "focused_scene_id": "asset-2:G001",
+            "selected_scene_ids": ["asset-1:G001", "asset-2:G001"],
+            "visible_asset_ids": ["asset-1", "asset-2"],
+            "search_query": "반응",
+            "selected_range": {"source_in": 2, "source_out": 8},
+            "inspector_tab": "ai",
+        }
+    )
+
+    assert context["schema_version"] == "editor-ui-context/v1"
+    assert context["project"] == {
+        "title": "fixture",
+        "asset_count": 2,
+        "scene_count": 2,
+        "timeline_order": "capture_time_asc",
+    }
+    workspace = context["workspace"]
+    assert workspace["current_asset"]["title"] == "장난스러운 반응"
+    assert workspace["focused_scene"]["scene_id"] == "asset-2:G001"
+    assert [item["scene_id"] for item in workspace["selected_scenes"]] == [
+        "asset-1:G001",
+        "asset-2:G001",
+    ]
+    assert workspace["selected_asset_count"] == 2
+    assert workspace["selection_is_explicit"] is True
+    assert "segments" not in workspace["selected_scenes"][0]
+    assert "source" not in workspace["current_asset"]
+
+
+def test_ui_context_rejects_unknown_scene(tmp_path: Path) -> None:
+    catalog = TimelineCatalog(_fixture_project(tmp_path))
+
+    with pytest.raises(KeyError, match="scene not found"):
+        catalog.resolve_ui_context({"selected_scene_ids": ["missing:G001"]})
+
+
 def test_edit_operations_create_immutable_revision_and_reject_stale_write(
     tmp_path: Path,
 ) -> None:

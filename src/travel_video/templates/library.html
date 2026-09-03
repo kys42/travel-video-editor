@@ -127,7 +127,12 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
     .scene-summary::-webkit-details-marker { display: none; }
     .scene-summary:hover { background: var(--hover); }
     .scene[open] > .scene-summary { background: var(--selected); box-shadow: inset 2px 0 var(--accent); }
-    .scene-sequence { padding-top: 2px; color: var(--faint); font: 9px var(--font-time); text-align: center; }
+    .scene-sequence { display: grid; padding-top: 1px; place-items: start center; }
+    .scene-picker { display: grid; width: 27px; height: 27px; padding: 0; place-items: center; border: 1px solid var(--line); border-radius: 3px; color: var(--faint); background: #121416; font: 8px var(--font-time); }
+    .scene-picker:hover { color: var(--text-2); border-color: var(--line-strong); }
+    .scene-picker[aria-pressed="true"] { color: #17120a; border-color: var(--accent); background: var(--accent); font-weight: 700; }
+    .scene.is-selected > .scene-summary { box-shadow: inset 2px 0 var(--audio); }
+    .scene.is-selected[open] > .scene-summary { box-shadow: inset 2px 0 var(--audio), inset 0 -1px color-mix(in srgb, var(--accent) 30%, transparent); }
     .scene-time strong, .scene-time small { display: block; }
     .scene-time strong { color: var(--accent); font: 10px var(--font-time); }
     .scene-time small { margin-top: 5px; color: var(--faint); font: 8px var(--font-time); }
@@ -247,7 +252,9 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
     .agent-context span, .agent-context strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .agent-context span { color: var(--faint); font: 8px var(--font-time); }
     .agent-context strong { margin-top: 2px; color: var(--text-2); font-size: 9px; font-weight: 600; }
-    .agent-context b { padding: 2px 5px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); font: 8px var(--font-time); }
+    .agent-context-actions { display: flex; align-items: center; gap: 4px; }
+    .agent-context b, .agent-context button { min-height: 20px; padding: 2px 5px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); background: transparent; font: 8px var(--font-time); }
+    .agent-context button:hover { color: var(--text-2); border-color: var(--line-strong); }
     .chat-scroll { min-height: 0; padding: 9px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
     .chat-message { margin-bottom: 11px; }
     .chat-message > header { display: flex; justify-content: space-between; margin-bottom: 4px; color: var(--faint); font: 8px var(--font-time); }
@@ -386,7 +393,7 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
         <div class="monitor-copy"><span>SELECTED SCENE · <b data-preview-code>FRAME</b></span><h3 data-preview-title>__INITIAL_PREVIEW_TITLE__</h3><p>장면을 펼치면 해석, 대화 종합, 세부 구간별 행동과 원시 STT 후보가 해당 행 아래에 표시됩니다.</p><dl class="monitor-facts"><div><dt>미디어</dt><dd>ORIGINAL 4K</dd></div><div><dt>재생</dt><dd data-media-state>확인 중</dd></div><div><dt>분석</dt><dd>CONTEXT REVIEWED</dd></div><div><dt>원본</dt><dd>UNCHANGED</dd></div></dl></div>
       </section>
       <section class="inspector-view inspector-view--ai" id="inspector-ai" role="tabpanel" data-inspector-panel="ai" hidden>
-        <div class="agent-context"><div><span>ACTIVE CONTEXT</span><strong data-agent-context>선택 장면과 분석 데이터</strong></div><b data-active-edit>NO EDIT</b></div>
+        <div class="agent-context"><div><span>WORKSPACE CONTEXT</span><strong data-agent-context>현재 영상과 선택 장면</strong></div><div class="agent-context-actions"><button type="button" data-clear-scene-selection hidden>CLEAR</button><b data-active-edit>NO EDIT</b></div></div>
         <div class="chat-scroll" data-chat-scroll aria-live="polite">
           <article class="chat-message chat-message--assistant"><header><b>AI EDITOR</b><span>LOCAL AGENT</span></header><div class="chat-bubble" data-agent-intro>에이전트 연결 상태를 확인하는 중입니다.</div></article>
           <div class="suggestions" data-suggestions><button type="button">이 영상들로 60초 하이라이트 초안 만들어줘</button><button type="button">음식 주문과 웃긴 반응 장면을 찾아줘</button></div>
@@ -396,7 +403,7 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
     </aside>
   </main>
 
-  <footer class="statusbar"><span>분석 데이터 연결됨 · 원본 미변경</span><span>장면 클릭: 상세 펼치기 · ↑↓: 장면 이동 · /: 검색</span></footer>
+  <footer class="statusbar"><span>분석 데이터 연결됨 · 원본 미변경</span><span>장면 번호: 다중 편집 선택 · 장면 본문: 상세 펼치기 · ↑↓: 이동 · /: 검색</span></footer>
   <div class="toast" role="status" aria-live="polite" data-toast></div>
 
   <script>
@@ -424,6 +431,7 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
       const agentRuntime = document.querySelector('[data-agent-runtime]');
       const agentIntro = document.querySelector('[data-agent-intro]');
       const agentContext = document.querySelector('[data-agent-context]');
+      const clearSceneSelection = document.querySelector('[data-clear-scene-selection]');
       const activeEdit = document.querySelector('[data-active-edit]');
       const chatScroll = document.querySelector('[data-chat-scroll]');
       const chatForm = document.querySelector('[data-chat-form]');
@@ -438,10 +446,41 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
       let chatController = null;
       let inspectorTab = 'monitor';
       let chatSessionId = sessionStorage.getItem('tve-chat-session') || null;
+      let restoredSceneSelection = [];
+      try { restoredSceneSelection = JSON.parse(sessionStorage.getItem('tve-selected-scenes') || '[]'); } catch {}
+      const selectedSceneIds = new Set(Array.isArray(restoredSceneSelection) ? restoredSceneSelection : []);
 
       const activePanel = () => clipPanels.find(panel => !panel.hidden);
       const visibleScenes = () => [...(activePanel()?.querySelectorAll('[data-scene]:not([hidden])') || [])];
       const currentScene = () => activePanel()?.querySelector('[data-scene][open]:not([hidden])') || visibleScenes()[0];
+      const selectedScenesInTimelineOrder = () => [...document.querySelectorAll('[data-scene-id]')].filter(scene => selectedSceneIds.has(scene.dataset.sceneId));
+
+      const updateAgentContext = () => {
+        const selected = selectedScenesInTimelineOrder();
+        if (selected.length) {
+          const assets = new Set(selected.map(scene => scene.closest('[data-clip-panel]')?.dataset.clipPanel).filter(Boolean));
+          agentContext.textContent = `${selected.length} scenes selected · ${assets.size} clips`;
+          agentContext.title = selected.map(scene => scene.dataset.previewTitle).join(' · ');
+          clearSceneSelection.hidden = false;
+          return;
+        }
+        const scene = currentScene();
+        const assetTitle = activePanel()?.querySelector('.clip-title h1')?.textContent || '현재 영상';
+        agentContext.textContent = scene ? `${assetTitle} · ${scene.dataset.previewTitle}` : assetTitle;
+        agentContext.title = '현재 영상과 포커스 장면이 기본 컨텍스트로 전달됩니다.';
+        clearSceneSelection.hidden = true;
+      };
+
+      const syncSceneSelection = () => {
+        [...document.querySelectorAll('[data-scene-id]')].forEach(scene => {
+          const selected = selectedSceneIds.has(scene.dataset.sceneId);
+          scene.classList.toggle('is-selected', selected);
+          const picker = scene.querySelector('[data-toggle-scene-selection]');
+          if (picker) picker.setAttribute('aria-pressed', String(selected));
+        });
+        sessionStorage.setItem('tve-selected-scenes', JSON.stringify(selectedScenesInTimelineOrder().map(scene => scene.dataset.sceneId)));
+        updateAgentContext();
+      };
 
       const setInspectorTab = tab => {
         if (!['monitor', 'ai'].includes(tab)) return;
@@ -518,11 +557,11 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
         previewTime.textContent = scene.dataset.previewTime;
         previewTimecode.textContent = scene.dataset.previewTimecode;
         previewCode.textContent = scene.id.split('-').at(-1);
-        agentContext.textContent = `${scene.dataset.previewTitle} · ${scene.dataset.previewTime}`;
         updateSourceMedia(scene, image.src);
         activePanel()?.querySelectorAll('[data-jump-scene]').forEach(button => {
           button.setAttribute('aria-current', String(button.dataset.jumpScene === scene.id));
         });
+        updateAgentContext();
       };
 
       const scrollSceneIntoTimeline = scene => requestAnimationFrame(() => {
@@ -555,6 +594,28 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
       };
 
       const sceneById = sceneId => [...document.querySelectorAll('[data-scene-id]')].find(scene => scene.dataset.sceneId === sceneId);
+
+      document.querySelectorAll('.scene-sequence').forEach(cell => {
+        const scene = cell.closest('[data-scene-id]');
+        const picker = document.createElement('button');
+        picker.type = 'button';
+        picker.className = 'scene-picker';
+        picker.dataset.toggleSceneSelection = '';
+        picker.textContent = cell.textContent.trim();
+        picker.setAttribute('aria-label', `${scene.dataset.previewTitle} 편집 선택`);
+        picker.title = '다중 편집 범위에 추가하거나 제거';
+        picker.addEventListener('click', event => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (selectedSceneIds.has(scene.dataset.sceneId)) selectedSceneIds.delete(scene.dataset.sceneId);
+          else selectedSceneIds.add(scene.dataset.sceneId);
+          syncSceneSelection();
+        });
+        cell.replaceChildren(picker);
+      });
+      [...selectedSceneIds].forEach(sceneId => { if (!sceneById(sceneId)) selectedSceneIds.delete(sceneId); });
+      clearSceneSelection.addEventListener('click', () => { selectedSceneIds.clear(); syncSceneSelection(); });
+      syncSceneSelection();
 
       const focusSceneById = (sceneId, scroll = true) => {
         const scene = sceneById(sceneId);
@@ -846,11 +907,15 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
               message,
               session_id: chatSessionId,
               context: {
-                active_asset_id: activePanel()?.dataset.clipPanel || null,
-                active_scene_id: scene?.dataset.sceneId || null,
+                schema_version: 'editor-ui-state/v1',
+                current_asset_id: activePanel()?.dataset.clipPanel || null,
+                focused_scene_id: scene?.dataset.sceneId || null,
+                selected_scene_ids: selectedScenesInTimelineOrder().map(item => item.dataset.sceneId),
+                visible_asset_ids: clipButtons.filter(button => !button.closest('.footage-item').hidden).map(button => button.dataset.selectClip),
+                search_query: search.value.trim(),
                 selected_range: { source_in: selectedStart, source_out: selectedEnd },
                 inspector_tab: inspectorTab,
-                active_edit_id: activeEditId
+                selection_order: 'timeline'
               }
             })
           });

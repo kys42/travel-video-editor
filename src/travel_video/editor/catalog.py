@@ -271,6 +271,112 @@ class TimelineCatalog:
             ]
         return [item.compact() for item in rows[:limit]]
 
+    def resolve_ui_context(self, state: dict[str, Any]) -> dict[str, Any]:
+        """Turn lightweight browser state into an authoritative compact snapshot."""
+        if not isinstance(state, dict):
+            raise ValueError("editor UI context must be an object")
+        schema_version = state.get("schema_version")
+        if schema_version not in {None, "editor-ui-state/v1"}:
+            raise ValueError(f"unsupported editor UI state: {schema_version}")
+
+        current_asset_id = str(
+            state.get("current_asset_id") or state.get("active_asset_id") or ""
+        ).strip()
+        focused_scene_id = str(
+            state.get("focused_scene_id") or state.get("active_scene_id") or ""
+        ).strip()
+        selected_raw = state.get("selected_scene_ids") or []
+        visible_raw = state.get("visible_asset_ids") or []
+        if not isinstance(selected_raw, list):
+            raise ValueError("selected_scene_ids must be an array")
+        if not isinstance(visible_raw, list):
+            raise ValueError("visible_asset_ids must be an array")
+        if len(selected_raw) > 24:
+            raise ValueError("selected_scene_ids cannot contain more than 24 items")
+        if len(visible_raw) > 100:
+            raise ValueError("visible_asset_ids cannot contain more than 100 items")
+
+        selected_ids = list(dict.fromkeys(str(item) for item in selected_raw))
+        visible_ids = list(dict.fromkeys(str(item) for item in visible_raw))
+        selected_id_set = set(selected_ids)
+        for scene_id in selected_id_set:
+            self.scene(scene_id)
+        selected = [
+            scene for scene in self._ordered_scenes if scene.scene_id in selected_id_set
+        ]
+        if focused_scene_id:
+            focused = self.scene(focused_scene_id)
+            current_asset_id = current_asset_id or focused.asset_id
+        else:
+            focused = None
+        current_asset = self.asset(current_asset_id) if current_asset_id else None
+        if focused and current_asset and focused.asset_id != current_asset.asset_id:
+            raise ValueError("focused scene does not belong to the current asset")
+        for asset_id in visible_ids:
+            self.asset(asset_id)
+
+        selected_range = state.get("selected_range")
+        compact_range: dict[str, float] | None = None
+        if isinstance(selected_range, dict):
+            try:
+                source_in = float(selected_range["source_in"])
+                source_out = float(selected_range["source_out"])
+            except (KeyError, TypeError, ValueError):
+                pass
+            else:
+                if source_in >= 0 and source_out >= source_in:
+                    compact_range = {
+                        "source_in": round(source_in, 3),
+                        "source_out": round(source_out, 3),
+                    }
+        if compact_range and focused and (
+            compact_range["source_in"] < focused.source_in
+            or compact_range["source_out"] > focused.source_out
+        ):
+            raise ValueError("selected range is outside the focused scene")
+
+        def context_scene(scene: SceneRecord) -> dict[str, Any]:
+            return {
+                "scene_id": scene.scene_id,
+                "asset_id": scene.asset_id,
+                "source_in": round(scene.source_in, 3),
+                "source_out": round(scene.source_out, 3),
+                "title": scene.title,
+                "summary": _short_text(scene.summary, 160),
+                "dialogue_excerpt": _short_text(
+                    scene.dialogue_excerpt or scene.dialogue_summary, 100
+                ),
+                "notable_titles": [
+                    str(item.get("title", ""))
+                    for item in scene.notable_moments[:3]
+                    if item.get("title")
+                ],
+                "highlighted": scene.highlighted,
+            }
+
+        return {
+            "schema_version": "editor-ui-context/v1",
+            "project": {
+                "title": self.title,
+                "asset_count": self.asset_count,
+                "scene_count": self.scene_count,
+                "timeline_order": "capture_time_asc",
+            },
+            "workspace": {
+                "current_asset": current_asset.compact() if current_asset else None,
+                "focused_scene": context_scene(focused) if focused else None,
+                "selected_scenes": [context_scene(scene) for scene in selected],
+                "selected_scene_count": len(selected),
+                "selected_asset_count": len({scene.asset_id for scene in selected}),
+                "selection_is_explicit": bool(selected),
+                "selection_order": "timeline",
+                "visible_asset_ids": visible_ids,
+                "search_query": _short_text(str(state.get("search_query") or ""), 160),
+                "selected_range": compact_range,
+                "inspector_tab": str(state.get("inspector_tab") or "ai")[:16],
+            },
+        }
+
     def search_scenes(
         self,
         *,
