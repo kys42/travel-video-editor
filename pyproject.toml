@@ -5,7 +5,10 @@ description = "Local-first, token-efficient travel video indexing pipeline"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "fastapi>=0.141,<1",
+  "openai-codex>=0.147,<1",
   "pillow>=11.0",
+  "uvicorn>=0.52,<1",
 ]
 
 [project.scripts]
@@ -17,11 +20,15 @@ build-backend = "hatchling.build"
 
 [dependency-groups]
 dev = [
+  "httpx>=0.28",
   "pytest>=8.3",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/travel_video"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"docs/contracts/editor-tools.v1.json" = "travel_video/editor/editor-tools.v1.json"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

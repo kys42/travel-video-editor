@@ -27,6 +27,7 @@
 - 웃긴 반응·돌발 상황·그림 되는 컷·살릴 대사 같은 특이 포인트를 별도 편집 비트로 기록하고 표시
 - 장면별 검토 결과만 다시 읽어 영상 전체를 종합하는 `video_summary` 단계와 촬영 시각순 다중 영상 템플릿 구현
 - 2026-09-02: 토큰 효율적인 전수 장면 타임라인 설계 추가
+- 2026-09-03: 문서 계약을 Codex SDK, FastAPI 도구 게이트웨이, SQLite 불변 편집 리비전, Edit Desk AI 채팅이 함께 사용하는 프로덕션형 수직 슬라이스 구현
 - T7의 4K·카메라 원본 400개(약 370.64 GiB)를 읽기 전용 소스로 확정하고, ExternalSSD에 검증 가능한 1080p 작업 프록시 배치 생성 중
 - 현재 Mac에서 Apple Silicon, FFmpeg 8.1.2, `ffprobe`, `uv` 사용 가능 확인
 - `uvx`로 MLX Whisper를 로컬 실행했으며 small 모델 파일럿 완료; 일반적인 NLE 앱은 표준 경로에서 확인되지 않음
@@ -52,6 +53,9 @@
 - [Phase 1 구현과 파일럿 결과](docs/phase1-pipeline.md)
 - [영상 단위 요약과 시간순 다중 영상 라이브러리](docs/video-library.md)
 - [채팅 기반 AI 영상 편집 플랫폼 설계](docs/agentic-editor-platform.md)
+- [Editor Service 실행 가능한 기술 계약](docs/technical/editor-service.md)
+- [에이전트 도구 카탈로그](docs/contracts/editor-tools.v1.json)
+- [SSE 이벤트 계약](docs/contracts/agent-events.v1.schema.json)
 - [`kyungdoc/video-summary` 검토](docs/upstream-video-summary-review.md)
 - [T7 원본 사전 점검](docs/source-assessment-2026-09-02.md)
 - [소스 미디어와 작업 미디어 위치](docs/media-locations.md)
@@ -178,6 +182,21 @@ uv run travel-video render-library \
 ```
 
 상세 계약과 실제 음식 시퀀스 결과는 [다중 영상 라이브러리 문서](docs/video-library.md)에 있습니다.
+
+## Codex SDK 편집 서비스
+
+검토 라이브러리를 로컬 API와 함께 열면 오른쪽 `AI Editor`에서 장면 검색, 근거 조회, 편집 초안 생성과 수정 요청을 할 수 있습니다. 에이전트는 원본 파일이나 셸에 편집 권한을 받지 않고, 문서화된 도구만 제안합니다. 서버가 도구 입력을 검증하고 모든 편집 변경을 새 SQLite revision으로 기록합니다.
+
+```bash
+uv sync --group dev
+uv run travel-video serve-editor \
+  work/food-sequence/library/manifest.json \
+  --state-dir work/editor-state \
+  --agent-backend codex \
+  --host 127.0.0.1 --port 8765
+```
+
+`http://127.0.0.1:8765`에서 Edit Desk를 엽니다. 모델 비용 없이 전체 UI·SSE·도구·revision 흐름을 검증하려면 `--agent-backend demo`를 사용합니다. API 계약은 `/openapi.json`, 실행 중인 도구 카탈로그는 `/api/contracts/tools`에서 확인할 수 있습니다.
 
 ## 다음 단계
 

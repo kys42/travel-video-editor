@@ -335,7 +335,7 @@ def _render_scene(
     preview_url = assets.url(representative["frame"])
     return f"""
       <details class="scene" id="scene-{_escape(timeline["asset_id"])}-{_escape(group["group_id"])}"
-               data-scene data-search="{_escape(" ".join(search_parts).lower())}"
+               data-scene data-scene-id="{_escape(timeline["asset_id"])}:{_escape(group["group_id"])}" data-search="{_escape(" ".join(search_parts).lower())}"
                data-preview-title="{_escape(event.get("headline", group["label"]))}"
                data-preview-time="{_escape(_short_time(start))} — {_escape(_short_time(end))}"
                data-preview-timecode="{_escape(representative["timecode"])}"

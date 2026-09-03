@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.travel-video-editor/contracts/agent-events.v1.schema.json",
+  "title": "Travel Video Editor agent SSE event",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "event": {"const": "text"},
+        "data": {"type": "object", "properties": {"content": {"type": "string"}}, "required": ["content"], "additionalProperties": false}
+      },
+      "required": ["event", "data"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event": {"const": "status"},
+        "data": {"type": "object", "properties": {"message": {"type": "string"}, "tool": {"type": "string"}}, "required": ["message", "tool"], "additionalProperties": false}
+      },
+      "required": ["event", "data"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event": {"const": "card"},
+        "data": {"type": "object", "properties": {"type": {"enum": ["scene_refs", "edit_revision_ref", "system_notice"]}}, "required": ["type"]}
+      },
+      "required": ["event", "data"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event": {"const": "action"},
+        "data": {"type": "object", "properties": {"type": {"enum": ["play_source_range", "focus_scene", "open_inspector_tab"]}}, "required": ["type"]}
+      },
+      "required": ["event", "data"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event": {"const": "suggestions"},
+        "data": {"type": "object", "properties": {"items": {"type": "array", "items": {"type": "string"}, "maxItems": 4}}, "required": ["items"], "additionalProperties": false}
+      },
+      "required": ["event", "data"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event": {"const": "done"},
+        "data": {"type": "object", "properties": {"session_id": {"type": "string"}, "edit_id": {"type": ["string", "null"]}, "backend": {"type": "string"}}, "required": ["session_id", "backend"], "additionalProperties": false}
+      },
+      "required": ["event", "data"],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "event": {"const": "error"},
+        "data": {"type": "object", "properties": {"message": {"type": "string"}, "code": {"type": "string"}, "retryable": {"type": "boolean"}}, "required": ["message", "code", "retryable"], "additionalProperties": false}
+      },
+      "required": ["event", "data"],
+      "additionalProperties": false
+    }
+  ]
+}

@@ -232,6 +232,18 @@ def build_parser() -> argparse.ArgumentParser:
         default="embed",
         help="Embed representative images or link existing frame files",
     )
+
+    serve = subparsers.add_parser(
+        "serve-editor", help="Serve the Edit Desk and contract-first agent API"
+    )
+    serve.add_argument("manifest", type=Path, help="render-library manifest.json")
+    serve.add_argument("--state-dir", type=Path, default=Path("work/editor-state"))
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8765)
+    serve.add_argument(
+        "--agent-backend", choices=("auto", "codex", "demo"), default="auto"
+    )
+    serve.add_argument("--codex-model", default="gpt-5.6-terra")
     return parser
 
 
@@ -382,6 +394,17 @@ def main(argv: list[str] | None = None) -> int:
                 proxy_root=args.proxy_root,
             )
             print(output)
+        elif args.command == "serve-editor":
+            from .editor.server import serve_editor
+
+            serve_editor(
+                args.manifest,
+                args.state_dir,
+                host=args.host,
+                port=args.port,
+                agent_backend=args.agent_backend,
+                codex_model=args.codex_model,
+            )
     except Exception as exc:  # noqa: BLE001 - CLI boundary converts failures to exit codes.
         print(f"error: {exc}", file=sys.stderr)
         return 1

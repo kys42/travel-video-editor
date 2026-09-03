@@ -1,0 +1,223 @@
+{
+  "schema_version": "editor-tool-catalog/v1",
+  "service": "travel-video-editor",
+  "principles": [
+    "Query compact scene metadata before requesting detailed evidence.",
+    "Never expose arbitrary filesystem, shell, FFmpeg, or source mutation capabilities.",
+    "Every edit mutation creates a new immutable revision.",
+    "All source ranges remain linked to asset_id, scene_id, source_in, and source_out."
+  ],
+  "tools": [
+    {
+      "name": "list_assets",
+      "category": "data_query",
+      "intent": "List indexed videos in capture order with compact summaries and analysis status. Use before searching when the requested date or available footage is unclear.",
+      "side_effect": "none",
+      "approval": "never",
+      "status_message": "영상 목록을 확인하는 중",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "capture_date": {"type": "string", "description": "Optional UTC capture date prefix in YYYY-MM-DD form."},
+          "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 30}
+        },
+        "additionalProperties": false
+      },
+      "output": "Compact asset references only; no raw transcript or full timeline JSON."
+    },
+    {
+      "name": "search_scenes",
+      "category": "data_query",
+      "intent": "Search reviewed scene summaries, notable moments, tags, and reconciled dialogue. Use this as the default discovery tool and request detailed evidence only for shortlisted scenes.",
+      "side_effect": "none",
+      "approval": "never",
+      "status_message": "장면 인덱스를 검색하는 중",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {"type": "string", "description": "Natural-language keywords such as 음식, 주문, 웃긴 표정, glacier."},
+          "asset_ids": {"type": "array", "items": {"type": "string"}, "maxItems": 40},
+          "highlight_only": {"type": "boolean", "default": false},
+          "limit": {"type": "integer", "minimum": 1, "maximum": 30, "default": 12}
+        },
+        "additionalProperties": false
+      },
+      "output": "Token-light scene references with time range, summary, notable labels, dialogue excerpt, and score."
+    },
+    {
+      "name": "get_scene_evidence",
+      "category": "data_query",
+      "intent": "Load detailed reviewed evidence for one shortlisted scene, including chronological action segments, original-language utterances, notable moments, and selected frame references. Do not call for every search result.",
+      "side_effect": "none",
+      "approval": "never",
+      "status_message": "선택한 장면의 근거를 읽는 중",
+      "input_schema": {
+        "type": "object",
+        "properties": {"scene_id": {"type": "string"}},
+        "required": ["scene_id"],
+        "additionalProperties": false
+      },
+      "output": "Detailed evidence for a single scene, capped to reviewed metadata and frame references."
+    },
+    {
+      "name": "create_edit",
+      "category": "durable_action",
+      "intent": "Create an empty edit and its immutable revision 1 from an explicit user brief. Use before adding clips when no edit_id exists.",
+      "side_effect": "creates_revision",
+      "approval": "implicit_for_draft",
+      "status_message": "새 편집 초안을 만드는 중",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "title": {"type": "string", "minLength": 1, "maxLength": 120},
+          "brief": {"type": "string", "minLength": 1, "maxLength": 2000},
+          "target_duration": {"type": "number", "minimum": 5, "maximum": 7200}
+        },
+        "required": ["title", "brief"],
+        "additionalProperties": false
+      },
+      "output": "Edit and head revision reference."
+    },
+    {
+      "name": "get_edit",
+      "category": "data_query",
+      "intent": "Read the current or specified immutable edit revision, including clips, duration, and provenance. Use before modifying an existing edit.",
+      "side_effect": "none",
+      "approval": "never",
+      "status_message": "편집 타임라인을 읽는 중",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "edit_id": {"type": "string"},
+          "revision_id": {"type": "string"}
+        },
+        "required": ["edit_id"],
+        "additionalProperties": false
+      },
+      "output": "One edit revision and a compact revision history."
+    },
+    {
+      "name": "apply_edit_operations",
+      "category": "durable_action",
+      "intent": "Apply a validated batch of scene-based add, trim, move, remove, title, or target-duration operations against an expected head revision. Always creates a new immutable revision; never overwrites prior work.",
+      "side_effect": "creates_revision",
+      "approval": "implicit_for_draft",
+      "status_message": "편집 리비전을 적용하는 중",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "edit_id": {"type": "string"},
+          "expected_revision_id": {"type": "string", "description": "Optimistic concurrency guard. Must match the current head."},
+          "summary": {"type": "string", "minLength": 1, "maxLength": 240},
+          "operations": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "description": "Operation object. Supported op values: add_scene, trim_clip, move_clip, remove_clip, set_title, set_target_duration.",
+              "required": ["op"],
+              "properties": {
+                "op": {"type": "string", "enum": ["add_scene", "trim_clip", "move_clip", "remove_clip", "set_title", "set_target_duration"]},
+                "scene_id": {"type": "string"},
+                "clip_id": {"type": "string"},
+                "source_in": {"type": "number", "minimum": 0},
+                "source_out": {"type": "number", "exclusiveMinimum": 0},
+                "to_index": {"type": "integer", "minimum": 0},
+                "label": {"type": "string", "maxLength": 160},
+                "reason": {"type": "string", "maxLength": 600},
+                "title": {"type": "string", "maxLength": 120},
+                "target_duration": {"type": "number", "minimum": 5, "maximum": 7200}
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["edit_id", "expected_revision_id", "summary", "operations"],
+        "additionalProperties": false
+      },
+      "output": "New immutable revision plus a machine-readable change summary."
+    },
+    {
+      "name": "show_scene_refs",
+      "category": "display",
+      "intent": "Show one compact scene-reference card stack after selecting relevant search results. Prefer references over copying complete scene evidence into chat.",
+      "side_effect": "ui_event",
+      "approval": "never",
+      "status_message": "장면 후보를 정리하는 중",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "scene_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 12},
+          "title": {"type": "string", "maxLength": 120}
+        },
+        "required": ["scene_ids"],
+        "additionalProperties": false
+      },
+      "output": "SSE card event; only scene IDs cross the model/UI boundary."
+    },
+    {
+      "name": "show_edit_revision",
+      "category": "display",
+      "intent": "Show an edit revision card after creating or changing a draft so the user can review duration, clip count, and revision diff.",
+      "side_effect": "ui_event",
+      "approval": "never",
+      "status_message": "편집 변경사항을 표시하는 중",
+      "input_schema": {
+        "type": "object",
+        "properties": {"edit_id": {"type": "string"}, "revision_id": {"type": "string"}},
+        "required": ["edit_id", "revision_id"],
+        "additionalProperties": false
+      },
+      "output": "SSE edit_revision_ref card."
+    },
+    {
+      "name": "play_source_range",
+      "category": "ui_action",
+      "intent": "Move the shared Source Monitor to a known scene or explicit source range and play it. Use instead of embedding a video player inside every chat card.",
+      "side_effect": "ui_event",
+      "approval": "never",
+      "status_message": "소스 모니터로 구간을 보내는 중",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "scene_id": {"type": "string"},
+          "autoplay": {"type": "boolean", "default": true}
+        },
+        "required": ["scene_id"],
+        "additionalProperties": false
+      },
+      "output": "SSE action event interpreted by the Edit Desk action dispatcher."
+    },
+    {
+      "name": "focus_scene",
+      "category": "ui_action",
+      "intent": "Select the source video, reveal the matching scene in the review timeline, and keep its evidence expanded.",
+      "side_effect": "ui_event",
+      "approval": "never",
+      "status_message": "타임라인에서 장면을 여는 중",
+      "input_schema": {
+        "type": "object",
+        "properties": {"scene_id": {"type": "string"}},
+        "required": ["scene_id"],
+        "additionalProperties": false
+      },
+      "output": "SSE action event interpreted by the Edit Desk action dispatcher."
+    },
+    {
+      "name": "open_inspector_tab",
+      "category": "ui_action",
+      "intent": "Switch the right inspector between the Source Monitor and AI Editor without changing project state.",
+      "side_effect": "ui_event",
+      "approval": "never",
+      "status_message": "인스펙터를 전환하는 중",
+      "input_schema": {
+        "type": "object",
+        "properties": {"tab": {"type": "string", "enum": ["monitor", "ai"]}},
+        "required": ["tab"],
+        "additionalProperties": false
+      },
+      "output": "SSE action event interpreted by the Edit Desk action dispatcher."
+    }
+  ]
+}

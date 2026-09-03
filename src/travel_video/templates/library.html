@@ -199,7 +199,20 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
     .story-frame figcaption b { color: var(--text-2); font: 8px var(--font-time); }
     .story-frame figcaption span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-    .monitor-panel { display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); background: var(--panel); }
+    .monitor-panel { display: grid; grid-template-rows: auto minmax(0, 1fr); background: var(--panel); }
+    .inspector-head { display: flex; align-items: stretch; justify-content: space-between; min-height: 36px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
+    .inspector-tabs { display: flex; align-items: stretch; }
+    .inspector-tab { position: relative; min-width: 78px; padding: 0 10px; border: 0; color: var(--faint); background: transparent; font-size: 10px; font-weight: 650; }
+    .inspector-tab:hover { color: var(--text-2); background: var(--hover); }
+    .inspector-tab[aria-selected="true"] { color: var(--text); }
+    .inspector-tab[aria-selected="true"]::after { position: absolute; right: 8px; bottom: -1px; left: 8px; height: 2px; background: var(--accent); content: ""; }
+    .inspector-runtime { display: flex; align-items: center; gap: 6px; padding: 0 9px; color: var(--faint); font: 8px var(--font-time); }
+    .inspector-runtime::before { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); content: ""; }
+    .inspector-runtime.is-ready::before { background: var(--success); }
+    .inspector-runtime.is-busy::before { background: var(--accent); animation: agent-pulse 1.1s ease-in-out infinite; }
+    .inspector-runtime.is-error::before { background: var(--danger); }
+    .inspector-view { min-width: 0; min-height: 0; }
+    .inspector-view--monitor { display: grid; grid-template-rows: auto auto minmax(0, 1fr); }
     .source-frame { position: relative; aspect-ratio: 16 / 9; margin: 0; overflow: hidden; border-bottom: 1px solid var(--line); background: #090a0b; }
     .source-frame img, .source-frame video { width: 100%; height: 100%; object-fit: contain; background: #090a0b; }
     .source-frame figcaption { position: absolute; top: 0; right: 0; left: 0; z-index: 2; display: flex; justify-content: space-between; padding: 7px 8px 24px; color: #fff; background: linear-gradient(rgba(0, 0, 0, .78), transparent); font: 9px var(--font-time); pointer-events: none; }
@@ -225,6 +238,66 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
     .monitor-facts div:nth-child(even) { padding-left: 8px; }
     .monitor-facts dt { color: var(--faint); font-size: 8px; }
     .monitor-facts dd { margin: 2px 0 0; color: var(--text-2); font: 9px var(--font-time); }
+
+    .inspector-view--ai { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; background: #121518; }
+    .agent-context { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; min-height: 36px; padding: 6px 9px; border-bottom: 1px solid var(--line); background: #14171a; }
+    .agent-context div { min-width: 0; }
+    .agent-context span, .agent-context strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .agent-context span { color: var(--faint); font: 8px var(--font-time); }
+    .agent-context strong { margin-top: 2px; color: var(--text-2); font-size: 9px; font-weight: 600; }
+    .agent-context b { padding: 2px 5px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); font: 8px var(--font-time); }
+    .chat-scroll { min-height: 0; padding: 9px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+    .chat-message { margin-bottom: 11px; }
+    .chat-message > header { display: flex; justify-content: space-between; margin-bottom: 4px; color: var(--faint); font: 8px var(--font-time); }
+    .chat-message > header b { color: var(--muted); font-weight: 600; }
+    .chat-bubble { padding: 7px 8px; border: 1px solid var(--line); border-radius: 3px; color: var(--text-2); background: var(--panel-2); font-size: 9px; line-height: 1.55; white-space: pre-wrap; }
+    .chat-message--user .chat-bubble { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); background: var(--selected); }
+    .chat-message--system .chat-bubble { color: var(--muted); background: transparent; }
+    .chat-status { display: flex; align-items: center; gap: 6px; min-height: 22px; margin: 0 0 7px; color: var(--muted); font-size: 8px; }
+    .chat-status::before { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); content: ""; animation: agent-pulse 1.1s ease-in-out infinite; }
+    .chat-rich { display: grid; gap: 6px; margin: 6px 0; }
+    .agent-card { overflow: hidden; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--panel-2); }
+    .agent-card > header { display: flex; align-items: center; justify-content: space-between; min-height: 28px; padding: 0 7px; border-bottom: 1px solid var(--line); }
+    .agent-card > header strong { overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+    .agent-card > header span { color: var(--faint); font: 8px var(--font-time); }
+    .scene-ref { display: grid; grid-template-columns: 50px minmax(0, 1fr); gap: 7px; padding: 6px; border-bottom: 1px solid var(--line); }
+    .scene-ref:last-child { border-bottom: 0; }
+    .scene-ref img { width: 50px; height: 32px; object-fit: cover; border: 1px solid var(--line); background: #090a0b; }
+    .scene-ref-body { min-width: 0; }
+    .scene-ref-title { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px; }
+    .scene-ref-title strong { overflow: hidden; color: var(--text-2); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+    .scene-ref-title span { color: var(--accent); font: 8px var(--font-time); }
+    .scene-ref p { display: -webkit-box; margin: 2px 0 5px; overflow: hidden; color: var(--muted); font-size: 8px; line-height: 1.4; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+    .card-actions { display: flex; gap: 4px; }
+    .card-actions button { min-height: 22px; padding: 0 6px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); background: transparent; font-size: 8px; }
+    .card-actions button:hover { color: var(--text); border-color: var(--line-strong); background: var(--hover); }
+    .card-actions button.is-primary { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+    .revision-head { padding: 8px; }
+    .revision-head strong, .revision-head span { display: block; }
+    .revision-head strong { color: var(--text); font-size: 11px; }
+    .revision-head span { margin-top: 2px; color: var(--muted); font: 8px var(--font-time); }
+    .revision-meter { height: 3px; margin-top: 7px; overflow: hidden; background: var(--line-strong); }
+    .revision-meter i { display: block; width: var(--revision-fill, 0%); height: 100%; background: var(--accent); }
+    .revision-clips { display: flex; gap: 2px; padding: 0 8px 8px; }
+    .revision-clips i { flex: var(--clip-duration, 1); min-width: 3px; height: 14px; background: color-mix(in srgb, var(--accent) 35%, var(--panel-3)); }
+    .revision-actions { padding: 0 8px 8px; }
+    .suggestions { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 10px; }
+    .suggestions button { min-height: 24px; padding: 0 7px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); background: transparent; font-size: 8px; text-align: left; }
+    .suggestions button:hover { color: var(--text-2); border-color: var(--accent); }
+    .chat-composer { padding: 7px; border-top: 1px solid var(--line-strong); background: var(--panel-2); }
+    .composer-field { display: grid; grid-template-columns: minmax(0, 1fr) 28px; align-items: end; gap: 5px; padding: 5px; border: 1px solid var(--line-strong); border-radius: 4px; background: #0e1012; }
+    .composer-field:focus-within { border-color: var(--accent); }
+    .composer-field textarea { width: 100%; min-height: 31px; max-height: 100px; padding: 4px; resize: none; overflow-y: auto; border: 0; outline: 0; color: var(--text); background: transparent; font: 9px/1.45 var(--font-ui); }
+    .composer-field textarea::placeholder { color: var(--faint); }
+    .composer-send { display: grid; width: 27px; height: 27px; padding: 0; place-items: center; border: 1px solid var(--line-strong); border-radius: 3px; color: #1a160f; background: var(--accent); }
+    .composer-send:hover { filter: brightness(1.08); }
+    .composer-send:disabled { color: var(--muted); background: var(--panel-3); cursor: not-allowed; filter: none; }
+    .composer-send svg { width: 12px; }
+    .composer-send [data-icon-stop] { display: none; }
+    .composer-send.is-cancel [data-icon-send] { display: none; }
+    .composer-send.is-cancel [data-icon-stop] { display: block; }
+    .composer-meta { display: flex; justify-content: space-between; margin-top: 4px; color: var(--faint); font: 7px var(--font-time); }
+    @keyframes agent-pulse { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
 
     .statusbar { display: flex; align-items: center; justify-content: space-between; height: 24px; padding: 0 8px; border-top: 1px solid var(--line-strong); color: var(--faint); background: #16191c; font: 8px var(--font-time); }
     .statusbar span:first-child::before { display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: var(--success); content: ""; }
@@ -297,11 +370,27 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
       <div class="timeline-scroll">__CLIP_PANELS__</div>
     </section>
 
-    <aside class="panel monitor-panel" aria-label="선택 장면 소스 모니터">
-      <div class="panel-titlebar"><h2>Source Monitor</h2><span data-preview-code>FRAME</span></div>
-      <figure class="source-frame"><img src="__INITIAL_PREVIEW_URL__" alt="__INITIAL_PREVIEW_TITLE__ 대표 프레임" data-preview-image><video controls playsinline preload="metadata" data-preview-video hidden></video><figcaption><span data-preview-timecode>__INITIAL_PREVIEW_TIMECODE__</span><span class="proxy-state" data-proxy-state>프록시 확인 중</span></figcaption></figure>
-      <div class="transport"><button class="play" type="button" data-play aria-label="선택 구간 재생" aria-pressed="false" disabled><svg viewBox="0 0 12 12" fill="none" aria-hidden="true" data-icon-play><path d="M3 2.2v7.6L9.2 6 3 2.2Z" fill="currentColor"/></svg><svg viewBox="0 0 12 12" fill="none" aria-hidden="true" data-icon-pause><path d="M2.5 2.2h2.4v7.6H2.5zM7.1 2.2h2.4v7.6H7.1z" fill="currentColor"/></svg></button><div class="scrub" aria-hidden="true" data-scrub></div><span class="monitor-time" data-preview-time>__INITIAL_PREVIEW_TIME__</span></div>
-      <div class="monitor-copy"><span>SELECTED SCENE</span><h3 data-preview-title>__INITIAL_PREVIEW_TITLE__</h3><p>장면을 펼치면 해석, 대화 종합, 세부 구간별 행동과 원시 STT 후보가 해당 행 아래에 표시됩니다.</p><dl class="monitor-facts"><div><dt>미디어</dt><dd>ORIGINAL 4K</dd></div><div><dt>재생</dt><dd data-media-state>확인 중</dd></div><div><dt>분석</dt><dd>CONTEXT REVIEWED</dd></div><div><dt>원본</dt><dd>UNCHANGED</dd></div></dl></div>
+    <aside class="panel monitor-panel" aria-label="소스 모니터와 AI 편집기">
+      <div class="inspector-head">
+        <div class="inspector-tabs" role="tablist" aria-label="인스펙터">
+          <button class="inspector-tab" type="button" role="tab" aria-selected="true" aria-controls="inspector-monitor" data-inspector-tab="monitor">Monitor</button>
+          <button class="inspector-tab" type="button" role="tab" aria-selected="false" aria-controls="inspector-ai" data-inspector-tab="ai">AI Editor</button>
+        </div>
+        <span class="inspector-runtime" data-agent-runtime>CHECKING</span>
+      </div>
+      <section class="inspector-view inspector-view--monitor" id="inspector-monitor" role="tabpanel" data-inspector-panel="monitor">
+        <figure class="source-frame"><img src="__INITIAL_PREVIEW_URL__" alt="__INITIAL_PREVIEW_TITLE__ 대표 프레임" data-preview-image><video controls playsinline preload="metadata" data-preview-video hidden></video><figcaption><span data-preview-timecode>__INITIAL_PREVIEW_TIMECODE__</span><span class="proxy-state" data-proxy-state>프록시 확인 중</span></figcaption></figure>
+        <div class="transport"><button class="play" type="button" data-play aria-label="선택 구간 재생" aria-pressed="false" disabled><svg viewBox="0 0 12 12" fill="none" aria-hidden="true" data-icon-play><path d="M3 2.2v7.6L9.2 6 3 2.2Z" fill="currentColor"/></svg><svg viewBox="0 0 12 12" fill="none" aria-hidden="true" data-icon-pause><path d="M2.5 2.2h2.4v7.6H2.5zM7.1 2.2h2.4v7.6H7.1z" fill="currentColor"/></svg></button><div class="scrub" aria-hidden="true" data-scrub></div><span class="monitor-time" data-preview-time>__INITIAL_PREVIEW_TIME__</span></div>
+        <div class="monitor-copy"><span>SELECTED SCENE · <b data-preview-code>FRAME</b></span><h3 data-preview-title>__INITIAL_PREVIEW_TITLE__</h3><p>장면을 펼치면 해석, 대화 종합, 세부 구간별 행동과 원시 STT 후보가 해당 행 아래에 표시됩니다.</p><dl class="monitor-facts"><div><dt>미디어</dt><dd>ORIGINAL 4K</dd></div><div><dt>재생</dt><dd data-media-state>확인 중</dd></div><div><dt>분석</dt><dd>CONTEXT REVIEWED</dd></div><div><dt>원본</dt><dd>UNCHANGED</dd></div></dl></div>
+      </section>
+      <section class="inspector-view inspector-view--ai" id="inspector-ai" role="tabpanel" data-inspector-panel="ai" hidden>
+        <div class="agent-context"><div><span>ACTIVE CONTEXT</span><strong data-agent-context>선택 장면과 분석 데이터</strong></div><b data-active-edit>NO EDIT</b></div>
+        <div class="chat-scroll" data-chat-scroll aria-live="polite">
+          <article class="chat-message chat-message--assistant"><header><b>AI EDITOR</b><span>LOCAL AGENT</span></header><div class="chat-bubble">검토된 장면과 대화를 검색하고, 원본 타임코드에 연결된 편집 초안을 revision으로 만들 수 있습니다.</div></article>
+          <div class="suggestions" data-suggestions><button type="button">이 영상들로 60초 하이라이트 초안 만들어줘</button><button type="button">음식 주문과 웃긴 반응 장면을 찾아줘</button></div>
+        </div>
+        <form class="chat-composer" data-chat-form><div class="composer-field"><textarea rows="1" maxlength="4000" placeholder="장면 찾기, 초안 만들기, 컷 수정…" aria-label="AI 편집 요청" data-chat-input></textarea><button class="composer-send" type="submit" aria-label="보내기" data-chat-send><svg viewBox="0 0 16 16" fill="none" aria-hidden="true" data-icon-send><path d="m3 8 9-5-2.4 10-2-3L3 8Z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="m7.6 10 4.4-7" stroke="currentColor" stroke-width="1.3"/></svg><svg viewBox="0 0 16 16" fill="none" aria-hidden="true" data-icon-stop><rect x="4" y="4" width="8" height="8" rx="1" fill="currentColor"/></svg></button></div><div class="composer-meta"><span>Enter 전송 · Shift+Enter 줄바꿈</span><span>REVISION SAFE</span></div></form>
+      </section>
     </aside>
   </main>
 
@@ -314,26 +403,55 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
       const clipPanels = [...document.querySelectorAll('[data-clip-panel]')];
       const search = document.querySelector('[data-search]');
       const count = document.querySelector('[data-count]');
-      const previewImage = document.querySelector('[data-preview-image]');
-      const previewVideo = document.querySelector('[data-preview-video]');
-      const previewTitle = document.querySelector('[data-preview-title]');
-      const previewTime = document.querySelector('[data-preview-time]');
-      const previewTimecode = document.querySelector('[data-preview-timecode]');
-      const previewCode = document.querySelector('[data-preview-code]');
-      const proxyState = document.querySelector('[data-proxy-state]');
-      const mediaState = document.querySelector('[data-media-state]');
-      const playButton = document.querySelector('[data-play]');
-      const scrub = document.querySelector('[data-scrub]');
+      const monitorPanel = document.querySelector('[data-inspector-panel="monitor"]');
+      const previewImage = monitorPanel.querySelector('[data-preview-image]');
+      const previewVideo = monitorPanel.querySelector('[data-preview-video]');
+      const previewTitle = monitorPanel.querySelector('[data-preview-title]');
+      const previewTime = monitorPanel.querySelector('[data-preview-time]');
+      const previewTimecode = monitorPanel.querySelector('[data-preview-timecode]');
+      const previewCode = monitorPanel.querySelector('[data-preview-code]');
+      const proxyState = monitorPanel.querySelector('[data-proxy-state]');
+      const mediaState = monitorPanel.querySelector('[data-media-state]');
+      const playButton = monitorPanel.querySelector('[data-play]');
+      const scrub = monitorPanel.querySelector('[data-scrub]');
       const timelineScroll = document.querySelector('.timeline-scroll');
       const toast = document.querySelector('[data-toast]');
       const empty = document.querySelector('[data-empty]');
+      const inspectorTabs = [...document.querySelectorAll('[data-inspector-tab]')];
+      const inspectorPanels = [...document.querySelectorAll('[data-inspector-panel]')];
+      const agentRuntime = document.querySelector('[data-agent-runtime]');
+      const agentContext = document.querySelector('[data-agent-context]');
+      const activeEdit = document.querySelector('[data-active-edit]');
+      const chatScroll = document.querySelector('[data-chat-scroll]');
+      const chatForm = document.querySelector('[data-chat-form]');
+      const chatInput = document.querySelector('[data-chat-input]');
+      const chatSend = document.querySelector('[data-chat-send]');
+      const suggestionRoot = document.querySelector('[data-suggestions]');
       let selectedStart = 0;
       let selectedEnd = 0;
       let rangePlayback = false;
       let loadedMediaUrl = '';
+      let activeEditId = null;
+      let chatController = null;
+      let inspectorTab = 'monitor';
+      let chatSessionId = sessionStorage.getItem('tve-chat-session') || null;
 
       const activePanel = () => clipPanels.find(panel => !panel.hidden);
       const visibleScenes = () => [...(activePanel()?.querySelectorAll('[data-scene]:not([hidden])') || [])];
+      const currentScene = () => activePanel()?.querySelector('[data-scene][open]:not([hidden])') || visibleScenes()[0];
+
+      const setInspectorTab = tab => {
+        if (!['monitor', 'ai'].includes(tab)) return;
+        inspectorTab = tab;
+        inspectorTabs.forEach(button => button.setAttribute('aria-selected', String(button.dataset.inspectorTab === tab)));
+        inspectorPanels.forEach(panel => { panel.hidden = panel.dataset.inspectorPanel !== tab; });
+        if (tab === 'ai') requestAnimationFrame(() => chatInput.focus({ preventScroll: true }));
+      };
+
+      const setRuntime = (label, state = '') => {
+        agentRuntime.textContent = label;
+        agentRuntime.className = `inspector-runtime${state ? ` is-${state}` : ''}`;
+      };
 
       const showToast = message => {
         toast.textContent = message;
@@ -397,6 +515,7 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
         previewTime.textContent = scene.dataset.previewTime;
         previewTimecode.textContent = scene.dataset.previewTimecode;
         previewCode.textContent = scene.id.split('-').at(-1);
+        agentContext.textContent = `${scene.dataset.previewTitle} · ${scene.dataset.previewTime}`;
         updateSourceMedia(scene, image.src);
         activePanel()?.querySelectorAll('[data-jump-scene]').forEach(button => {
           button.setAttribute('aria-current', String(button.dataset.jumpScene === scene.id));
@@ -430,6 +549,32 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
         timelineScroll.scrollTop = 0;
         const scene = panel?.querySelector('[data-scene][open]:not([hidden])') || panel?.querySelector('[data-scene]:not([hidden])');
         openScene(scene);
+      };
+
+      const sceneById = sceneId => [...document.querySelectorAll('[data-scene-id]')].find(scene => scene.dataset.sceneId === sceneId);
+
+      const focusSceneById = (sceneId, scroll = true) => {
+        const scene = sceneById(sceneId);
+        if (!scene) { showToast('현재 라이브러리에서 해당 장면을 찾지 못했습니다.'); return null; }
+        const panel = scene.closest('[data-clip-panel]');
+        if (panel.hidden) selectClip(panel.dataset.clipPanel);
+        openScene(scene, scroll);
+        return scene;
+      };
+
+      const dispatchAgentAction = async action => {
+        if (action.type === 'open_inspector_tab') { setInspectorTab(action.tab); return; }
+        if (action.type === 'focus_scene') { focusSceneById(action.scene_id, true); return; }
+        if (action.type === 'play_source_range') {
+          const scene = focusSceneById(action.scene_id, true);
+          if (!scene) return;
+          setInspectorTab('monitor');
+          if (action.autoplay !== false && !playButton.disabled) {
+            seekToSelectedStart();
+            rangePlayback = true;
+            try { await previewVideo.play(); } catch { showToast('자동 재생이 차단됐습니다. 재생 버튼을 눌러주세요.'); }
+          }
+        }
       };
 
       clipButtons.forEach(button => button.addEventListener('click', () => selectClip(button.dataset.selectClip)));
@@ -508,10 +653,251 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
         mediaState.textContent = 'LOAD ERROR';
         showToast('프록시 영상을 열 수 없습니다. 외장 SSD 연결과 파일 경로를 확인해주세요.');
       });
+
+      const element = (tag, className, text) => {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined) node.textContent = text;
+        return node;
+      };
+
+      const timeLabel = seconds => {
+        const value = Math.max(0, Number(seconds) || 0);
+        const minutes = Math.floor(value / 60);
+        const secs = Math.floor(value % 60);
+        return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+      };
+
+      const scrollChatToEnd = () => requestAnimationFrame(() => { chatScroll.scrollTop = chatScroll.scrollHeight; });
+
+      const appendMessage = (role, text = '') => {
+        const article = element('article', `chat-message chat-message--${role}`);
+        const header = element('header');
+        header.append(element('b', '', role === 'user' ? 'YOU' : role === 'system' ? 'SYSTEM' : 'AI EDITOR'));
+        header.append(element('span', '', new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })));
+        const bubble = element('div', 'chat-bubble', text);
+        const rich = element('div', 'chat-rich');
+        if (!text) bubble.hidden = true;
+        article.append(header, bubble, rich);
+        chatScroll.append(article);
+        scrollChatToEnd();
+        return { article, bubble, rich };
+      };
+
+      const renderSceneCard = (card, root) => {
+        const shell = element('section', 'agent-card');
+        const header = element('header');
+        header.append(element('strong', '', card.title || '장면 후보'), element('span', '', `${card.items?.length || 0} SCENES`));
+        shell.append(header);
+        (card.items || []).forEach(item => {
+          const row = element('article', 'scene-ref');
+          const sourceScene = sceneById(item.scene_id);
+          const image = document.createElement('img');
+          image.alt = '';
+          const footageButton = clipButtons.find(button => button.dataset.selectClip === item.asset_id);
+          const imageUrl = sourceScene?.querySelector('.scene-thumb img')?.src || footageButton?.querySelector('img')?.src || '';
+          if (imageUrl) image.src = imageUrl;
+          else image.hidden = true;
+          const body = element('div', 'scene-ref-body');
+          const title = element('div', 'scene-ref-title');
+          title.append(element('strong', '', item.title), element('span', '', `${timeLabel(item.source_in)} · ${Math.round(item.duration)}s`));
+          const copy = element('p', '', item.summary || item.dialogue_excerpt || '검토된 장면');
+          const actions = element('div', 'card-actions');
+          const play = element('button', 'is-primary', '구간 재생');
+          play.type = 'button';
+          play.addEventListener('click', () => dispatchAgentAction({ type: 'play_source_range', scene_id: item.scene_id, autoplay: true }));
+          const detail = element('button', '', '타임라인에서 보기');
+          detail.type = 'button';
+          detail.addEventListener('click', () => focusSceneById(item.scene_id, true));
+          actions.append(play, detail);
+          body.append(title, copy, actions);
+          row.append(image, body);
+          shell.append(row);
+        });
+        root.append(shell);
+      };
+
+      const renderRevisionCard = (card, root) => {
+        const shell = element('section', 'agent-card');
+        const header = element('header');
+        header.append(element('strong', '', card.title || '편집 초안'), element('span', '', `REV ${String(card.sequence).padStart(2, '0')}`));
+        const body = element('div', 'revision-head');
+        body.append(element('strong', '', `${card.clip_count} clips · ${timeLabel(card.duration)}`));
+        body.append(element('span', '', `${card.revision_id} · 원본 타임코드 연결됨`));
+        const meter = element('div', 'revision-meter');
+        const fill = document.createElement('i');
+        const ratio = card.target_duration ? Math.min(100, (card.duration / card.target_duration) * 100) : 100;
+        meter.style.setProperty('--revision-fill', `${ratio}%`);
+        meter.append(fill);
+        body.append(meter);
+        const clips = element('div', 'revision-clips');
+        (card.clips || []).forEach(item => {
+          const tick = document.createElement('i');
+          tick.title = `${item.label} · ${item.duration.toFixed(1)}s`;
+          tick.style.setProperty('--clip-duration', String(Math.max(1, item.duration)));
+          clips.append(tick);
+        });
+        const actions = element('div', 'card-actions revision-actions');
+        const first = card.clips?.find(item => item.scene_id);
+        const review = element('button', 'is-primary', '첫 컷 검토');
+        review.type = 'button';
+        review.disabled = !first;
+        review.addEventListener('click', () => first && dispatchAgentAction({ type: 'play_source_range', scene_id: first.scene_id, autoplay: true }));
+        const copyId = element('button', '', 'Revision ID 복사');
+        copyId.type = 'button';
+        copyId.addEventListener('click', async () => {
+          try { await navigator.clipboard.writeText(card.revision_id); showToast('Revision ID를 복사했습니다.'); } catch { showToast(card.revision_id); }
+        });
+        actions.append(review, copyId);
+        shell.append(header, body, clips, actions);
+        root.append(shell);
+        activeEditId = card.edit_id;
+        activeEdit.textContent = `REV ${String(card.sequence).padStart(2, '0')}`;
+        activeEdit.title = card.edit_id;
+      };
+
+      const renderCard = (card, root) => {
+        if (card.type === 'scene_refs') renderSceneCard(card, root);
+        else if (card.type === 'edit_revision_ref') renderRevisionCard(card, root);
+        else {
+          const notice = element('section', 'agent-card');
+          const body = element('div', 'revision-head');
+          body.append(element('strong', '', card.title || '알림'), element('span', '', card.body || ''));
+          notice.append(body);
+          root.append(notice);
+        }
+        scrollChatToEnd();
+      };
+
+      const showSuggestions = items => {
+        suggestionRoot.replaceChildren();
+        (items || []).forEach(label => {
+          const button = element('button', '', label);
+          button.type = 'button';
+          button.addEventListener('click', () => { chatInput.value = label; sendChat(); });
+          suggestionRoot.append(button);
+        });
+        chatScroll.append(suggestionRoot);
+        scrollChatToEnd();
+      };
+
+      const parseSSE = async (response, handlers) => {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          buffer += decoder.decode(value || new Uint8Array(), { stream: !done }).replace(/\r\n/g, '\n');
+          const frames = buffer.split('\n\n');
+          buffer = frames.pop() || '';
+          for (const frame of frames) {
+            let event = 'text';
+            const dataLines = [];
+            frame.split('\n').forEach(line => {
+              if (line.startsWith('event:')) event = line.slice(6).trim();
+              if (line.startsWith('data:')) dataLines.push(line.slice(5).trimStart());
+            });
+            if (dataLines.length) await handlers(event, JSON.parse(dataLines.join('\n')));
+          }
+          if (done) break;
+        }
+      };
+
+      const setChatBusy = busy => {
+        chatSend.classList.toggle('is-cancel', busy);
+        chatSend.setAttribute('aria-label', busy ? '응답 중지' : '보내기');
+        chatInput.disabled = busy;
+        setRuntime(busy ? 'WORKING' : (location.protocol === 'file:' ? 'SERVER OFF' : agentRuntime.dataset.readyLabel || 'READY'), busy ? 'busy' : (location.protocol === 'file:' ? 'error' : 'ready'));
+      };
+
+      const sendChat = async () => {
+        if (chatController) { chatController.abort(); return; }
+        const message = chatInput.value.trim();
+        if (!message) return;
+        setInspectorTab('ai');
+        appendMessage('user', message);
+        chatInput.value = '';
+        chatInput.style.height = 'auto';
+        showSuggestions([]);
+        if (location.protocol === 'file:') {
+          appendMessage('system', 'AI 편집은 로컬 Editor Service가 필요합니다. `uv run travel-video serve-editor …`로 실행한 뒤 http://localhost:8765에서 열어주세요.');
+          setRuntime('SERVER OFF', 'error');
+          return;
+        }
+        const assistant = appendMessage('assistant');
+        const status = element('p', 'chat-status', '요청을 준비하는 중');
+        assistant.article.insertBefore(status, assistant.bubble);
+        chatController = new AbortController();
+        setChatBusy(true);
+        let doneSeen = false;
+        try {
+          const scene = currentScene();
+          const response = await fetch('/api/agent/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
+            signal: chatController.signal,
+            body: JSON.stringify({
+              message,
+              session_id: chatSessionId,
+              context: {
+                active_asset_id: activePanel()?.dataset.clipPanel || null,
+                active_scene_id: scene?.dataset.sceneId || null,
+                selected_range: { source_in: selectedStart, source_out: selectedEnd },
+                inspector_tab: inspectorTab,
+                active_edit_id: activeEditId
+              }
+            })
+          });
+          if (!response.ok) throw new Error(`Editor API ${response.status}`);
+          await parseSSE(response, async (event, data) => {
+            if (event === 'status') { status.hidden = false; status.textContent = data.message; }
+            else if (event === 'card') renderCard(data, assistant.rich);
+            else if (event === 'action') await dispatchAgentAction(data);
+            else if (event === 'text') { status.hidden = true; assistant.bubble.hidden = false; assistant.bubble.textContent += data.content; }
+            else if (event === 'suggestions') showSuggestions(data.items);
+            else if (event === 'done') {
+              doneSeen = true;
+              chatSessionId = data.session_id;
+              sessionStorage.setItem('tve-chat-session', chatSessionId);
+              if (data.edit_id) activeEditId = data.edit_id;
+              status.hidden = true;
+            } else if (event === 'error') throw new Error(data.message || data.code || 'Agent error');
+            scrollChatToEnd();
+          });
+          if (!doneSeen) throw new Error('응답 스트림이 완료 신호 없이 종료됐습니다.');
+        } catch (error) {
+          status.hidden = true;
+          if (error.name === 'AbortError') {
+            assistant.bubble.hidden = false;
+            assistant.bubble.textContent ||= '응답을 중지했습니다. 생성된 revision이 있다면 그대로 보존됩니다.';
+          } else {
+            assistant.bubble.hidden = false;
+            assistant.bubble.textContent ||= `요청을 완료하지 못했습니다: ${error.message}`;
+            setRuntime('ERROR', 'error');
+          }
+        } finally {
+          chatController = null;
+          setChatBusy(false);
+          scrollChatToEnd();
+        }
+      };
+
+      inspectorTabs.forEach(button => button.addEventListener('click', () => setInspectorTab(button.dataset.inspectorTab)));
+      suggestionRoot.querySelectorAll('button').forEach(button => button.addEventListener('click', () => { chatInput.value = button.textContent; sendChat(); }));
+      chatForm.addEventListener('submit', event => { event.preventDefault(); sendChat(); });
+      chatInput.addEventListener('input', () => {
+        chatInput.style.height = 'auto';
+        chatInput.style.height = `${Math.min(100, chatInput.scrollHeight)}px`;
+      });
+      chatInput.addEventListener('keydown', event => {
+        if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendChat(); }
+      });
+
       document.addEventListener('keydown', event => {
         const typing = event.target.matches('input, textarea, [contenteditable]');
         if (!typing && event.key === '/') { event.preventDefault(); search.focus(); return; }
-        if (typing && event.key === 'Escape') { search.value = ''; applySearch(); search.blur(); return; }
+        if (event.target === search && event.key === 'Escape') { search.value = ''; applySearch(); search.blur(); return; }
+        if (event.target === chatInput && event.key === 'Escape' && chatController) { chatController.abort(); return; }
         if (typing || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
         const scenes = visibleScenes();
         const current = scenes.findIndex(scene => scene.open);
@@ -521,6 +907,18 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
       });
 
       openScene(document.querySelector('[data-scene][open]') || document.querySelector('[data-scene]'));
+      if (location.protocol === 'file:') {
+        setRuntime('SERVER OFF', 'error');
+      } else {
+        fetch('/health', { headers: { 'Accept': 'application/json' } })
+          .then(response => response.ok ? response.json() : Promise.reject(new Error(String(response.status))))
+          .then(data => {
+            const label = data.backend === 'codex-sdk' ? 'CODEX SDK' : 'DEMO AGENT';
+            agentRuntime.dataset.readyLabel = label;
+            setRuntime(label, 'ready');
+          })
+          .catch(() => setRuntime('SERVER ERROR', 'error'));
+      }
     })();
   </script>
 </body>
