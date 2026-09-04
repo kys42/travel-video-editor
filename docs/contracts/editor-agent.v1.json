@@ -2,7 +2,7 @@
   "schema_version": "editor-agent-contract/v1",
   "contract_id": "travel-video-editor/editor-agent/v1",
   "status": "active",
-  "revision": 2,
+  "revision": 3,
   "updated_at": "2026-09-04",
   "service": "travel-video-editor",
   "owners": ["editor-api", "agent-runtime", "edit-desk-ui"],
@@ -16,7 +16,8 @@
     "For a new edit or substantial restructuring, inspect relevant footage evidence, present a concise edit plan, and wait for conversational confirmation before creating a revision unless the user explicitly requests immediate execution.",
     "Never expose arbitrary filesystem, shell, FFmpeg, or source mutation capabilities.",
     "Every edit mutation creates a new immutable revision.",
-    "All source ranges remain linked to asset_id, scene_id, source_in, and source_out."
+    "All source ranges remain linked to asset_id, scene_id, source_in, and source_out.",
+    "When reviewed dialogue captions exist, their display_text is the authoritative dialogue for search, planning, and user-facing excerpts; raw STT remains secondary evidence."
   ],
   "context_policy": {
     "raw_client_schema": "editor-ui-state/v1",
@@ -42,7 +43,7 @@
         "id": "L2-evidence",
         "title": "Detailed scene evidence",
         "delivery": "tool_on_demand",
-        "contents": ["chronological action segments", "original-language utterances", "STT candidates", "notable moments", "selected frame references"],
+        "contents": ["chronological action segments", "reviewed original-language caption lines", "legacy utterances or STT candidates when reviewed captions are unavailable", "notable moments", "selected frame references"],
         "detail_boundary": "One shortlisted scene per get_scene_evidence call; never preload full transcripts or image bytes."
       },
       {
@@ -82,7 +83,8 @@
     "grounding": [
       "Use only server-resolved context and successful tool observations as factual evidence.",
       "Never claim to have watched source media when only analyzed metadata was inspected.",
-      "Do not infer missing events, dialogue, people, locations, or quality signals."
+      "Do not infer missing events, dialogue, people, locations, or quality signals.",
+      "Use reviewed caption display_text ahead of legacy dialogue summaries or raw STT candidates; do not silently replace a reviewed correction with an older candidate."
     ],
     "tool_use": [
       "Do not call a query tool merely to repeat data already present in the context snapshot.",
@@ -239,7 +241,7 @@
     {
       "name": "search_scenes",
       "category": "data_query",
-      "intent": "Search reviewed scene summaries, notable moments, tags, and reconciled dialogue. Use this as the default discovery tool and request detailed evidence only for shortlisted scenes.",
+      "intent": "Search reviewed scene summaries, notable moments, tags, and authoritative reviewed captions, with legacy dialogue only when captions are unavailable. Use this as the default discovery tool and request detailed evidence only for shortlisted scenes.",
       "side_effect": "none",
       "approval": "never",
       "status_message": "장면 인덱스를 검색하는 중",
@@ -258,7 +260,7 @@
     {
       "name": "get_scene_evidence",
       "category": "data_query",
-      "intent": "Load detailed reviewed evidence for one shortlisted scene, including chronological action segments, original-language utterances, notable moments, and selected frame references. Do not call for every search result.",
+      "intent": "Load detailed reviewed evidence for one shortlisted scene, including chronological action segments, authoritative reviewed original-language captions, notable moments, and selected frame references. Legacy utterances and raw STT candidates are secondary evidence only. Do not call for every search result.",
       "side_effect": "none",
       "approval": "never",
       "status_message": "선택한 장면의 근거를 읽는 중",

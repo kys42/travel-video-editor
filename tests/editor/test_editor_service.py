@@ -24,8 +24,16 @@ def _fixture_project(tmp_path: Path) -> Path:
     timelines = []
     for index, (title, summary, dialogue) in enumerate(
         [
-            ("푸드코트 주문", "푸드트럭 메뉴를 보며 주문한다.", "연어 타코 하나 주세요."),
-            ("장난스러운 반응", "동행자가 카메라를 보며 크게 웃는다.", "이거 진짜 웃기다."),
+            (
+                "푸드코트 주문",
+                "푸드트럭 메뉴를 보며 주문한다.",
+                "연어 타코 하나 주세요.",
+            ),
+            (
+                "장난스러운 반응",
+                "동행자가 카메라를 보며 크게 웃는다.",
+                "이거 진짜 웃기다.",
+            ),
         ],
         start=1,
     ):
@@ -133,7 +141,7 @@ def test_contract_matches_gateway_and_event_schema(tmp_path: Path) -> None:
     gateway = ToolGateway(catalog, store, contract)
 
     assert contract.contract_id == "travel-video-editor/editor-agent/v1"
-    assert contract.revision == 2
+    assert contract.revision == 3
     assert len(contract.capabilities) == 6
     assert len(contract.boundaries) == 4
     assert gateway.contract.names == {
@@ -150,12 +158,13 @@ def test_contract_matches_gateway_and_event_schema(tmp_path: Path) -> None:
         "open_inspector_tab",
     }
     planning = contract.decision_policy["planning"]
-    assert any("Do not call create_edit or apply_edit_operations" in rule for rule in planning)
+    assert any(
+        "Do not call create_edit or apply_edit_operations" in rule for rule in planning
+    )
     assert any("explicitly says to execute immediately" in rule for rule in planning)
     assert contract.get("create_edit").approval == "chat_plan_for_new_edit"
     assert (
-        contract.get("apply_edit_operations").approval
-        == "chat_plan_for_major_revision"
+        contract.get("apply_edit_operations").approval == "chat_plan_for_major_revision"
     )
     assert '"planning"' in contract.prompt_json()
     event_contract = json.loads(
@@ -182,6 +191,76 @@ def test_catalog_search_is_compact_and_evidence_is_on_demand(tmp_path: Path) -> 
     assert evidence["segments"][0]["transcript_candidates"] == {
         "ko": [{"text": "연어 타코 하나 주세요."}]
     }
+
+
+def test_catalog_prefers_reviewed_captions_and_empty_is_authoritative(
+    tmp_path: Path,
+) -> None:
+    manifest_path = _fixture_project(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    first_path, second_path = (Path(item) for item in manifest["timelines"])
+
+    first = json.loads(first_path.read_text(encoding="utf-8"))
+    first_group = first["context_groups"][0]
+    first_group["context_review"]["dialogue_summary"] = "구형대화요약문구"
+    first_group["reconciled_utterances"][0]["original_text"] = "구형발화문구"
+    first["segments"][0]["transcript_candidates"] = {"ko": [{"text": "구형후보문구"}]}
+    first_group["reviewed_dialogue"] = {
+        "captions": [
+            {
+                "caption_id": "G001-C001",
+                "start": 2.0,
+                "end": 4.0,
+                "display_text": "연어 타코 두 개 주세요.",
+                "language": "ko",
+                "confidence": 0.94,
+                "review_status": "reviewed",
+                "edit_type": "normalized",
+            }
+        ],
+        "utterances": [
+            {
+                "utterance_id": "G001-U001",
+                "start": 2.0,
+                "end": 4.0,
+                "original_text": "연어 타코 둘 주세요.",
+                "language": "ko",
+            }
+        ],
+    }
+    first_path.write_text(json.dumps(first, ensure_ascii=False), encoding="utf-8")
+
+    second = json.loads(second_path.read_text(encoding="utf-8"))
+    second["context_groups"][0]["reviewed_dialogue"] = {
+        "captions": [],
+        "utterances": [],
+    }
+    second_path.write_text(json.dumps(second, ensure_ascii=False), encoding="utf-8")
+
+    catalog = TimelineCatalog(manifest_path)
+    results = catalog.search_scenes(query="연어 타코 두 개", limit=4)
+
+    assert len(results) == 1
+    assert results[0]["dialogue_excerpt"] == "연어 타코 두 개 주세요."
+    assert catalog.search_scenes(query="구형대화요약문구", limit=4) == []
+    assert catalog.search_scenes(query="구형발화문구", limit=4) == []
+    assert catalog.search_scenes(query="구형후보문구", limit=4) == []
+    evidence = catalog.scene_evidence(results[0]["scene_id"])
+    assert evidence["captions"] == [
+        {
+            "caption_id": "G001-C001",
+            "source_start": 2.0,
+            "source_end": 4.0,
+            "language": "ko",
+            "display_text": "연어 타코 두 개 주세요.",
+            "edit_type": "normalized",
+            "confidence": 0.94,
+            "review_status": "reviewed",
+        }
+    ]
+    assert evidence["utterances"] == []
+    assert catalog.scene("asset-2:G001").compact()["dialogue_excerpt"] == ""
+    assert catalog.search_scenes(query="이거 진짜 웃기다", limit=4) == []
 
 
 def test_ui_context_resolves_focus_and_cross_asset_selection(tmp_path: Path) -> None:
@@ -326,15 +405,15 @@ def test_demo_agent_runs_search_cards_and_revision_over_sse(tmp_path: Path) -> N
     assert rough_cut.text == client.get("/").text
     guide = client.get("/guide")
     assert guide.status_code == 200
-    assert 'data-capabilities' in guide.text
-    assert 'data-context-levels' in guide.text
+    assert "data-capabilities" in guide.text
+    assert "data-context-levels" in guide.text
     assert "04 · PLAN" in guide.text
     assert "확인 후 revision 생성" in guide.text
     assert "fetch('/api/contracts/agent')" in guide.text
     live_contract = client.get("/api/contracts/agent").json()
     assert live_contract["schema_version"] == "editor-agent-contract/v1"
     assert live_contract["contract_id"] == "travel-video-editor/editor-agent/v1"
-    assert live_contract["revision"] == 2
+    assert live_contract["revision"] == 3
     assert len(live_contract["decision_policy"]["planning"]) == 7
     assert live_contract["context_policy"]["limits"]["selected_scene_count"] == 24
     assert set(live_contract["event_contract"]["events"]) == SSE_EVENT_TYPES

@@ -57,8 +57,13 @@ This is defense in depth. The actual edit authority exists only in `ToolGateway`
 ## Read path and token budget
 
 1. `list_assets` returns one compact row per video.
-2. `search_scenes` searches summaries, tags, notable moments, and short original-language dialogue excerpts.
-3. `get_scene_evidence` is allowed only for a shortlist and returns one scene at a time.
+2. `search_scenes` searches summaries, tags, notable moments, and short corrected
+   `reviewed_dialogue.captions[].display_text` excerpts. When that authoritative
+   field exists, legacy dialogue summaries and raw STT do not override or pollute
+   discovery.
+3. `get_scene_evidence` is allowed only for a shortlist and returns one scene at a
+   time. Corrected caption lines are the primary dialogue payload; legacy
+   utterances are returned only when reviewed captions are unavailable.
 4. Frame references remain IDs/paths. Image bytes are never inserted into the agent prompt by default.
 5. Full timeline JSON and full raw STT are not returned by any agent tool.
 

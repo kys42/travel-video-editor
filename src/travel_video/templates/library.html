@@ -168,6 +168,15 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
     .analysis-grid p { margin: 0; color: var(--text-2); font-size: 9px; line-height: 1.55; }
     .scene-reconciled { max-height: 120px; margin-top: 7px; padding-top: 6px; overflow-y: auto; border-top: 1px solid var(--line); }
     .scene-reconciled > b { display: block; margin-bottom: 4px; color: var(--audio); font-size: 8px; }
+    .source-transcript { margin-top: 8px; border-top: 1px solid var(--line); }
+    .source-transcript summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; color: var(--muted); cursor: pointer; list-style: none; font-size: 8px; }
+    .source-transcript summary::-webkit-details-marker { display: none; }
+    .source-transcript summary::after { color: var(--faint); content: "+"; font: 10px var(--font-time); }
+    .source-transcript[open] summary::after { content: "−"; }
+    .source-transcript summary:hover { color: var(--text-2); }
+    .source-transcript summary:focus-visible { outline: 1px solid var(--audio); outline-offset: 2px; }
+    .source-transcript summary small { margin-left: auto; color: var(--faint); font: 7px var(--font-time); }
+    .source-transcript__body { max-height: 120px; padding: 6px 0 2px; overflow-y: auto; border-top: 1px solid var(--line); }
     .notable-item { display: grid; grid-template-columns: 48px 1fr; gap: 7px; padding: 5px 0; border-top: 1px solid var(--line); }
     .notable-item:first-of-type { border-top: 0; }
     .notable-item > span { color: var(--accent); font: 8px var(--font-time); }
@@ -478,7 +487,7 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
       <section class="inspector-view inspector-view--monitor" id="inspector-monitor" role="tabpanel" data-inspector-panel="monitor">
         <figure class="source-frame"><img src="__INITIAL_PREVIEW_URL__" alt="__INITIAL_PREVIEW_TITLE__ 대표 프레임" data-preview-image><video controls playsinline preload="metadata" data-preview-video hidden></video><figcaption><span data-preview-timecode>__INITIAL_PREVIEW_TIMECODE__</span><span class="proxy-state" data-proxy-state>프록시 확인 중</span></figcaption></figure>
         <div class="transport"><button class="play" type="button" data-play aria-label="선택 구간 재생" aria-pressed="false" disabled><svg viewBox="0 0 12 12" fill="none" aria-hidden="true" data-icon-play><path d="M3 2.2v7.6L9.2 6 3 2.2Z" fill="currentColor"/></svg><svg viewBox="0 0 12 12" fill="none" aria-hidden="true" data-icon-pause><path d="M2.5 2.2h2.4v7.6H2.5zM7.1 2.2h2.4v7.6H7.1z" fill="currentColor"/></svg></button><div class="scrub" aria-hidden="true" data-scrub></div><span class="monitor-time" data-preview-time>__INITIAL_PREVIEW_TIME__</span></div>
-        <div class="monitor-copy"><span>SELECTED SCENE · <b data-preview-code>FRAME</b></span><h3 data-preview-title>__INITIAL_PREVIEW_TITLE__</h3><p>장면을 펼치면 해석, 대화 종합, 세부 구간별 행동과 원시 STT 후보가 해당 행 아래에 표시됩니다.</p><dl class="monitor-facts"><div><dt>미디어</dt><dd>ORIGINAL 4K</dd></div><div><dt>재생</dt><dd data-media-state>확인 중</dd></div><div><dt>분석</dt><dd>CONTEXT REVIEWED</dd></div><div><dt>원본</dt><dd>UNCHANGED</dd></div></dl></div>
+        <div class="monitor-copy"><span>SELECTED SCENE · <b data-preview-code>FRAME</b></span><h3 data-preview-title>__INITIAL_PREVIEW_TITLE__</h3><p>장면을 펼치면 해석, 보정 자막, 세부 구간별 행동을 함께 확인할 수 있습니다. 검수 전 발화는 필요할 때만 <strong>원문 보기</strong>에서 펼쳐집니다.</p><dl class="monitor-facts"><div><dt>미디어</dt><dd>ORIGINAL 4K</dd></div><div><dt>재생</dt><dd data-media-state>확인 중</dd></div><div><dt>분석</dt><dd>CONTEXT REVIEWED</dd></div><div><dt>원본</dt><dd>UNCHANGED</dd></div></dl></div>
       </section>
       <section class="inspector-view inspector-view--ai" id="inspector-ai" role="tabpanel" data-inspector-panel="ai" hidden>
         <div class="agent-context"><div><span>WORKSPACE CONTEXT</span><strong data-agent-context>현재 영상과 선택 장면</strong></div><div class="agent-context-actions"><button type="button" data-clear-scene-selection hidden>CLEAR</button><b data-active-edit>NO EDIT</b></div></div>
