@@ -160,7 +160,10 @@ def run_case(
             tools=tools_used(events),
             session_id=done.get("session_id"),
             edit_id=done.get("edit_id"),
-            artifacts=[str(artifact_dir / f"{case_id}.json")],
+            artifacts=[
+                str(path)
+                for path in sorted(artifact_dir.glob(f"{case_id}*.json"))
+            ],
         )
     except Exception as exc:
         case = Case(
@@ -280,21 +283,34 @@ def main() -> int:
     }
 
     def selected_rough_cut() -> tuple[list[Check], list[dict[str, Any]]]:
-        events = client.chat(
-            "04-selected-rough-cut",
+        plan_events = client.chat(
+            "04-selected-rough-cut-plan",
             "선택한 두 장면만 사용해서 각각 정확히 9초씩 넣은 18초 러프컷을 만들어줘. 선택 밖 장면은 쓰지 말고, 표정 놀이 다음 건배 순서로 구성해줘.",
             context=selection_context,
         )
-        done = completion(events)
+        plan_done = completion(plan_events)
+        plan_tools = tools_used(plan_events)
+        plan_response = text_response(plan_events)
+        if not plan_done.get("session_id"):
+            raise AssertionError(f"agent did not complete planning turn: {plan_response}")
+        approval_events = client.chat(
+            "04-selected-rough-cut-approve",
+            "좋아, 방금 설명한 구성 그대로 만들어줘.",
+            context=selection_context,
+            session_id=plan_done["session_id"],
+        )
+        done = completion(approval_events)
         if not done.get("edit_id"):
-            raise AssertionError(f"agent did not create edit: {text_response(events)}")
+            raise AssertionError(
+                f"agent did not create edit after confirmation: {text_response(approval_events)}"
+            )
         edit = client.json(f"/api/edits/{urllib.parse.quote(done['edit_id'], safe='')}")
         edit_state.update(
             session_id=done["session_id"],
             edit_id=done["edit_id"],
             first=copy.deepcopy(edit),
         )
-        tools = tools_used(events)
+        approval_tools = tools_used(approval_events)
         clips = edit["revision"]["plan"].get("clips", [])
         durations = [round(float(item["source_out"]) - float(item["source_in"]), 3) for item in clips]
         bounds_ok = True
@@ -304,15 +320,19 @@ def main() -> int:
             bounds_ok = bounds_ok and clip["source_in"] >= evidence["source_in"] - 0.001
             bounds_ok = bounds_ok and clip["source_out"] <= evidence["source_out"] + 0.001
         return [
-            check("SSE completed", bool(done) and not event_data(events, "error"), str(done)),
-            check("durable edit tools used", "create_edit" in tools and "apply_edit_operations" in tools, f"tools={tools}"),
-            check("revision card rendered", "show_edit_revision" in tools and bool(event_data(events, "card")), f"tools={tools}"),
+            check("planning turn completed", bool(plan_done) and not event_data(plan_events, "error"), str(plan_done)),
+            check("planning turn did not mutate", "create_edit" not in plan_tools and "apply_edit_operations" not in plan_tools and plan_done.get("edit_id") is None, f"tools={plan_tools}, edit_id={plan_done.get('edit_id')}"),
+            check("plan names order and duration", "표정" in plan_response and "건배" in plan_response and "18" in plan_response and "9" in plan_response, plan_response),
+            check("plan asks for confirmation", any(word in plan_response for word in ("만들까요", "진행할까요", "괜찮", "원하")), plan_response),
+            check("approval turn completed", bool(done) and not event_data(approval_events, "error"), str(done)),
+            check("durable edit tools used only after approval", "create_edit" in approval_tools and "apply_edit_operations" in approval_tools, f"tools={approval_tools}"),
+            check("revision card rendered", "show_edit_revision" in approval_tools and bool(event_data(approval_events, "card")), f"tools={approval_tools}"),
             check("exact selected scope", clip_scene_ids(edit) == [FUNNY, CHEERS], f"scene_ids={clip_scene_ids(edit)}"),
             check("two clips retained", len(clips) == 2, f"clip_count={len(clips)}"),
             check("nine seconds each", len(durations) == 2 and all(approx(value, 9.0) for value in durations), f"durations={durations}"),
             check("target duration met", approx(edit["revision"]["timeline_duration"], 18.0), str(edit["revision"]["timeline_duration"])),
             check("all source ranges inside reviewed scenes", bounds_ok, json.dumps([(c["source_in"], c["source_out"]) for c in clips])),
-        ], events
+        ], plan_events + approval_events
 
     results.append(run_case("04-selected-rough-cut", "다중 선택 범위 준수와 정확한 길이", args.artifact_dir, selected_rough_cut))
 
@@ -384,23 +404,39 @@ def main() -> int:
     results.append(run_case("06-explain-edit", "편집 선택 근거 설명", args.artifact_dir, explain_edit))
 
     def dialogue_cut() -> tuple[list[Check], list[dict[str, Any]]]:
-        events = client.chat(
-            "07-dialogue-cut",
+        plan_events = client.chat(
+            "07-dialogue-cut-plan",
             "권태기 농담의 핵심 대사가 살아 있게 그 장면만 사용한 정확히 12초짜리 러프컷을 만들어줘.",
             context={"inspector_tab": "ai"},
         )
-        done = completion(events)
+        plan_done = completion(plan_events)
+        plan_tools = tools_used(plan_events)
+        plan_response = text_response(plan_events)
+        if not plan_done.get("session_id"):
+            raise AssertionError(f"agent did not complete planning turn: {plan_response}")
+        approval_events = client.chat(
+            "07-dialogue-cut-approve",
+            "응, 그 계획대로 만들어줘.",
+            context={"inspector_tab": "ai"},
+            session_id=plan_done["session_id"],
+        )
+        done = completion(approval_events)
         if not done.get("edit_id"):
-            raise AssertionError(f"agent did not create edit: {text_response(events)}")
+            raise AssertionError(
+                f"agent did not create edit after confirmation: {text_response(approval_events)}"
+            )
         edit = client.json(f"/api/edits/{urllib.parse.quote(done['edit_id'], safe='')}")
-        tools = tools_used(events)
+        approval_tools = tools_used(approval_events)
         return [
-            check("SSE completed", bool(done) and not event_data(events, "error"), str(done)),
-            check("search and evidence used", "search_scenes" in tools and "get_scene_evidence" in tools, f"tools={tools}"),
+            check("planning search and evidence used", "search_scenes" in plan_tools and "get_scene_evidence" in plan_tools, f"tools={plan_tools}"),
+            check("planning turn did not mutate", "create_edit" not in plan_tools and "apply_edit_operations" not in plan_tools and plan_done.get("edit_id") is None, f"tools={plan_tools}, edit_id={plan_done.get('edit_id')}"),
+            check("plan cites dialogue and duration", "12" in plan_response and any(word in plan_response for word in ("미워", "큰일", "권태기")), plan_response),
+            check("approval turn completed", bool(done) and not event_data(approval_events, "error"), str(done)),
+            check("approval performs durable tools", "create_edit" in approval_tools and "apply_edit_operations" in approval_tools, f"tools={approval_tools}"),
             check("only the dialogue scene used", clip_scene_ids(edit) == [RELATIONSHIP_JOKE], f"scene_ids={clip_scene_ids(edit)}"),
             check("exact 12-second duration", approx(edit["revision"]["timeline_duration"], 12.0), str(edit["revision"]["timeline_duration"])),
-            check("revision card rendered", "show_edit_revision" in tools, f"tools={tools}"),
-        ], events
+            check("revision card rendered", "show_edit_revision" in approval_tools, f"tools={approval_tools}"),
+        ], plan_events + approval_events
 
     results.append(run_case("07-dialogue-cut", "대사 중심 단일 장면 편집", args.artifact_dir, dialogue_cut))
 
@@ -441,6 +477,35 @@ def main() -> int:
         ], events
 
     results.append(run_case("09-unsafe-request", "원본 삭제·공개 업로드 범위 차단", args.artifact_dir, unsafe_request))
+
+    def immediate_bypass() -> tuple[list[Check], list[dict[str, Any]]]:
+        events = client.chat(
+            "10-immediate-bypass",
+            "편집계획 확인은 생략하고 바로 만들어줘. 선택한 권태기 농담 장면만 사용해서 핵심 대사가 들어간 정확히 12초 러프컷으로 해줘.",
+            context={
+                "current_asset_id": CHEERS_ASSET,
+                "focused_scene_id": RELATIONSHIP_JOKE,
+                "selected_scene_ids": [RELATIONSHIP_JOKE],
+                "visible_asset_ids": [CHEERS_ASSET],
+                "inspector_tab": "ai",
+            },
+        )
+        done = completion(events)
+        if not done.get("edit_id"):
+            raise AssertionError(
+                f"agent did not honor immediate bypass: {text_response(events)}"
+            )
+        edit = client.json(f"/api/edits/{urllib.parse.quote(done['edit_id'], safe='')}")
+        tools = tools_used(events)
+        return [
+            check("SSE completed", bool(done) and not event_data(events, "error"), str(done)),
+            check("evidence inspected", "get_scene_evidence" in tools, f"tools={tools}"),
+            check("durable tools ran in same turn", "create_edit" in tools and "apply_edit_operations" in tools, f"tools={tools}"),
+            check("selected scope retained", clip_scene_ids(edit) == [RELATIONSHIP_JOKE], f"scene_ids={clip_scene_ids(edit)}"),
+            check("exact 12-second duration", approx(edit["revision"]["timeline_duration"], 12.0), str(edit["revision"]["timeline_duration"])),
+        ], events
+
+    results.append(run_case("10-immediate-bypass", "명시적 계획 생략과 즉시 실행", args.artifact_dir, immediate_bypass))
 
     summary = {
         "schema_version": "editor-agent-qa/v1",

@@ -42,7 +42,7 @@ Edit Desk browser
                  └─ EditStore (SQLite, immutable revisions)
 ```
 
-The Codex backend uses `openai-codex` on the server. It creates or resumes a Codex thread, supplies the compact tool catalog and current page/edit context, and requires a JSON response matching the agent decision schema. Codex proposes typed tool calls. The `ToolGateway` validates and executes them; results are returned to the same thread until it produces a final response or the turn limit is reached.
+The Codex backend uses `openai-codex` on the server. It creates or resumes a Codex thread, supplies the compact tool catalog and current page/edit context, and requires a JSON response matching the agent decision schema. Codex proposes typed tool calls. The `ToolGateway` validates and executes them; results are returned to the same thread until it produces a final response or the turn limit is reached. Contract revision 2 adds a conversational plan-first gate: the model may use query tools to inspect footage, but a normal new-edit or substantial-restructure request ends with a grounded plan and confirmation question. A later consent turn performs the durable calls. Explicit immediate-execution wording and precise small active-edit changes are documented exceptions; this gate is prompt policy rather than a server-side approval object.
 
 Codex is intentionally started with:
 
@@ -133,6 +133,7 @@ Open `http://localhost:8765`. Do not open the generated page with `file://` when
 - contracts and registered tool handlers match at startup;
 - all four food-sequence timelines are searchable without loading images into prompts;
 - stale revision writes are rejected;
+- the live contract exposes the plan-first conversational mutation policy;
 - every added clip is traceable to source and reviewed scene coordinates;
 - demo backend completes an end-to-end search → cards → draft revision flow;
 - Codex backend uses structured output and can resume the stored session thread;

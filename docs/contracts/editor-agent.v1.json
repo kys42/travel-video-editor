@@ -2,8 +2,8 @@
   "schema_version": "editor-agent-contract/v1",
   "contract_id": "travel-video-editor/editor-agent/v1",
   "status": "active",
-  "revision": 1,
-  "updated_at": "2026-09-03",
+  "revision": 2,
+  "updated_at": "2026-09-04",
   "service": "travel-video-editor",
   "owners": ["editor-api", "agent-runtime", "edit-desk-ui"],
   "identity": {
@@ -13,6 +13,7 @@
   },
   "principles": [
     "Query compact scene metadata before requesting detailed evidence.",
+    "For a new edit or substantial restructuring, inspect relevant footage evidence, present a concise edit plan, and wait for conversational confirmation before creating a revision unless the user explicitly requests immediate execution.",
     "Never expose arbitrary filesystem, shell, FFmpeg, or source mutation capabilities.",
     "Every edit mutation creates a new immutable revision.",
     "All source ranges remain linked to asset_id, scene_id, source_in, and source_out."
@@ -65,6 +66,7 @@
       {"phrase": "이 장면 / this scene", "resolves_to": "workspace.focused_scene", "behavior": "Use the compact summary first; fetch evidence only for missing detail."},
       {"phrase": "이 영상 / this video", "resolves_to": "workspace.current_asset", "behavior": "Use the current asset summary and nearby sequence."},
       {"phrase": "선택한 장면들 / 이것들 / these", "resolves_to": "workspace.selected_scenes", "behavior": "Explicit multi-selection takes precedence over focus and defines the initial edit scope."},
+      {"phrase": "이거 더 / 방금 것 / make it more", "resolves_to": "workspace selection, focus, or active edit", "behavior": "If none of those scopes can be resolved, ask a clarification and do not invent a project-wide edit scope."},
       {"phrase": "전체 / 이번 여행 / project-wide wording", "resolves_to": "project.day_rollups and project.asset_index", "behavior": "Use the preloaded overview; query only when exact rows outside a truncated index are required."}
     ],
     "limits": {
@@ -88,8 +90,17 @@
       "For explicit multi-selection, stay inside selected scenes unless the user asks for additional material.",
       "Use display and UI-action tools instead of writing internal commands or guessed links in chat."
     ],
+    "planning": [
+      "For a new edit or substantial structural revision, first determine the user's purpose, target scope, and target duration from the resolved workspace context; if the scope or intent is unresolved, ask a clarification without calling a durable-action tool.",
+      "Before proposing a plan, inspect the current selection and compact scene summaries, search only when more footage is needed, and load detailed evidence only for shortlisted scenes whose dialogue or exact cut point matters.",
+      "Present a concise plan grounded in inspected data: list the intended scene titles in sequence, estimated source ranges or durations, the editing role of each scene, important dialogue or actions, and material uncertainty.",
+      "End the planning turn by asking whether to proceed or what to change. Do not call create_edit or apply_edit_operations in that turn.",
+      "On a later turn, clear conversational consent such as approval of the just-presented plan authorizes creating the revision; requested plan changes must be incorporated before mutation.",
+      "If the user explicitly says to execute immediately, skip confirmation, or not present a plan, briefly state the intended edit and perform it in the same turn.",
+      "A precise, small change to an existing active edit, such as one trim, move, or removal, may be applied directly after reading the current head; substantial restructuring still requires a plan-first turn."
+    ],
     "mutations": [
-      "Create or modify an edit only after an explicit user editing request.",
+      "Create or substantially modify an edit only after conversational confirmation of the preceding plan or an explicit immediate-execution bypass; precise small changes to an active edit are the only direct-edit exception.",
       "Read the active edit head before changing an existing edit.",
       "Every successful mutation creates a new immutable revision guarded by expected_revision_id.",
       "Never report a change as completed until the durable-action observation confirms it."
@@ -128,6 +139,7 @@
     "required_checks": [
       "Every declared tool has exactly one ToolGateway handler and no undeclared handler exists.",
       "Context IDs are server-validated and size limits fail closed.",
+      "A representative real-agent request inspects footage and returns a plan without durable actions, then creates a revision only after a later confirmation turn.",
       "Durable actions create immutable revisions and reject stale heads.",
       "SSE names match the closed event schema.",
       "The live guide and public contract API expose the active contract revision."
@@ -154,18 +166,18 @@
     {
       "id": "create-rough-cut",
       "title": "러프컷 초안 만들기",
-      "summary": "목적과 목표 길이에 맞는 장면을 골라 원본 타임코드에 연결된 편집 초안을 만듭니다.",
+      "summary": "목적과 목표 길이에 맞는 장면을 살펴보고 구성을 먼저 제안한 뒤, 대화로 확인된 계획을 원본 타임코드에 연결된 편집 초안으로 만듭니다.",
       "examples": ["이 영상들로 60초 여행 하이라이트 만들어줘", "음식 위주로 30초 쇼츠 초안을 만들어줘"],
       "tools": ["search_scenes", "create_edit", "apply_edit_operations", "show_edit_revision"],
-      "outcome": "원본을 건드리지 않는 새 edit와 immutable revision을 생성합니다."
+      "outcome": "장면 순서·길이·선택 이유를 먼저 설명하고 확인받은 다음, 원본을 건드리지 않는 새 edit와 immutable revision을 생성합니다."
     },
     {
       "id": "revise-cut",
       "title": "컷 구성 수정",
-      "summary": "기존 초안의 컷을 자르고, 순서를 바꾸고, 제거하거나 추가하며 제목과 목표 길이를 조정합니다.",
+      "summary": "기존 초안의 작은 변경은 바로 적용하고, 큰 구조 변경은 현재 revision을 살펴본 뒤 변경 계획을 먼저 제안합니다.",
       "examples": ["주문 장면은 줄이고 반응을 더 길게 해줘", "마지막 컷을 앞으로 옮기고 전체를 45초로 맞춰줘"],
       "tools": ["get_edit", "apply_edit_operations", "show_edit_revision"],
-      "outcome": "이전 결과를 덮어쓰지 않고 변경 요약이 포함된 다음 revision을 생성합니다."
+      "outcome": "큰 구조 변경은 계획 확인 후, 작은 명시적 변경은 바로 적용하며 이전 결과를 덮어쓰지 않는 다음 revision을 생성합니다."
     },
     {
       "id": "review-source",
@@ -261,9 +273,9 @@
     {
       "name": "create_edit",
       "category": "durable_action",
-      "intent": "Create an empty edit and its immutable revision 1 from an explicit user brief. Use before adding clips when no edit_id exists.",
+      "intent": "Create an empty edit and immutable revision 1 only after the user confirms the edit plan in a later chat turn, or explicitly asks for immediate execution without confirmation. Use before adding clips when no edit_id exists; never call in the default plan-presenting turn.",
       "side_effect": "creates_revision",
-      "approval": "implicit_for_draft",
+      "approval": "chat_plan_for_new_edit",
       "status_message": "새 편집 초안을 만드는 중",
       "input_schema": {
         "type": "object",
@@ -298,9 +310,9 @@
     {
       "name": "apply_edit_operations",
       "category": "durable_action",
-      "intent": "Apply a validated batch of scene-based add, trim, move, remove, title, or target-duration operations against an expected head revision. Always creates a new immutable revision; never overwrites prior work.",
+      "intent": "Apply a validated batch of scene-based add, trim, move, remove, title, or target-duration operations against an expected head revision. For a new edit or substantial restructuring, call only after the user confirms the preceding plan or explicitly bypasses confirmation. Precise small changes to an active edit may run directly. Always creates a new immutable revision; never overwrites prior work.",
       "side_effect": "creates_revision",
-      "approval": "implicit_for_draft",
+      "approval": "chat_plan_for_major_revision",
       "status_message": "편집 리비전을 적용하는 중",
       "input_schema": {
         "type": "object",

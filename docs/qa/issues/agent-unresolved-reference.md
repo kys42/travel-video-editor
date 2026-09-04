@@ -38,8 +38,15 @@ Add a fail-closed unresolved-reference rule to `editor-agent.v1.json` and enforc
 
 Add a contract-driven end-to-end regression case using the exact reproduction prompt.
 
+## Resolution — 2026-09-04
+
+Editor Agent Contract revision 2 adds a lightweight conversational gate rather than a persisted proposal or server approval object. For normal new edits and substantial restructuring, the agent inspects relevant scene evidence, explains the intended scene order, source ranges, durations, dialogue/actions, and uncertainty, then ends the turn without a durable call. A later user confirmation creates the revision. Explicit “skip confirmation and execute now” wording and precise small changes to an active edit remain intentional shortcuts.
+
+The exact reproduction prompt now returns a clarification with no query or durable tool calls and no edit ID. A separate real-Codex test confirmed that a selected two-scene request produced an evidence-grounded plan with no edit, then created the exact 18-second revision only after “그대로 만들어줘.”
+
 ## Evidence
 
 - QA report: `docs/qa/qa-report-2026-09-03-agent.md`
 - Raw SSE trace: `work/qa-agent-2026-09-03/results/08-ambiguous-request.json`
 - Contract: `docs/contracts/editor-agent.v1.json`, revision 1
+- Resolution contract: `docs/contracts/editor-agent.v1.json`, revision 2

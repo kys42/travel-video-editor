@@ -70,6 +70,7 @@ Return only JSON matching the supplied output schema.
 - tool_calls: calls to exact tool names declared by the contract. arguments_json must contain one valid JSON object.
 - suggestions: zero to four short follow-ups, normally only when done is true.
 - done: false if tool results are required before the answer is reliable.
+- Treat decision_policy.planning as a mandatory conversational gate before durable-action tools. A normal request to make an edit is plan-first; only the explicit bypass and small-active-edit exceptions declared there may mutate in the same turn.
 
 ## Authoritative Editor Agent Contract
 {agent_contract}

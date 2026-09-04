@@ -101,7 +101,7 @@
     .example-list a::before { content: ">"; color: var(--orange); font: 8px var(--mono); }
     .example-list a:hover { color: var(--text); }
 
-    .workflow { display: grid; grid-template-columns: repeat(5, 1fr); border: 1px solid var(--line-strong); }
+    .workflow { display: grid; grid-template-columns: repeat(6, 1fr); border: 1px solid var(--line-strong); }
     .workflow article { position: relative; min-height: 138px; padding: 12px; border-right: 1px solid var(--line); background: var(--panel); }
     .workflow article:last-child { border-right: 0; }
     .workflow article:not(:last-child)::after { content: "→"; position: absolute; top: 10px; right: -8px; z-index: 2; color: var(--orange); background: var(--panel); font: 12px var(--mono); }
@@ -127,7 +127,7 @@
     .reference-row code { color: var(--orange); font: 8px var(--mono); }
     .reference-row b { color: var(--text-2); font: 8px var(--mono); font-weight: 500; }
     .reference-row span { color: var(--muted); font-size: 8px; line-height: 1.5; }
-    .rule-grid { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 9px; border: 1px solid var(--line-strong); }
+    .rule-grid { display: grid; grid-template-columns: repeat(5, 1fr); margin-top: 9px; border: 1px solid var(--line-strong); }
     .rule-group { min-height: 178px; padding: 11px; border-right: 1px solid var(--line); background: var(--panel); }
     .rule-group:last-child { border-right: 0; }
     .rule-group h3 { margin: 0 0 13px; color: var(--text-2); font: 8px var(--mono); text-transform: uppercase; }
@@ -268,7 +268,7 @@
 
       <section class="section" id="workflow"><div class="section-inner">
         <header class="section-head"><span class="section-no">02</span><div class="section-title"><h2>요청이 편집 revision이 되기까지</h2><p>전체 영상을 모델이 순차 시청하지 않는 토큰 절약형 경로입니다.</p></div><p class="section-note">검색 결과는 먼저 에이전트만 읽고, 사용자에게 유효한 후보만 카드로 표시합니다.</p></header>
-        <div class="workflow"><article><span>01 · CONTEXT</span><h3>작업공간 맥락 확인</h3><p>현재 영상, 포커스 장면과 여러 영상에 걸쳐 명시적으로 선택한 장면 요약을 도구 호출 없이 읽습니다.</p></article><article><span>02 · SEARCH</span><h3>요약 인덱스 검색</h3><p>선택 범위 밖의 소재가 필요할 때만 설명, 행동, 대화와 특이 포인트를 검색합니다.</p></article><article><span>03 · EVIDENCE</span><h3>후보만 상세 확인</h3><p>모호한 후보에 한해 세부 행동, 원문 발화와 프레임 참조를 읽습니다.</p></article><article><span>04 · REVISE</span><h3>새 revision 생성</h3><p>원본 타임코드 기반 작업을 검증하고 이전 버전을 남긴 채 저장합니다.</p></article><article><span>05 · REVIEW</span><h3>Edit Desk로 검토</h3><p>장면 카드, 변경 요약과 소스 모니터 액션을 같은 SSE 스트림으로 보냅니다.</p></article></div>
+        <div class="workflow"><article><span>01 · CONTEXT</span><h3>작업공간 맥락 확인</h3><p>현재 영상, 포커스 장면과 여러 영상에 걸쳐 명시적으로 선택한 장면 요약을 도구 호출 없이 읽습니다.</p></article><article><span>02 · SEARCH</span><h3>요약 인덱스 검색</h3><p>선택 범위 밖의 소재가 필요할 때만 설명, 행동, 대화와 특이 포인트를 검색합니다.</p></article><article><span>03 · EVIDENCE</span><h3>후보만 상세 확인</h3><p>모호한 후보에 한해 세부 행동, 원문 발화와 프레임 참조를 읽습니다.</p></article><article><span>04 · PLAN</span><h3>편집 구성 제안</h3><p>사용할 장면, 순서, 예상 길이, 주요 대사와 선택 이유를 설명하고 의견을 묻습니다.</p></article><article><span>05 · REVISE</span><h3>확인 후 revision 생성</h3><p>사용자가 동의하거나 수정한 계획을 원본 타임코드 기반 작업으로 검증해 저장합니다.</p></article><article><span>06 · REVIEW</span><h3>Edit Desk로 검토</h3><p>장면 카드, 변경 요약과 소스 모니터 액션을 같은 SSE 스트림으로 보냅니다.</p></article></div>
       </div></section>
 
       <section class="section" id="contract"><div class="section-inner">
@@ -304,7 +304,7 @@
   <script>
     (() => {
       const categoryLabels = { data_query: 'QUERY', durable_action: 'REVISION', display: 'DISPLAY', ui_action: 'UI ACTION' };
-      const approvalLabels = { never: 'NONE', implicit_for_draft: 'DRAFT' };
+      const approvalLabels = { never: 'NONE', implicit_for_draft: 'DRAFT', chat_plan_for_new_edit: 'CHAT PLAN', chat_plan_for_major_revision: 'CHAT PLAN' };
       const state = { tools: [], filter: 'all' };
       const toolList = document.querySelector('[data-tool-list]');
       const capabilityRoot = document.querySelector('[data-capabilities]');
@@ -327,7 +327,7 @@
         document.querySelector('[data-context-levels]').innerHTML = levels.map(level => `<article class="policy-card"><span>${escapeHtml(level.id)}</span><b>${escapeHtml(level.delivery)}</b><h3>${escapeHtml(level.title)}</h3><ul>${(level.contents || []).map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul><p>${escapeHtml(level.detail_boundary)}</p></article>`).join('');
         const references = contract.context_policy?.reference_resolution || [];
         document.querySelector('[data-reference-resolution]').innerHTML = references.map(item => `<article class="reference-row"><code>${escapeHtml(item.phrase)}</code><b>${escapeHtml(item.resolves_to)}</b><span>${escapeHtml(item.behavior)}</span></article>`).join('');
-        const labels = { grounding: 'GROUNDING', tool_use: 'TOOL USE', mutations: 'REVISION', responses: 'RESPONSE' };
+        const labels = { grounding: 'GROUNDING', tool_use: 'TOOL USE', planning: 'EDIT PLANNING', mutations: 'REVISION', responses: 'RESPONSE' };
         document.querySelector('[data-decision-policy]').innerHTML = Object.entries(contract.decision_policy || {}).map(([key, rules]) => `<article class="rule-group"><h3>${labels[key] || escapeHtml(key)}</h3><ul>${(rules || []).map(rule => `<li>${escapeHtml(rule)}</li>`).join('')}</ul></article>`).join('');
         document.querySelector('[data-change-process]').innerHTML = (contract.change_process?.steps || []).map(step => `<article class="change-step"><span>0${escapeHtml(step.order)} · REQUIRED</span><h3>${escapeHtml(step.name)}</h3><p>${escapeHtml(step.requirement)}</p></article>`).join('');
       };

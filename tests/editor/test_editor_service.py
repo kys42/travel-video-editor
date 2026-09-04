@@ -133,6 +133,7 @@ def test_contract_matches_gateway_and_event_schema(tmp_path: Path) -> None:
     gateway = ToolGateway(catalog, store, contract)
 
     assert contract.contract_id == "travel-video-editor/editor-agent/v1"
+    assert contract.revision == 2
     assert len(contract.capabilities) == 6
     assert len(contract.boundaries) == 4
     assert gateway.contract.names == {
@@ -148,6 +149,15 @@ def test_contract_matches_gateway_and_event_schema(tmp_path: Path) -> None:
         "focus_scene",
         "open_inspector_tab",
     }
+    planning = contract.decision_policy["planning"]
+    assert any("Do not call create_edit or apply_edit_operations" in rule for rule in planning)
+    assert any("explicitly says to execute immediately" in rule for rule in planning)
+    assert contract.get("create_edit").approval == "chat_plan_for_new_edit"
+    assert (
+        contract.get("apply_edit_operations").approval
+        == "chat_plan_for_major_revision"
+    )
+    assert '"planning"' in contract.prompt_json()
     event_contract = json.loads(
         (project_root() / "docs/contracts/agent-events.v1.schema.json").read_text()
     )
@@ -303,10 +313,14 @@ def test_demo_agent_runs_search_cards_and_revision_over_sse(tmp_path: Path) -> N
     assert guide.status_code == 200
     assert 'data-capabilities' in guide.text
     assert 'data-context-levels' in guide.text
+    assert "04 · PLAN" in guide.text
+    assert "확인 후 revision 생성" in guide.text
     assert "fetch('/api/contracts/agent')" in guide.text
     live_contract = client.get("/api/contracts/agent").json()
     assert live_contract["schema_version"] == "editor-agent-contract/v1"
     assert live_contract["contract_id"] == "travel-video-editor/editor-agent/v1"
+    assert live_contract["revision"] == 2
+    assert len(live_contract["decision_policy"]["planning"]) == 7
     assert live_contract["context_policy"]["limits"]["selected_scene_count"] == 24
     assert set(live_contract["event_contract"]["events"]) == SSE_EVENT_TYPES
     assert len(live_contract["capabilities"]) == 6
