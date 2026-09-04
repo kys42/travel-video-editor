@@ -64,6 +64,20 @@ def make_inventory(tmp_path: Path, assets: list[dict[str, object]]) -> Path:
     return path
 
 
+def make_integrated_asset(tmp_path: Path, asset_id: str) -> dict[str, object]:
+    asset_root = tmp_path / "inputs" / asset_id
+    apple = asset_root / "apple" / "transcript.apple.json"
+    timeline = asset_root / "phase1" / "timeline.reviewed.json"
+    write_json(apple, {"label": "raw apple", "asset_id": asset_id})
+    write_json(timeline, {"label": "quick grouped", "asset_id": asset_id})
+    return {
+        "asset_id": asset_id,
+        "source_relative_path": f"0827/{asset_id}.MP4",
+        "apple_transcript_path": str(apple),
+        "timeline_reviewed_path": str(timeline),
+    }
+
+
 def test_batch_builds_fresh_packets_and_resumes_by_fingerprint(tmp_path: Path) -> None:
     batch = load_batch_module()
     assets = [make_asset(tmp_path, "asset-a"), make_asset(tmp_path, "asset-b")]
@@ -129,6 +143,64 @@ def test_batch_builds_fresh_packets_and_resumes_by_fingerprint(tmp_path: Path) -
     assert all("asset-a" in " ".join(command) for command in calls)
     assert third["summary"]["completed"] == 1
     assert third["summary"]["reused"] == 1
+
+
+def test_batch_builds_dense_visual_packet_for_golden_input(tmp_path: Path) -> None:
+    batch = load_batch_module()
+    asset = make_integrated_asset(tmp_path, "asset-golden")
+    inventory = make_inventory(tmp_path, [asset])
+    output_root = tmp_path / "prepared"
+    calls: list[list[str]] = []
+
+    def fake_runner(command: list[str], cwd: Path) -> dict[str, str]:
+        assert cwd == ROOT
+        calls.append(command)
+        if "build-context-packet" in command:
+            output_dir = Path(command[command.index("--output-dir") + 1])
+            write_json(output_dir / "context-review-packet.json", {"groups": []})
+        else:
+            output = Path(command[command.index("--output") + 1])
+            write_json(output, {"command": "build-scene-dialogue-review-packet"})
+        return {"stdout": "ok", "stderr": ""}
+
+    manifest = batch.build_batch(
+        inventory,
+        output_root,
+        jobs=1,
+        max_frames=16,
+        max_window=8,
+        runner=fake_runner,
+    )
+
+    assert manifest["summary"]["completed"] == 1
+    assert len(calls) == 2
+    context_call, scene_call = calls
+    assert "build-context-packet" in context_call
+    assert any(value.endswith("timeline.reviewed.json") for value in context_call)
+    assert context_call[context_call.index("--max-frames") + 1] == "16"
+    assert "build-scene-dialogue-review-packet" in scene_call
+    assert scene_call[scene_call.index("--max-window") + 1] == "8"
+    assert scene_call[scene_call.index("--visual-packet") + 1].endswith(
+        "context/context-review-packet.json"
+    )
+    assert "timeline.context-reviewed.json" not in " ".join(scene_call)
+    state = json.loads(
+        (output_root / "asset-golden" / "state.json").read_text(encoding="utf-8")
+    )
+    assert state["policy"]["integrated_visual_packet"] is True
+    assert set(state["outputs"]) == {"context_packet", "scene_dialogue_packet"}
+
+    calls.clear()
+    resumed = batch.build_batch(
+        inventory,
+        output_root,
+        jobs=1,
+        max_frames=16,
+        max_window=8,
+        runner=fake_runner,
+    )
+    assert calls == []
+    assert resumed["summary"]["reused"] == 1
 
 
 def test_batch_filters_shards_and_records_per_asset_errors(tmp_path: Path) -> None:

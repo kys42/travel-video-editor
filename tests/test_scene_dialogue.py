@@ -17,6 +17,7 @@ from travel_video.scene_dialogue import (
     slice_scene_dialogue_packet,
     validate_scene_dialogue_review,
 )
+from travel_video.transcript_reconcile import _locale_fragment
 from travel_video.web import render_timeline_web
 
 
@@ -126,6 +127,28 @@ def _candidate(
             }
         ],
     }
+
+
+def test_locale_fragment_drops_sub_millisecond_boundary_phantom() -> None:
+    candidate = _candidate(
+        "ko-KR",
+        "APPLE-ko-KR-T0001",
+        "다음 창에 온전히 들어가는 발화",
+        29.22,
+        30.42,
+    )
+
+    assert _locale_fragment(
+        [candidate], "ko-KR", 22.68, 29.2200003
+    ) is None
+    next_fragment = _locale_fragment(
+        [candidate], "ko-KR", 29.2200003, 37.02
+    )
+
+    assert next_fragment is not None
+    assert next_fragment["text"] == "다음 창에 온전히 들어가는 발화"
+    assert next_fragment["evidence_spans"][0]["start"] == 29.22
+    assert next_fragment["evidence_spans"][0]["end"] == 30.42
 
 
 def _apple_transcript() -> dict:

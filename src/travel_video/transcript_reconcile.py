@@ -112,19 +112,33 @@ def _locale_fragment(
         selected_spans = []
         for span_index, span in enumerate(spans):
             span_start, span_end, timing_source = _evidence_interval(candidate, span)
-            if span_start < end and span_end > start:
+            fragment_start = round(max(start, span_start), 3)
+            fragment_end = round(min(end, span_end), 3)
+            if (
+                span_start < end
+                and span_end > start
+                and fragment_end > fragment_start
+            ):
                 selected_spans.append(
-                    (span_index, span, span_start, span_end, timing_source)
+                    (
+                        span_index,
+                        span,
+                        span_start,
+                        span_end,
+                        fragment_start,
+                        fragment_end,
+                        timing_source,
+                    )
                 )
         if selected_spans:
             parts.extend(
                 str(span.get("text", ""))
-                for _, span, span_start, span_end, _ in selected_spans
+                for _, span, span_start, span_end, _, _, _ in selected_spans
                 if start <= (span_start + span_end) / 2 < end
             )
             confidences.extend(
                 float(span["confidence"])
-                for _, span, _, _, _ in selected_spans
+                for _, span, _, _, _, _, _ in selected_spans
                 if span.get("confidence") is not None
             )
             source_ids.append(str(candidate["utterance_id"]))
@@ -134,8 +148,8 @@ def _locale_fragment(
                     "source_span_index": span_index,
                     "source_start": round(span_start, 3),
                     "source_end": round(span_end, 3),
-                    "start": round(max(start, span_start), 3),
-                    "end": round(min(end, span_end), 3),
+                    "start": fragment_start,
+                    "end": fragment_end,
                     "text": (
                         str(span.get("text", ""))
                         if start <= (span_start + span_end) / 2 < end
@@ -147,7 +161,15 @@ def _locale_fragment(
                     if span.get("confidence") is not None
                     else None,
                 }
-                for span_index, span, span_start, span_end, timing_source in selected_spans
+                for (
+                    span_index,
+                    span,
+                    span_start,
+                    span_end,
+                    fragment_start,
+                    fragment_end,
+                    timing_source,
+                ) in selected_spans
             )
         elif (
             not spans
@@ -157,6 +179,10 @@ def _locale_fragment(
             candidate_start, candidate_end, timing_source = _evidence_interval(
                 candidate, None
             )
+            fragment_start = round(max(start, candidate_start), 3)
+            fragment_end = round(min(end, candidate_end), 3)
+            if fragment_end <= fragment_start:
+                continue
             owns_text = start <= (candidate_start + candidate_end) / 2 < end
             if owns_text:
                 parts.append(str(candidate.get("text", "")))
@@ -169,8 +195,8 @@ def _locale_fragment(
                     "source_span_index": None,
                     "source_start": round(candidate_start, 3),
                     "source_end": round(candidate_end, 3),
-                    "start": round(max(start, candidate_start), 3),
-                    "end": round(min(end, candidate_end), 3),
+                    "start": fragment_start,
+                    "end": fragment_end,
                     "text": str(candidate.get("text", "")) if owns_text else "",
                     "text_owner": owns_text,
                     "timing_source": timing_source,
