@@ -191,7 +191,7 @@ class DemoBackend:
                         ),
                     }
                 ] if scene_ids else [],
-                suggestions=["이 장면들로 60초 초안 만들기", "대화가 있는 장면만 보기"],
+                suggestions=["이 장면들로 하이라이트 구성 제안", "대화가 있는 장면만 보기"],
                 done=True,
             )
         if "create_edit" not in by_tool:

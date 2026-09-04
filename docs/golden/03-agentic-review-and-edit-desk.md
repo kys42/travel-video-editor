@@ -224,6 +224,13 @@ action은 사용자가 볼 화면을 바꾸지만 편집 데이터나 원본을 
 명확한 동의는 방금 제시한 계획만 승인하며, 사용자가 수정 의견을 주면 계획에 먼저
 반영한다.
 
+현재 draft revision의 이 확인 절차는 실제 Codex backend가 실행 계약을 따르는
+대화 정책이며, 서버가 별도 approval object를 발급해 강제하는 경계는 아니다.
+되돌릴 수 있는 JSON revision까지만 허용되는 현재 범위에서는 이 방식을 사용하되,
+렌더·외부 전송·게시처럼 비용이나 외부 효과가 생기는 기능은 서버가 검증하는 별도
+승인 상태 없이는 추가하지 않는다. Deterministic demo는 프로토콜 점검용이므로 이
+대화 정책의 수용 테스트로 간주하지 않는다.
+
 ### 7.3 길이가 지정되지 않은 요청
 
 길이를 기계적으로 60초로 보정하지 않는다. 다음 순서로 판단한다.
@@ -358,12 +365,14 @@ revision은 보존하되, UI는 성공을 추측하지 않고 다시 조회한�
 | 공용 Review Workspace | 구현 | Review와 Rough Cut이 같은 footage·scene detail 사용 |
 | 장면·대화 검색 | 구현 | compact 검색과 shortlist evidence 조회 |
 | 다중 장면 컨텍스트 | 구현 | 여러 영상의 명시적 선택을 시간순 전달 |
-| 계획 후 revision 생성 | 구현 | 정상 요청은 대화 확인 후 durable action |
+| 계획 후 revision 생성 | 부분 구현 | 실 Codex는 프롬프트 정책·대표 QA로 확인했지만 서버 강제 승인은 아니며 demo는 계획 턴을 재현하지 않음 |
 | 작은 후속 수정 | 구현 | trim·이동·추가·제거와 새 revision |
 | scene/revision 카드와 UI action | 구현 | 닫힌 SSE event와 dispatcher 사용 |
 | 개별 source clip 프리뷰 | 구현 | 가운데 Program Preview에서 bounded proxy playback |
-| 응답 후 동적 suggestion | 구현 | 실제 backend의 structured decision에서 생성 |
-| 첫 화면 quick prompt | 개선 필요 | 일부 고정 길이 예시가 남아 있으며 추천처럼 보이지 않게 정리 필요 |
+| 응답 후 동적 suggestion | 구현 | 실제 backend의 structured decision과 실행 계약의 맥락 기반 정책으로 생성 |
+| 첫 화면 quick prompt | 구현 | 길이를 미리 정하지 않는 일반 기능 예시이며 agent suggestion과 구분 |
+| Backend abstraction | 부분 구현 | `AgentBackend` seam과 표준 SSE는 있으나 현재 지원 런타임은 Codex SDK와 demo뿐 |
+| Codex CLI·App Server adapter | 미구현 | runtime stream을 `AgentDecision`으로 바꾸는 adapter와 호환성 테스트 필요 |
 | Golden 02 수준의 dialogue/action beat 선택 | 부분 구현 | scene 근거는 사용하지만 day packet·closure lint 전체는 미연결 |
 | 조립된 revision 프록시 프리뷰 | 미구현 | edit plan → background render → player 연결 필요 |
 | 승인된 4K source-relinked render | 미구현 | 별도 승인·렌더 job 필요 |
@@ -406,8 +415,10 @@ Preview가 정확한 source in/out에서 재생된다. 사용자는 행동과 �
 
 ### Backend 교체
 
-Codex SDK를 CLI나 다른 에이전트 어댑터로 바꿔도 브라우저의 이벤트 타입, 카드,
-revision semantics와 ToolGateway 권한 경계가 바뀌지 않는다.
+CLI나 다른 에이전트 어댑터를 추가한 뒤 Codex SDK에서 해당 backend로 바꿔도
+브라우저의 이벤트 타입, 카드, revision semantics와 ToolGateway 권한 경계가
+바뀌지 않는다. 현재는 adapter seam의 수용 기준이며 CLI·App Server 지원 완료를
+뜻하지 않는다.
 
 ## 15. 변경 절차와 완료 조건
 

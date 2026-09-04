@@ -207,6 +207,8 @@ def test_library_sorts_videos_by_capture_time(tmp_path: Path) -> None:
     assert 'data-workspace-mode="review"' in document
     assert 'data-workspace-mode="rough-cut"' in document
     assert "data-revision-panel" in document
+    assert "자연스러운 길이의 하이라이트 구성을 제안해줘" in document
+    assert "이 영상들로 60초 하이라이트 초안 만들어줘" not in document
     assert "data-rough-clips" in document
     assert "data-rough-preview-video" in document
     assert 'data-library-id="' in document

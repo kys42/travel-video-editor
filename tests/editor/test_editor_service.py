@@ -141,7 +141,7 @@ def test_contract_matches_gateway_and_event_schema(tmp_path: Path) -> None:
     gateway = ToolGateway(catalog, store, contract)
 
     assert contract.contract_id == "travel-video-editor/editor-agent/v1"
-    assert contract.revision == 3
+    assert contract.revision == 4
     assert len(contract.capabilities) == 6
     assert len(contract.boundaries) == 4
     assert gateway.contract.names == {
@@ -162,6 +162,9 @@ def test_contract_matches_gateway_and_event_schema(tmp_path: Path) -> None:
         "Do not call create_edit or apply_edit_operations" in rule for rule in planning
     )
     assert any("explicitly says to execute immediately" in rule for rule in planning)
+    duration_policy = contract.decision_policy["duration_and_suggestions"]
+    assert any("30, 60, and 90 seconds" in rule for rule in duration_policy)
+    assert any("current response" in rule for rule in duration_policy)
     assert contract.get("create_edit").approval == "chat_plan_for_new_edit"
     assert (
         contract.get("apply_edit_operations").approval == "chat_plan_for_major_revision"
@@ -396,6 +399,7 @@ def test_demo_agent_runs_search_cards_and_revision_over_sse(tmp_path: Path) -> N
     assert "event: card" in response.text
     assert '"type":"scene_refs"' in response.text
     assert '"type":"edit_revision_ref"' in response.text
+    assert "이 장면들로 60초 초안 만들기" not in response.text
     assert "event: done" in response.text
     assert '"backend":"demo"' in response.text
     assert client.get("/openapi.json").status_code == 200
@@ -409,11 +413,12 @@ def test_demo_agent_runs_search_cards_and_revision_over_sse(tmp_path: Path) -> N
     assert "data-context-levels" in guide.text
     assert "04 · PLAN" in guide.text
     assert "확인 후 revision 생성" in guide.text
+    assert "60초 초안 요청" not in guide.text
     assert "fetch('/api/contracts/agent')" in guide.text
     live_contract = client.get("/api/contracts/agent").json()
     assert live_contract["schema_version"] == "editor-agent-contract/v1"
     assert live_contract["contract_id"] == "travel-video-editor/editor-agent/v1"
-    assert live_contract["revision"] == 3
+    assert live_contract["revision"] == 4
     assert len(live_contract["decision_policy"]["planning"]) == 7
     assert live_contract["context_policy"]["limits"]["selected_scene_count"] == 24
     assert set(live_contract["event_contract"]["events"]) == SSE_EVENT_TYPES
