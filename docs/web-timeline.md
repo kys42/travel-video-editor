@@ -70,8 +70,10 @@ uv run travel-video render-web timeline.context-reviewed.json \
 에이전트가 `edit_revision_ref` 카드를 보내면 가운데 Revision 패널은 원본 장면
 ID를 가진 클립 목록을 구성합니다. 클립을 누르면 공용 Review Workspace가 해당
 영상으로 전환하고 연결 장면을 펼쳐 원본 근거와 STT를 즉시 검토할 수 있습니다.
-클라이언트는 마지막 revision 카드를 세션 저장소에 보존하지만 편집의 권위 있는
-상태는 계속 SQLite revision과 서버 도구 계약입니다.
+가운데 Program Preview는 같은 프록시의 `source_in`부터 `source_out`까지만
+재생합니다. 클라이언트는 마지막 revision 카드를 라이브러리 지문별 세션 저장소에
+보존하며, 서버 모드에서는 SQLite의 edit/revision이 실제로 존재하는지 확인한 뒤
+복원합니다. 편집의 권위 있는 상태는 계속 SQLite revision과 서버 도구 계약입니다.
 
 편집 제안은 `우선 유지`, `선별 사용`, `짧게 연결`, `축약·제외` 네 상태입니다. 핵심 순간, 중요도, 장면 유형과 기계 품질 경고로 만든 검토 우선순위이며 자동 컷 확정이 아닙니다. 사용자는 같은 행에서 실제 행동과 전사 후보를 함께 보고 구간 길이를 판단할 수 있습니다.
 

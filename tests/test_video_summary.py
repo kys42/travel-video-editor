@@ -208,10 +208,44 @@ def test_library_sorts_videos_by_capture_time(tmp_path: Path) -> None:
     assert 'data-workspace-mode="rough-cut"' in document
     assert 'data-revision-panel' in document
     assert 'data-rough-clips' in document
+    assert 'data-rough-preview-video' in document
+    assert 'data-library-id="' in document
+    assert 'tve-active-revision:${document.body.dataset.libraryId}' in document
+    assert 'workspace.is-rough-cut { grid-template-columns: minmax(500px, 1fr) 290px 270px; }' in document
+    assert '.workspace.is-rough-cut .scene-summary { grid-template-columns: 40px 55px 82px minmax(0, 1fr); }' in document
+    assert 'roughPreviewVideo.currentTime >= roughEnd' in document
+    assert "!item.scene_id || !sceneById(item.scene_id)" in document
+    assert "restoreActiveRevision();" in document
     assert "workspace.classList.toggle('is-rough-cut'" in document
     assert (output.parent / "media" / "earlier.mp4").is_symlink()
     assert (output.parent / "media" / "earlier.mp4").resolve() == earlier_proxy
     assert manifest["video_count"] == 2
+    assert len(manifest["library_id"]) == 16
     assert manifest["proxy_video_count"] == 2
     assert manifest["proxy_root"] == str(proxy_root.resolve())
     assert manifest["timelines"][0].endswith("earlier.summarized.json")
+    other_output = render_video_library(
+        summarized_paths[:1],
+        tmp_path / "other-library",
+        title="아침 음식 산책",
+    )
+    other_manifest = json.loads((other_output.parent / "manifest.json").read_text())
+    assert other_manifest["library_id"] != manifest["library_id"]
+    assert (
+        f'data-library-id="{other_manifest["library_id"]}"'
+        in other_output.read_text(encoding="utf-8")
+    )
+    reanalyzed = json.loads(summarized_paths[0].read_text(encoding="utf-8"))
+    reanalyzed["context_groups"][0]["end"] = 19.5
+    reanalyzed_path = tmp_path / "later.reanalyzed.json"
+    reanalyzed_path.write_text(json.dumps(reanalyzed), encoding="utf-8")
+    reanalyzed_output = render_video_library(
+        [reanalyzed_path, summarized_paths[1]],
+        tmp_path / "reanalyzed-library",
+        title="아침 음식 산책",
+    )
+    reanalyzed_manifest = json.loads(
+        (reanalyzed_output.parent / "manifest.json").read_text()
+    )
+    assert reanalyzed_manifest["video_count"] == manifest["video_count"]
+    assert reanalyzed_manifest["library_id"] != manifest["library_id"]

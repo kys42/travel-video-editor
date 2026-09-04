@@ -227,10 +227,12 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
     .revision-facts dt { color: var(--faint); font: 7px var(--font-time); }
     .revision-facts dd { margin: 2px 0 0; color: var(--text-2); font: 8px var(--font-time); }
     .program-preview { position: relative; min-height: 0; overflow: hidden; border-bottom: 1px solid var(--line-strong); background: #090a0b; }
-    .program-preview img { width: 100%; height: 100%; object-fit: cover; opacity: .9; }
+    .program-preview img, .program-preview video { width: 100%; height: 100%; object-fit: cover; opacity: .9; }
+    .program-preview video { position: absolute; inset: 0; z-index: 1; background: #090a0b; }
     .program-preview::after { position: absolute; inset: 45% 0 0; background: linear-gradient(transparent, rgba(0, 0, 0, .82)); content: ""; pointer-events: none; }
-    .program-preview > span { position: absolute; z-index: 1; top: 7px; right: 8px; color: rgba(255, 255, 255, .68); font: 7px var(--font-time); }
-    .program-preview div { position: absolute; z-index: 1; right: 10px; bottom: 8px; left: 10px; }
+    .program-preview > span { position: absolute; z-index: 2; top: 7px; right: 8px; color: rgba(255, 255, 255, .68); font: 7px var(--font-time); pointer-events: none; }
+    .program-preview div { position: absolute; z-index: 2; right: 10px; bottom: 8px; left: 10px; pointer-events: none; }
+    .program-preview.has-video div { bottom: 34px; }
     .program-preview strong, .program-preview small { display: block; overflow: hidden; color: #fff; text-overflow: ellipsis; white-space: nowrap; }
     .program-preview strong { font-size: 10px; }
     .program-preview small { margin-top: 2px; color: rgba(255, 255, 255, .7); font: 7px var(--font-time); }
@@ -382,6 +384,8 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
     @media (max-width: 1240px) {
       .workspace { grid-template-columns: minmax(0, 1fr) 300px; }
       .review-workspace { grid-template-columns: 210px minmax(480px, 1fr); }
+      .workspace.is-rough-cut { grid-template-columns: minmax(500px, 1fr) 290px 270px; }
+      .workspace.is-rough-cut .review-workspace { grid-template-columns: 175px minmax(325px, 1fr); }
       .scene-summary { grid-template-columns: 38px 60px 96px minmax(170px, 1fr) 76px; }
       .scene-thumb { width: 96px; height: 58px; }
       .scene-dialogue { display: none; }
@@ -390,7 +394,7 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
       .analysis-grid > section:last-child { grid-column: 1 / -1; padding-left: 0; border-top: 1px solid var(--line); }
     }
 
-    @media (max-width: 980px) {
+    @media (max-width: 1060px) {
       body { overflow: auto; }
       .appbar { position: sticky; top: 0; z-index: 20; grid-template-columns: 1fr auto; }
       .dataset { display: none; }
@@ -417,8 +421,12 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
       .scene-summary { grid-template-columns: 40px 55px 82px minmax(0, 1fr); }
       .scene-thumb { width: 82px; height: 50px; }
       .scene-state { display: none; }
+      .workspace.is-rough-cut .scene-summary { grid-template-columns: 40px 55px 82px minmax(0, 1fr); }
+      .workspace.is-rough-cut .scene-thumb { width: 82px; height: 50px; }
       .scene-depth { padding-left: 10px; }
       .analysis-grid { grid-template-columns: 1fr; }
+      .workspace.is-rough-cut .analysis-grid { grid-template-columns: 1fr; }
+      .workspace.is-rough-cut .analysis-grid > section:last-child { grid-column: auto; }
       .analysis-grid > section { padding: 9px 0; border-right: 0; border-bottom: 1px solid var(--line); }
       .analysis-grid > section:last-child { grid-column: auto; }
       .segment-row { grid-template-columns: 60px 84px minmax(0, 1fr); }
@@ -431,7 +439,7 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
     }
   </style>
 </head>
-<body>
+<body data-library-id="__LIBRARY_ID__">
   <a class="skip-link" href="#timeline">장면 타임라인으로 건너뛰기</a>
   <header class="appbar">
     <div class="identity"><span class="mark" aria-hidden="true"><i></i><i></i></span><strong>Travel Video Editor</strong><span>__TITLE__</span></div>
@@ -455,7 +463,7 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
     <aside class="panel revision-panel" data-revision-panel aria-label="Rough Cut revision">
       <header class="revision-titlebar"><div><span>ACTIVE EDIT</span><strong data-rough-title>편집 초안 없음</strong></div><button type="button" data-rough-export>내보내기</button></header>
       <section class="revision-summary"><div class="revision-current"><span>CURRENT REVISION</span><strong data-rough-revision>NO REV</strong></div><dl class="revision-facts"><div><dt>길이</dt><dd data-rough-duration>00:00</dd></div><div><dt>클립</dt><dd data-rough-count>0</dd></div><div><dt>작성</dt><dd data-rough-author>—</dd></div></dl></section>
-      <section class="program-preview" aria-label="선택 편집 클립 미리보기"><img src="__INITIAL_PREVIEW_URL__" alt="선택 편집 클립 대표 프레임" data-rough-preview-image><span>PROGRAM · SOURCE LINK</span><div><strong data-rough-preview-title>Revision이 생성되면 클립을 바로 검토할 수 있습니다.</strong><small data-rough-preview-time>원본 타임코드 연결 대기</small></div></section>
+      <section class="program-preview" aria-label="선택 편집 클립 미리보기" data-rough-preview><img src="__INITIAL_PREVIEW_URL__" alt="선택 편집 클립 대표 프레임" data-rough-preview-image><video controls playsinline preload="metadata" data-rough-preview-video hidden></video><span>PROGRAM · SOURCE LINK</span><div><strong data-rough-preview-title>Revision이 생성되면 클립을 바로 검토할 수 있습니다.</strong><small data-rough-preview-time>원본 타임코드 연결 대기</small></div></section>
       <section class="revision-body"><header><strong>EDIT CLIPS</strong><span>클립 선택 → 왼쪽 원본 장면</span></header><ol class="rough-clips" data-rough-clips><li class="rough-empty">AI Editor와 편집 방향을 정하면 revision과 원본에 연결된 클립 목록이 여기에 표시됩니다.</li></ol></section>
     </aside>
 
@@ -527,15 +535,21 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
       const roughDuration = document.querySelector('[data-rough-duration]');
       const roughCount = document.querySelector('[data-rough-count]');
       const roughAuthor = document.querySelector('[data-rough-author]');
+      const roughPreview = document.querySelector('[data-rough-preview]');
       const roughPreviewImage = document.querySelector('[data-rough-preview-image]');
+      const roughPreviewVideo = document.querySelector('[data-rough-preview-video]');
       const roughPreviewTitle = document.querySelector('[data-rough-preview-title]');
       const roughPreviewTime = document.querySelector('[data-rough-preview-time]');
       const roughClips = document.querySelector('[data-rough-clips]');
-      const revisionStorageKey = `tve-active-revision:${document.title}`;
+      const revisionStorageKey = `tve-active-revision:${document.body.dataset.libraryId}`;
       let selectedStart = 0;
       let selectedEnd = 0;
       let rangePlayback = false;
       let loadedMediaUrl = '';
+      let roughLoadedMediaUrl = '';
+      let roughStart = 0;
+      let roughEnd = 0;
+      let roughRangePlayback = false;
       let activeEditId = null;
       let chatController = null;
       let inspectorTab = workspaceMode === 'rough-cut' ? 'ai' : 'monitor';
@@ -586,7 +600,11 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
           const selectedClip = roughClips.querySelector('button[aria-current="true"]') || roughClips.querySelector('button');
           if (selectedClip) selectedClip.click();
         }
-        else setInspectorTab('monitor');
+        else {
+          roughRangePlayback = false;
+          roughPreviewVideo.pause();
+          setInspectorTab('monitor');
+        }
         if (updateUrl) {
           const target = location.protocol === 'file:' ? `?mode=${mode}` : mode === 'rough-cut' ? '/rough-cut' : '/';
           history.pushState({ workspaceMode: mode }, '', target);
@@ -687,7 +705,7 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
       };
 
       const scrollSceneIntoTimeline = scene => requestAnimationFrame(() => {
-        if (window.matchMedia('(max-width: 980px)').matches) {
+        if (window.matchMedia('(max-width: 1060px)').matches) {
           scene.scrollIntoView({ behavior: 'smooth', block: 'start' });
           return;
         }
@@ -754,6 +772,18 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
         if (action.type === 'play_source_range') {
           const scene = focusSceneById(action.scene_id, true);
           if (!scene) return;
+          if (workspaceMode === 'rough-cut') {
+            const sourceIn = Number.isFinite(Number(action.source_in)) ? Number(action.source_in) : Number(scene.dataset.previewStart || 0);
+            const sourceOut = Number.isFinite(Number(action.source_out)) ? Number(action.source_out) : Number(scene.dataset.previewEnd || sourceIn);
+            const clip = {
+              label: scene.dataset.previewTitle,
+              source_in: sourceIn,
+              source_out: sourceOut,
+              duration: sourceOut - sourceIn
+            };
+            await updateRoughPreview(clip, scene, action.autoplay !== false);
+            return;
+          }
           setInspectorTab('monitor');
           if (action.autoplay !== false && !playButton.disabled) {
             seekToSelectedStart();
@@ -854,7 +884,13 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
         return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
       };
 
-      const updateRoughPreview = (clip, sourceScene) => {
+      const seekRoughPreview = () => {
+        const seek = () => { roughPreviewVideo.currentTime = Math.min(roughStart, roughPreviewVideo.duration || roughStart); };
+        if (roughPreviewVideo.readyState >= 1) seek();
+        else roughPreviewVideo.addEventListener('loadedmetadata', seek, { once: true });
+      };
+
+      const updateRoughPreview = async (clip, sourceScene, autoplay = false) => {
         if (!clip || !sourceScene) return;
         const clipDuration = Number(clip.duration) || Math.max(0, Number(clip.source_out) - Number(clip.source_in));
         const image = sourceScene.querySelector('.scene-thumb img');
@@ -862,7 +898,61 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
         roughPreviewImage.alt = `${clip.label || sourceScene.dataset.previewTitle} 대표 프레임`;
         roughPreviewTitle.textContent = clip.label || sourceScene.dataset.previewTitle;
         roughPreviewTime.textContent = `${timeLabel(clip.source_in)} — ${timeLabel(clip.source_out)} · ${clipDuration.toFixed(1)}s · 원본 연결`;
+        roughStart = Number(clip.source_in ?? sourceScene.dataset.previewStart ?? 0);
+        roughEnd = Number(clip.source_out ?? sourceScene.dataset.previewEnd ?? roughStart);
+        roughRangePlayback = false;
+        roughPreviewVideo.pause();
+        const mediaUrl = sourceScene.closest('[data-clip-panel]')?.dataset.mediaUrl || '';
+        if (!mediaUrl) {
+          roughLoadedMediaUrl = '';
+          roughPreviewVideo.removeAttribute('src');
+          roughPreviewVideo.hidden = true;
+          roughPreviewImage.hidden = false;
+          roughPreview.classList.remove('has-video');
+          if (autoplay) showToast('이 원본에는 재생용 프록시가 없어 스틸 프레임으로 표시합니다.');
+          return;
+        }
+        roughPreviewImage.hidden = true;
+        roughPreviewVideo.hidden = false;
+        roughPreview.classList.add('has-video');
+        if (roughLoadedMediaUrl !== mediaUrl) {
+          roughLoadedMediaUrl = mediaUrl;
+          roughPreviewVideo.src = mediaUrl;
+          roughPreviewVideo.load();
+        }
+        seekRoughPreview();
+        if (autoplay) {
+          roughRangePlayback = true;
+          try { await roughPreviewVideo.play(); }
+          catch {
+            roughRangePlayback = false;
+            showToast('자동 재생이 차단됐습니다. 가운데 영상의 재생 버튼을 눌러주세요.');
+          }
+        }
       };
+
+      roughPreviewVideo.addEventListener('play', () => {
+        if (roughPreviewVideo.currentTime < roughStart || roughPreviewVideo.currentTime >= roughEnd) seekRoughPreview();
+        roughRangePlayback = true;
+      });
+      roughPreviewVideo.addEventListener('pause', () => { roughRangePlayback = false; });
+      roughPreviewVideo.addEventListener('timeupdate', () => {
+        if (roughRangePlayback && roughPreviewVideo.currentTime < roughStart) {
+          roughPreviewVideo.currentTime = roughStart;
+          return;
+        }
+        if (roughRangePlayback && roughPreviewVideo.currentTime >= roughEnd) {
+          roughRangePlayback = false;
+          roughPreviewVideo.pause();
+        }
+      });
+      roughPreviewVideo.addEventListener('error', () => {
+        roughRangePlayback = false;
+        roughPreviewVideo.hidden = true;
+        roughPreviewImage.hidden = false;
+        roughPreview.classList.remove('has-video');
+        showToast('프록시 영상을 열 수 없습니다. 외장 SSD 연결과 파일 경로를 확인해주세요.');
+      });
 
       const syncRoughRevision = card => {
         if (!card || card.type !== 'edit_revision_ref') return;
@@ -901,6 +991,56 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
         if (firstButton) {
           if (workspaceMode === 'rough-cut') firstButton.click();
         } else roughClips.innerHTML = '<li class="rough-empty">이 revision에는 클립이 없습니다.</li>';
+      };
+
+      const restoreActiveRevision = async () => {
+        let card;
+        try { card = JSON.parse(sessionStorage.getItem(revisionStorageKey) || 'null'); }
+        catch {
+          sessionStorage.removeItem(revisionStorageKey);
+          return;
+        }
+        if (!card?.edit_id || !card?.revision_id) return;
+        if (location.protocol !== 'file:') {
+          try {
+            const url = `/api/edits/${encodeURIComponent(card.edit_id)}?revision_id=${encodeURIComponent(card.revision_id)}`;
+            const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+            if (!response.ok) throw new Error(String(response.status));
+            const edit = await response.json();
+            const revision = edit.revision;
+            if (revision?.revision_id !== card.revision_id) throw new Error('revision mismatch');
+            card = {
+              type: 'edit_revision_ref',
+              edit_id: edit.edit_id,
+              title: edit.title,
+              revision_id: revision.revision_id,
+              sequence: revision.sequence,
+              clip_count: revision.clip_count,
+              duration: revision.timeline_duration,
+              target_duration: edit.target_duration,
+              changes: revision.change_summary,
+              clips: (revision.plan?.clips || []).map(item => ({
+                clip_id: item.id,
+                scene_id: item.metadata?.scene_id,
+                label: item.label,
+                source_in: item.source_in,
+                source_out: item.source_out,
+                duration: Number(item.source_out) - Number(item.source_in)
+              }))
+            };
+          } catch {
+            sessionStorage.removeItem(revisionStorageKey);
+            return;
+          }
+        }
+        if ((card.clips || []).some(item => !item.scene_id || !sceneById(item.scene_id))) {
+          sessionStorage.removeItem(revisionStorageKey);
+          return;
+        }
+        activeEditId = card.edit_id;
+        activeEdit.textContent = `REV ${String(card.sequence).padStart(2, '0')}`;
+        activeEdit.title = card.edit_id;
+        syncRoughRevision(card);
       };
 
       const scrollChatToEnd = () => requestAnimationFrame(() => { chatScroll.scrollTop = chatScroll.scrollHeight; });
@@ -977,7 +1117,7 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
         const review = element('button', 'is-primary', '첫 컷 검토');
         review.type = 'button';
         review.disabled = !first;
-        review.addEventListener('click', () => first && dispatchAgentAction({ type: 'play_source_range', scene_id: first.scene_id, autoplay: true }));
+        review.addEventListener('click', () => first && dispatchAgentAction({ type: 'play_source_range', scene_id: first.scene_id, source_in: first.source_in, source_out: first.source_out, autoplay: true }));
         const copyId = element('button', '', 'Revision ID 복사');
         copyId.type = 'button';
         copyId.addEventListener('click', async () => {
@@ -1161,16 +1301,7 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
       });
 
       openScene(document.querySelector('[data-scene][open]') || document.querySelector('[data-scene]'));
-      try {
-        const restoredRevision = JSON.parse(sessionStorage.getItem(revisionStorageKey) || 'null');
-        if (restoredRevision) {
-          activeEditId = restoredRevision.edit_id || null;
-          activeEdit.textContent = `REV ${String(restoredRevision.sequence).padStart(2, '0')}`;
-          syncRoughRevision(restoredRevision);
-        }
-      } catch {
-        sessionStorage.removeItem(revisionStorageKey);
-      }
+      restoreActiveRevision();
       if (location.protocol === 'file:') {
         setRuntime('SERVER OFF', 'error');
         const guideLink = document.querySelector('[data-guide-link]');

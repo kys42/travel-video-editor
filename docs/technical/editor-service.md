@@ -140,6 +140,7 @@ Open `http://localhost:8765`. Do not open the generated page with `file://` when
 - Codex backend uses structured output and can resume the stored session thread;
 - the Edit Desk supports cancelable SSE, scene cards, semantic actions, and persistent session IDs;
 - Review and Rough Cut contain one shared footage/scene workspace implementation, and revision clips navigate back to their authoritative scene evidence;
+- revision cards expose source in/out coordinates, the visible Rough Cut program monitor plays that bounded proxy range, and cached UI references are scoped by library fingerprint and validated against the server;
 - existing Phase 1 tests and new editor tests pass.
 
 ## Deferred production work

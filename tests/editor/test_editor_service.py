@@ -277,6 +277,17 @@ def test_edit_operations_create_immutable_revision_and_reject_stale_write(
     assert changed["revision"]["plan"]["clips"][0]["source"].startswith(
         "/readonly/source/"
     )
+    card = ToolGateway(catalog, store, EditorAgentContract.load()).invoke(
+        "show_edit_revision",
+        {
+            "edit_id": created["edit_id"],
+            "revision_id": changed["revision"]["revision_id"],
+        },
+        "session-test",
+    )
+    assert card.payload["clips"][0]["source_in"] == 1.0
+    assert card.payload["clips"][0]["source_out"] == 7.5
+    assert card.payload["clips"][0]["duration"] == 6.5
     previous = store.get_edit(created["edit_id"], created["head_revision_id"])
     assert previous["revision"]["clip_count"] == 0
     with pytest.raises(RevisionConflictError):
