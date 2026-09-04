@@ -7,6 +7,7 @@ from typing import Any, Callable
 
 from .catalog import TimelineCatalog
 from .contracts import EditorAgentContract, ToolDefinition
+from .evidence import SceneEvidenceService
 from .store import EditStore
 
 
@@ -14,8 +15,12 @@ from .store import EditStore
 class ToolResult:
     kind: str
     payload: dict[str, Any]
+    model_payload: dict[str, Any] | None = None
+    local_image_paths: tuple[str, ...] = ()
 
     def for_model(self) -> dict[str, Any]:
+        if self.model_payload is not None:
+            return self.model_payload
         if self.kind in {"card", "action"}:
             return {
                 "delivered_to_ui": True,
@@ -31,14 +36,20 @@ class ToolGateway:
         catalog: TimelineCatalog,
         store: EditStore,
         contract: EditorAgentContract,
+        evidence: SceneEvidenceService,
     ) -> None:
         self.catalog = catalog
         self.store = store
         self.contract = contract
+        self.evidence = evidence
         self._handlers: dict[str, Callable[[dict[str, Any], str], ToolResult]] = {
             "list_assets": self._list_assets,
             "search_scenes": self._search_scenes,
             "get_scene_evidence": self._get_scene_evidence,
+            "inspect_scene_range": self._inspect_scene_range,
+            "create_edit_proposal": self._create_edit_proposal,
+            "get_edit_proposal": self._get_edit_proposal,
+            "apply_edit_proposal": self._apply_edit_proposal,
             "create_edit": self._create_edit,
             "get_edit": self._get_edit,
             "apply_edit_operations": self._apply_edit_operations,
@@ -68,12 +79,16 @@ class ToolGateway:
         status = "completed"
         result_summary: dict[str, Any]
         try:
+            definition.validate_input(arguments)
             result = self._handlers[name](arguments, session_id)
             result_summary = self._summarize(result)
             return result
         except Exception as exc:
             status = "failed"
-            result_summary = {"error_type": type(exc).__name__, "message": str(exc)[:300]}
+            result_summary = {
+                "error_type": type(exc).__name__,
+                "message": str(exc)[:300],
+            }
             raise
         finally:
             self.store.log_tool_run(
@@ -91,7 +106,15 @@ class ToolGateway:
     def _summarize(result: ToolResult) -> dict[str, Any]:
         payload = result.payload
         summary: dict[str, Any] = {"kind": result.kind}
-        for key in ("type", "count", "edit_id", "head_revision_id", "revision_id"):
+        for key in (
+            "type",
+            "count",
+            "edit_id",
+            "head_revision_id",
+            "revision_id",
+            "proposal_id",
+            "evidence_id",
+        ):
             if key in payload:
                 summary[key] = payload[key]
         if isinstance(payload.get("items"), list):
@@ -115,6 +138,117 @@ class ToolGateway:
 
     def _get_scene_evidence(self, args: dict[str, Any], _: str) -> ToolResult:
         return ToolResult("data", self.catalog.scene_evidence(str(args["scene_id"])))
+
+    def _inspect_scene_range(self, args: dict[str, Any], _: str) -> ToolResult:
+        inspection = self.evidence.inspect(
+            scene_id=str(args["scene_id"]),
+            source_in=(
+                float(args["source_in"]) if args.get("source_in") is not None else None
+            ),
+            source_out=(
+                float(args["source_out"])
+                if args.get("source_out") is not None
+                else None
+            ),
+            visual_mode=str(args.get("visual_mode", "auto")),
+            frame_count=int(args.get("frame_count", 8)),
+            include_raw_stt=bool(args.get("include_raw_stt", False)),
+            context_seconds=float(args.get("context_seconds", 4.0)),
+        )
+        return ToolResult(
+            "card",
+            inspection.card,
+            model_payload=inspection.model,
+            local_image_paths=inspection.local_image_paths,
+        )
+
+    def _create_edit_proposal(
+        self, args: dict[str, Any], session_id: str
+    ) -> ToolResult:
+        proposal = self.store.create_proposal(
+            catalog=self.catalog,
+            session_id=session_id,
+            title=str(args["title"]),
+            objective=str(args["objective"]),
+            candidates=[dict(item) for item in args["candidates"]],
+            target_duration=(
+                float(args["target_duration"])
+                if args.get("target_duration") is not None
+                else None
+            ),
+            duration_rationale=str(args.get("duration_rationale") or ""),
+            assumptions=[str(item) for item in args.get("assumptions", [])],
+            uncertainties=[str(item) for item in args.get("uncertainties", [])],
+            base_edit_id=(
+                str(args["base_edit_id"]) if args.get("base_edit_id") else None
+            ),
+            base_revision_id=(
+                str(args["base_revision_id"]) if args.get("base_revision_id") else None
+            ),
+            created_by=f"agent:{session_id}",
+        )
+        return ToolResult(
+            "card",
+            self.proposal_card(proposal),
+            model_payload=self._proposal_model_view(proposal),
+        )
+
+    def _get_edit_proposal(self, args: dict[str, Any], _: str) -> ToolResult:
+        proposal = self.store.get_proposal(str(args["proposal_id"]))
+        return ToolResult("data", self._proposal_model_view(proposal))
+
+    def _apply_edit_proposal(self, args: dict[str, Any], session_id: str) -> ToolResult:
+        result = self.store.apply_proposal(
+            catalog=self.catalog,
+            proposal_id=str(args["proposal_id"]),
+            selected_candidate_ids=[
+                str(item) for item in args.get("selected_candidate_ids", [])
+            ]
+            or None,
+            created_by=f"agent:{session_id}",
+        )
+        return ToolResult("data", result)
+
+    @staticmethod
+    def _proposal_model_view(proposal: dict[str, Any]) -> dict[str, Any]:
+        return {
+            key: proposal.get(key)
+            for key in (
+                "schema_version",
+                "proposal_id",
+                "status",
+                "title",
+                "objective",
+                "target_duration",
+                "duration_rationale",
+                "estimated_duration",
+                "base_edit_id",
+                "base_revision_id",
+                "candidates",
+                "assumptions",
+                "uncertainties",
+                "applied_edit_id",
+                "applied_revision_id",
+            )
+        }
+
+    @staticmethod
+    def proposal_card(proposal: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "type": "edit_proposal_ref",
+            "proposal_id": proposal["proposal_id"],
+            "status": proposal["status"],
+            "title": proposal["title"],
+            "objective": proposal["objective"],
+            "target_duration": proposal.get("target_duration"),
+            "duration_rationale": proposal.get("duration_rationale"),
+            "estimated_duration": proposal["estimated_duration"],
+            "base_edit_id": proposal.get("base_edit_id"),
+            "base_revision_id": proposal.get("base_revision_id"),
+            "assumptions": proposal.get("assumptions", []),
+            "uncertainties": proposal.get("uncertainties", []),
+            "candidates": proposal["candidates"],
+        }
 
     def _create_edit(self, args: dict[str, Any], session_id: str) -> ToolResult:
         edit = self.store.create_edit(
@@ -199,7 +333,9 @@ class ToolGateway:
             },
         )
 
-    def _scene_action(self, action_type: str, scene_id: str, **extra: Any) -> ToolResult:
+    def _scene_action(
+        self, action_type: str, scene_id: str, **extra: Any
+    ) -> ToolResult:
         scene = self.catalog.scene(scene_id)
         return ToolResult(
             "action",
@@ -215,9 +351,22 @@ class ToolGateway:
         )
 
     def _play_source_range(self, args: dict[str, Any], _: str) -> ToolResult:
+        scene = self.catalog.scene(str(args["scene_id"]))
+        source_in = float(args.get("source_in", scene.source_in))
+        source_out = float(args.get("source_out", scene.source_out))
+        if (
+            source_in < scene.source_in - 0.001
+            or source_out > scene.source_out + 0.001
+            or source_out <= source_in
+        ):
+            raise ValueError(
+                "playback range must be positive and stay inside the reviewed scene"
+            )
         return self._scene_action(
             "play_source_range",
-            str(args["scene_id"]),
+            scene.scene_id,
+            source_in=source_in,
+            source_out=source_out,
             autoplay=bool(args.get("autoplay", True)),
         )
 

@@ -1,11 +1,11 @@
 # Editor Service — executable technical contract
 
-Status: vertical slice implemented, 2026-09-03
+Status: vertical slice implemented, 2026-09-04
 Owners: Editor API, Agent Runtime, Edit Desk UI
 
 ## Product boundary
 
-The Editor Service lets a user search reviewed travel-video evidence and create reversible rough-cut revisions through a right-hand AI editor. It does not grant an agent arbitrary shell, filesystem, FFmpeg, or source-media mutation access.
+The Editor Service lets a user search reviewed travel-video evidence, inspect a bounded source range, review a structured edit proposal, and create reversible rough-cut revisions through a right-hand AI editor. It does not grant the model arbitrary shell, filesystem, FFmpeg, or source-media mutation access.
 
 The authoritative boundaries are:
 
@@ -39,10 +39,11 @@ Edit Desk browser
             ├─ DemoBackend (deterministic local development)
             └─ ToolGateway
                  ├─ TimelineCatalog (immutable reviewed JSON)
-                 └─ EditStore (SQLite, immutable revisions)
+                 ├─ SceneEvidenceService (bounded, cached contact sheets)
+                 └─ EditStore (SQLite, proposals + immutable revisions)
 ```
 
-The Codex backend uses `openai-codex` on the server. It creates or resumes a Codex thread, supplies the compact tool catalog and current page/edit context, and requires a JSON response matching the agent decision schema. Codex proposes typed tool calls. The `ToolGateway` validates and executes them; results are returned to the same thread until it produces a final response or the turn limit is reached. Contract revision 2 adds a conversational plan-first gate: the model may use query tools to inspect footage, but a normal new-edit or substantial-restructure request ends with a grounded plan and confirmation question. A later consent turn performs the durable calls. Explicit immediate-execution wording and precise small active-edit changes are documented exceptions; this gate is prompt policy rather than a server-side approval object.
+The Codex backend uses `openai-codex` on the server. It creates or resumes a Codex thread, supplies the compact tool catalog and current page/edit context, and requires a JSON response matching the agent decision schema. Codex proposes typed tool calls. The `ToolGateway` validates and executes them; results are returned to the same thread until it produces a final response or the turn limit is reached. Contract revision 5 represents the plan as a server-validated proposal before revision mutation. The proposal and candidate ranges are durable, inspectable state; interpreting a later conversational confirmation remains model policy rather than a high-risk server approval token. Explicit immediate execution and precise small active-edit changes remain documented exceptions.
 
 Codex is intentionally started with:
 
@@ -64,8 +65,9 @@ This is defense in depth. The actual edit authority exists only in `ToolGateway`
 3. `get_scene_evidence` is allowed only for a shortlist and returns one scene at a
    time. Corrected caption lines are the primary dialogue payload; legacy
    utterances are returned only when reviewed captions are unavailable.
-4. Frame references remain IDs/paths. Image bytes are never inserted into the agent prompt by default.
-5. Full timeline JSON and full raw STT are not returned by any agent tool.
+4. `inspect_scene_range` is reserved for exact dialogue, cut-boundary, or visual ambiguity. It returns reviewed captions, source utterances, optional raw STT with explicit provenance, nearby dialogue context, and at most 12 frame cells inside one reviewed scene.
+5. The evidence service reuses analyzed frames first. If they are too sparse and a proxy exists, it invokes a fixed FFmpeg extraction internally and atomically caches one contact sheet. The sheet is attached once to the Codex turn as `LocalImageInput`; its path is not copied into the textual prompt.
+6. Full timeline JSON, full raw STT, proxy bytes, and 4K source bytes are never returned to the model.
 
 The server logs each tool duration and a compact result summary, not the full transcript payload.
 
@@ -90,7 +92,9 @@ The raw browser envelope is limited to 16 KB, explicit selection to 24 scenes, a
 
 ## Write path and concurrency
 
-`create_edit` creates revision 1. `apply_edit_operations` requires `expected_revision_id`; a stale caller receives `revision_conflict` rather than silently overwriting a newer edit. A successful operation batch is applied in a single SQLite transaction and creates one new snapshot.
+`create_edit_proposal` validates one to 24 candidate ranges against reviewed scenes and stores an immutable proposal payload with a draft/application status. It does not create an edit revision. The UI can apply all or a selected subset; a proposal cannot be applied twice.
+
+`apply_edit_proposal` converts the selected candidates into source-linked clip operations. `create_edit` creates revision 1. `apply_edit_operations` requires `expected_revision_id`; a stale caller receives `revision_conflict` rather than silently overwriting a newer edit. A successful operation batch creates one new snapshot.
 
 Supported operations are `add_scene`, `trim_clip`, `move_clip`, `remove_clip`, `set_title`, and `set_target_duration`. Ranges are checked against the reviewed scene and source duration. Each clip stores:
 
@@ -109,6 +113,10 @@ Supported operations are `add_scene`, `trim_clip`, `move_clip`, `remove_clip`, `
 - `GET /api/assets` — compact assets.
 - `GET /api/scenes/search` — deterministic scene search.
 - `GET /api/scenes/{scene_id}` — one evidence packet.
+- `GET /api/evidence/contact-sheets/{artifact_id}.jpg` — immutable cached sheet produced by a successful bounded inspection.
+- `POST /api/proposals` — validate and persist a reviewable edit proposal.
+- `GET /api/proposals/{proposal_id}` — read proposal state and candidate ranges.
+- `POST /api/proposals/{proposal_id}/apply` — apply all or selected candidates as a revision.
 - `POST /api/edits` — create an empty draft.
 - `GET /api/edits/{edit_id}` — read edit and revision history.
 - `POST /api/edits/{edit_id}/operations` — optimistic-concurrency mutation.
@@ -138,10 +146,13 @@ Open `http://localhost:8765`. Do not open the generated page with `file://` when
 
 - contracts and registered tool handlers match at startup;
 - all four food-sequence timelines are searchable without loading images into prompts;
+- deep inspection stays inside one reviewed source range, caps transcript and frame evidence, distinguishes raw STT provenance, and caches the contact sheet;
+- each evidence sheet is attached to a Codex session only once unless a new artifact is requested;
+- a planning turn creates a validated proposal but no edit ID, and a confirmed whole or partial application creates the source-linked revision;
 - stale revision writes are rejected;
 - the live contract exposes the plan-first conversational mutation policy;
 - every added clip is traceable to source and reviewed scene coordinates;
-- demo backend completes an end-to-end search → cards → draft revision flow;
+- demo backend completes an end-to-end search → proposal → confirmation → draft revision flow;
 - Codex backend uses structured output and can resume the stored session thread;
 - the Edit Desk supports cancelable SSE, scene cards, semantic actions, and persistent session IDs;
 - Review and Rough Cut contain one shared footage/scene workspace implementation, and revision clips navigate back to their authoritative scene evidence;
@@ -154,5 +165,5 @@ Open `http://localhost:8765`. Do not open the generated page with `file://` when
 - background analysis/render worker and durable job events;
 - FTS5 rebuild/import command for hundreds of assets;
 - proxy/source render approval UI;
-- image-evidence tool with bounded contact-sheet generation;
+- production media-worker isolation for contact-sheet FFmpeg jobs;
 - evaluation fixtures for common edit briefs and model/tool-call regressions.

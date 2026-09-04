@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -25,6 +26,14 @@ def _tokens(value: str) -> set[str]:
 def _short_text(value: str, limit: int = 220) -> str:
     value = " ".join(value.split())
     return value if len(value) <= limit else value[: limit - 1].rstrip() + "…"
+
+
+def _finite_number(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
 
 
 def _reviewed_captions(group: dict[str, Any]) -> tuple[bool, list[dict[str, Any]]]:
@@ -558,7 +567,11 @@ class TimelineCatalog:
             for language, candidates in item.get("transcript_candidates", {}).items():
                 transcript_candidates[str(language)] = [
                     {
-                        key: candidate[key]
+                        key: (
+                            _finite_number(candidate[key])
+                            if key in {"avg_logprob", "no_speech_prob"}
+                            else candidate[key]
+                        )
                         for key in (
                             "text",
                             "start",

@@ -225,6 +225,11 @@ def test_library_sorts_videos_by_capture_time(tmp_path: Path) -> None:
     assert "!item.scene_id || !sceneById(item.scene_id)" in document
     assert "restoreActiveRevision();" in document
     assert "workspace.classList.toggle('is-rough-cut'" in document
+    assert "const renderProposalCard" in document
+    assert "const renderDeepEvidenceCard" in document
+    assert "selected_candidate_ids" in document
+    assert "원시 STT는 미검증 보조 근거" in document
+    assert "재생 구간이 검토된 장면 범위를 벗어났습니다." in document
     assert (output.parent / "media" / "earlier.mp4").is_symlink()
     assert (output.parent / "media" / "earlier.mp4").resolve() == earlier_proxy
     assert manifest["video_count"] == 2
