@@ -4,13 +4,16 @@
 
 ## 골든 문서
 
-프로젝트의 두 주요 단계와 데이터 계약은 아래 문서를 정본으로 사용합니다.
+프로젝트의 세 주요 단계와 제품·데이터 계약은 아래 문서를 정본으로 사용합니다.
 
 1. [Golden 01 — 원본 영상에서 편집 근거까지](docs/golden/01-raw-to-editorial-evidence.md)
 2. [Golden 02 — 편집 근거에서 하이라이트까지](docs/golden/02-editorial-evidence-to-highlight.md)
+3. [Golden 03 — 에이전트와 함께 검토·편집하는 Edit Desk](docs/golden/03-agentic-review-and-edit-desk.md)
 
 기존 조사·설계·파일럿 문서는 배경과 구현 이력으로 유지하되, 파이프라인의
-현재 목표 흐름과 완료 조건이 충돌하면 위 두 문서를 우선합니다.
+현재 목표 흐름과 완료 조건이 충돌하면 위 세 문서를 우선합니다. 원본 근거는
+Golden 01, 편집 품질은 Golden 02, 웹·에이전트 상호작용은 Golden 03이
+소유하며 정확한 런타임 도구와 이벤트 형식은 versioned JSON 계약을 따릅니다.
 
 이 프로젝트의 핵심은 원본 영상을 코덱스가 순차 시청하거나 한 번에 AI에 업로드하는 것이 아니라 다음 파생 자료를 먼저 만드는 것입니다.
 

@@ -4,6 +4,8 @@
 
 입력 정본: [Golden 01 — 원본 영상에서 편집 근거까지](01-raw-to-editorial-evidence.md)
 
+다음 단계: [Golden 03 — 에이전트와 함께 검토·편집하는 Edit Desk](03-agentic-review-and-edit-desk.md)
+
 범위: story day 구성, 후보 생성, 선택, 편집 계획, 자막, 프록시 검토본과 QA
 
 이 문서는 “좋은 화면을 고르고 짧게 이어 붙이는” 작업을 “영상·행동·대화의
