@@ -234,6 +234,29 @@ clips, or render media. After preparation, allocate bounded asset shards to mode
 reviewers, validate and merge every response, finish each story-day audit, and only
 then hand one complete day packet to one independent video editor.
 
+Place model answers at these stable paths:
+
+```text
+<review-root>/<asset-id>/scene-dialogue/review.json
+<review-root>/<asset-id>/summary/video-summary.json
+```
+
+Then use the finisher rather than hand-assembling merge commands:
+
+```bash
+uv run python scripts/finish_golden_v3_batch.py \
+  "$WORKING_MEDIA_ROOT/analysis/golden-v3/days/YYYY-MM-DD/manifest.json" \
+  --review-root "$WORKING_MEDIA_ROOT/analysis/golden-v3-reviews" \
+  --output-root "$WORKING_MEDIA_ROOT/analysis/golden-v3-finished" \
+  --jobs 4
+```
+
+The first run validates and merges scene reviews, audits dialogue preservation and
+visual-moment coverage, then emits summary packets. Assets without a model-authored
+summary stop at `awaiting_summary`. Add only those summaries and rerun the same
+command to validate, merge, and render relative-assets review pages. The finisher
+never authors model content or edits media.
+
 Do not run two batch processes against the same output root. A reasonable local
 starting point is two boundary producers; increase concurrency only after measuring
 storage and Vision/FFmpeg contention.
