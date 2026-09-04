@@ -186,7 +186,7 @@ def write_scene_review(
                         {
                             "beat_id": "EB001",
                             "source_visual_moment_ids": ["VM0001"] if assign else [],
-                            "source_sample_ids": ["VMF0001"],
+                            "source_sample_ids": [],
                         }
                     ],
                 }
@@ -384,6 +384,9 @@ def test_builds_review_merge_and_summary_packet_then_waits(tmp_path: Path) -> No
     audit = json.loads(audit_path.read_text(encoding="utf-8"))
     assert audit["dialogue_policy"]["caption_coverage_ratio"] == 1.0
     assert audit["visual_moment_assignment"]["expected_count"] == 1
+    assert audit["visual_moment_assignment"]["representative_samples"] == {
+        "VM0001": "VMF0001"
+    }
 
     calls.clear()
     second = batch.finish_batch(

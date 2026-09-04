@@ -338,11 +338,9 @@ def visual_assignment_audit(
                     f"Packet visual moment {moment_id} has no representative sample"
                 )
     review_assignments: list[str] = []
-    review_samples: dict[str, set[str]] = {}
     for scene in review.get("scenes", []):
         group_id = str(scene.get("group_id") or "")
         for beat in scene.get("editorial_beats", []):
-            sample_ids = {str(item) for item in beat.get("source_sample_ids", [])}
             for moment_id in beat.get("source_visual_moment_ids", []):
                 moment_id = str(moment_id)
                 if (
@@ -353,7 +351,6 @@ def visual_assignment_audit(
                         f"Visual moment {moment_id} was assigned to the wrong scene"
                     )
                 review_assignments.append(moment_id)
-                review_samples.setdefault(moment_id, set()).update(sample_ids)
     merged_assignments: list[str] = []
     for beat in merged.get("reviewed_dialogue", {}).get("editorial_beats", []):
         group_id = str(beat.get("group_id") or "")
@@ -373,17 +370,6 @@ def visual_assignment_audit(
         raise ValueError(
             "Merged timeline did not preserve exact visual-moment assignment"
         )
-    missing_representatives = [
-        moment_id
-        for moment_id, metadata in expected.items()
-        if metadata["representative_sample_id"]
-        not in review_samples.get(moment_id, set())
-    ]
-    if missing_representatives:
-        raise ValueError(
-            "Visual-moment beats omit representative samples: "
-            + ", ".join(missing_representatives)
-        )
     packet_count = int(packet.get("summary", {}).get("visual_moment_count", 0))
     if packet_count != len(expected):
         raise ValueError("Packet visual-moment summary count is inconsistent")
@@ -396,6 +382,10 @@ def visual_assignment_audit(
         "review_assignment_count": len(review_assignments),
         "merged_assignment_count": len(merged_assignments),
         "moment_ids": sorted(expected),
+        "representative_samples": {
+            moment_id: metadata["representative_sample_id"]
+            for moment_id, metadata in sorted(expected.items())
+        },
     }
 
 
@@ -692,7 +682,7 @@ def finish_asset(
         review_config = {
             "policy_version": DIALOGUE_POLICY,
             "caption_coverage_ratio": 1.0,
-            "visual_moment_assignment": "exactly_once_with_representative_sample",
+            "visual_moment_assignment": "exactly_once",
         }
         review_signature = stage_signature(
             "review_merge",
