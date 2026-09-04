@@ -2482,6 +2482,26 @@ def merge_scene_dialogue_review(
     if not isinstance(result.get("context_groups"), list):
         result["schema_version"] = "phase1-context-reviewed-timeline/v1"
         result["context_groups"] = _timeline_groups(timeline)
+    # Integrated review may promote a visual-moment frame to the canonical scene
+    # representative.  Those frames originate outside Phase 1's sparse sample list,
+    # so retain them as timeline samples before downstream web/library renderers
+    # resolve representative_sample_id.
+    known_sample_ids = {
+        str(sample.get("sample_id", "")) for sample in result.get("samples", [])
+    }
+    for packet_scene in packet["scenes"]:
+        for frame in packet_scene.get("visual_context", {}).get(
+            "candidate_frames", []
+        ):
+            sample_id = str(frame.get("sample_id", ""))
+            if (
+                sample_id
+                and sample_id not in known_sample_ids
+                and frame.get("visual_moment_id")
+            ):
+                result["samples"].append(copy.deepcopy(frame))
+                known_sample_ids.add(sample_id)
+    result["samples"].sort(key=lambda sample: float(sample["time"]))
     reviewed_by_group = {scene["group_id"]: scene for scene in review["scenes"]}
     utterances: list[dict[str, Any]] = []
     captions: list[dict[str, Any]] = []

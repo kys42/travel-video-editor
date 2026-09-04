@@ -894,7 +894,23 @@ def test_visual_moments_are_added_to_group_evidence_and_require_beat_coverage(
         beat = scene["editorial_beats"][0]
         beat["source_visual_moment_ids"] = [moment_id]
         beat["representative_sample_ids"].append(f"{moment_id}-FRAME")
+        scene["scene_understanding"]["representative_sample_id"] = (
+            f"{moment_id}-FRAME"
+        )
     validate_scene_dialogue_review(packet, review)
+
+    review_path = tmp_path / "review.json"
+    output_path = tmp_path / "timeline.dialogue-reviewed.json"
+    review_path.write_text(json.dumps(review), encoding="utf-8")
+    merge_scene_dialogue_review(timeline_path, packet_path, review_path, output_path)
+    merged = json.loads(output_path.read_text(encoding="utf-8"))
+    sample_ids = {sample["sample_id"] for sample in merged["samples"]}
+    assert {"VM0001-FRAME", "VM0002-FRAME"} <= sample_ids
+    render_timeline_web(
+        output_path,
+        tmp_path / "web",
+        asset_mode="relative",
+    )
 
     review["scenes"][0]["editorial_beats"][0]["source_visual_moment_ids"] = []
     with pytest.raises(ValueError, match="exactly cover visual moments"):
