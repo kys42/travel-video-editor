@@ -70,7 +70,8 @@ Return only JSON matching the supplied output schema.
 - tool_calls: calls to exact tool names declared by the contract. arguments_json must contain one valid JSON object.
 - suggestions: zero to four short follow-ups, normally only when done is true.
 - done: false if tool results are required before the answer is reliable.
-- Treat decision_policy.planning as a mandatory conversational gate before durable-action tools. A normal request to make an edit is plan-first; only the explicit bypass and small-active-edit exceptions declared there may mutate in the same turn.
+- Treat decision_policy.planning as a mandatory conversational gate before durable-action tools. A normal request to make an edit produces create_edit_proposal first; only a later confirmation, the explicit bypass, or the small-active-edit exception may create a revision.
+- A contact sheet attached after inspect_scene_range is actual visual evidence for only that declared source range. Ground descriptions in its labeled cells and keep raw STT secondary to reviewed captions.
 
 ## Authoritative Editor Agent Contract
 {agent_contract}
@@ -94,6 +95,7 @@ class CodexBackend:
         self.contract = contract
         self.project_root = project_root.resolve()
         self.model = model
+        self._delivered_image_artifacts: dict[str, set[str]] = {}
         self.developer_instructions = EDITOR_AGENT_INSTRUCTIONS.format(
             agent_contract=contract.prompt_json()
         )
@@ -106,18 +108,30 @@ class CodexBackend:
         context: dict[str, Any],
         observations: list[dict[str, Any]],
     ) -> AgentDecision:
-        from openai_codex import ApprovalMode, AsyncCodex, Sandbox
+        from openai_codex import (
+            ApprovalMode,
+            AsyncCodex,
+            LocalImageInput,
+            Sandbox,
+            TextInput,
+        )
 
         session = self.store.session(session_id)
         turn_payload = {
             "user_message": message,
             "ui_context": context,
-            "tool_observations": observations,
+            "tool_observations": [
+                {key: value for key, value in item.items() if key != "attachments"}
+                for item in observations
+            ],
             "active_edit_id": session.get("active_edit_id"),
+            "active_proposal_id": session.get("active_proposal_id"),
         }
-        prompt = (
-            "Produce the next editor decision for this turn.\n"
-            + json.dumps(turn_payload, ensure_ascii=False, separators=(",", ":"))
+        prompt = "Produce the next editor decision for this turn.\n" + json.dumps(
+            turn_payload,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            allow_nan=False,
         )
         async with AsyncCodex() as codex:
             thread_id = session.get("codex_thread_id")
@@ -133,12 +147,34 @@ class CodexBackend:
             else:
                 thread = await codex.thread_start(ephemeral=False, **common)
                 self.store.update_session(session_id, codex_thread_id=thread.id)
+            delivered = self._delivered_image_artifacts.setdefault(session_id, set())
+            pending_images: list[tuple[str, str]] = []
+            pending_artifacts: set[str] = set()
+            for observation in observations:
+                for attachment in observation.get("attachments", []):
+                    if attachment.get("type") != "local_image":
+                        continue
+                    artifact_id = str(
+                        attachment.get("artifact_id") or attachment.get("path") or ""
+                    )
+                    path = str(attachment.get("path") or "")
+                    if (
+                        artifact_id
+                        and path
+                        and artifact_id not in delivered
+                        and artifact_id not in pending_artifacts
+                    ):
+                        pending_images.append((artifact_id, path))
+                        pending_artifacts.add(artifact_id)
+            run_input = [TextInput(prompt)]
+            run_input.extend(LocalImageInput(path) for _, path in pending_images)
             result = await thread.run(
-                prompt,
+                run_input,
                 output_schema=AGENT_DECISION_SCHEMA,
                 sandbox=Sandbox.read_only,
                 approval_mode=ApprovalMode.deny_all,
             )
+            delivered.update(artifact_id for artifact_id, _ in pending_images)
         if not result.final_response:
             raise RuntimeError("Codex completed without a structured response")
         return AgentDecision.parse(result.final_response)
@@ -149,6 +185,9 @@ class DemoBackend:
 
     name = "demo"
 
+    def __init__(self, store: EditStore) -> None:
+        self.store = store
+
     async def decide(
         self,
         *,
@@ -157,9 +196,79 @@ class DemoBackend:
         context: dict[str, Any],
         observations: list[dict[str, Any]],
     ) -> AgentDecision:
-        del session_id, context
+        del context
         by_tool = {item["tool"]: item for item in observations if item.get("ok")}
-        wants_edit = any(word in message for word in ("만들", "편집", "하이라이트", "초안"))
+        session = self.store.session(session_id)
+        active_proposal_id = session.get("active_proposal_id")
+        if "apply_edit_proposal" in by_tool:
+            applied = by_tool["apply_edit_proposal"]["result"]
+            edit = applied["edit"]
+            if "show_edit_revision" not in by_tool:
+                return AgentDecision(
+                    tool_calls=[
+                        {
+                            "name": "show_edit_revision",
+                            "arguments_json": json.dumps(
+                                {
+                                    "edit_id": edit["edit_id"],
+                                    "revision_id": edit["revision"]["revision_id"],
+                                },
+                                ensure_ascii=False,
+                            ),
+                        }
+                    ]
+                )
+            return AgentDecision(
+                response=(
+                    f"제안에서 선택한 장면 {edit['revision']['clip_count']}개를 "
+                    f"{edit['revision']['timeline_duration']:.1f}초 revision으로 적용했습니다. "
+                    "원본은 변경하지 않았습니다."
+                ),
+                suggestions=["첫 컷을 검토", "선택 근거와 대화 다시 보기"],
+                done=True,
+            )
+        normalized_message = re.sub(r"\s+", " ", message.strip()).strip(".!?~ ")
+        approval = bool(
+            re.fullmatch(
+                r"(?:좋아,?\s*)?"
+                r"(?:(?:이\s+)?제안\s+)?"
+                r"(?:전체\s+적용|그대로\s+(?:적용|진행)|적용|승인(?:해|할게)?)"
+                r"(?:\s*(?:해줘|하자|할게))?",
+                normalized_message,
+            )
+        )
+        if active_proposal_id and approval:
+            if "get_edit_proposal" not in by_tool:
+                return AgentDecision(
+                    tool_calls=[
+                        {
+                            "name": "get_edit_proposal",
+                            "arguments_json": json.dumps(
+                                {"proposal_id": active_proposal_id}, ensure_ascii=False
+                            ),
+                        }
+                    ]
+                )
+            if "apply_edit_proposal" not in by_tool:
+                return AgentDecision(
+                    tool_calls=[
+                        {
+                            "name": "apply_edit_proposal",
+                            "arguments_json": json.dumps(
+                                {"proposal_id": active_proposal_id}, ensure_ascii=False
+                            ),
+                        }
+                    ]
+                )
+        wants_edit = any(
+            word in message for word in ("만들", "편집해", "초안", "구성해", "이어 붙")
+        )
+        wants_deep = any(
+            word in message for word in ("자세히", "딥", "원문", "이미지 시트", "촘촘")
+        )
+        immediate = wants_edit and any(
+            word in message for word in ("바로", "확인 생략", "묻지 말고")
+        )
         duration_match = re.search(r"(\d{1,4})\s*초", message)
         requested_duration = float(duration_match.group(1)) if duration_match else None
         if "search_scenes" not in by_tool:
@@ -181,6 +290,33 @@ class DemoBackend:
             for item in scenes[:6]
         ]
         target_duration = requested_duration or max(5.0, sum(natural_clip_durations))
+        if wants_deep and scene_ids and "inspect_scene_range" not in by_tool:
+            return AgentDecision(
+                tool_calls=[
+                    {
+                        "name": "inspect_scene_range",
+                        "arguments_json": json.dumps(
+                            {
+                                "scene_id": scene_ids[0],
+                                "visual_mode": "auto",
+                                "frame_count": 8,
+                                "include_raw_stt": True,
+                                "context_seconds": 4,
+                            },
+                            ensure_ascii=False,
+                        ),
+                    }
+                ]
+            )
+        if wants_deep and not wants_edit:
+            return AgentDecision(
+                response=(
+                    "데모 모드에서 첫 후보의 제한된 구간 증거를 열었습니다. "
+                    "검토 자막과 원시 STT는 출처를 구분해 표시되며 실제 의미 판단은 Codex SDK에서 수행됩니다."
+                ),
+                suggestions=["이 장면을 편집 후보로 구성", "다른 후보도 자세히 보기"],
+                done=True,
+            )
         if not wants_edit:
             return AgentDecision(
                 response=(
@@ -195,36 +331,17 @@ class DemoBackend:
                             ensure_ascii=False,
                         ),
                     }
-                ] if scene_ids else [],
-                suggestions=["이 장면들로 하이라이트 구성 제안", "대화가 있는 장면만 보기"],
+                ]
+                if scene_ids
+                else [],
+                suggestions=[
+                    "이 장면들로 하이라이트 구성 제안",
+                    "대화가 있는 장면만 보기",
+                ],
                 done=True,
             )
-        if "create_edit" not in by_tool:
-            return AgentDecision(
-                tool_calls=[
-                    {
-                        "name": "show_scene_refs",
-                        "arguments_json": json.dumps(
-                            {"scene_ids": scene_ids, "title": "초안 후보"},
-                            ensure_ascii=False,
-                        ),
-                    },
-                    {
-                        "name": "create_edit",
-                        "arguments_json": json.dumps(
-                            {
-                                "title": "여행 하이라이트 초안",
-                                "brief": message,
-                                "target_duration": target_duration,
-                            },
-                            ensure_ascii=False,
-                        ),
-                    },
-                ]
-            )
-        created = by_tool["create_edit"]["result"]
-        if "apply_edit_operations" not in by_tool:
-            operations = []
+        if "create_edit_proposal" not in by_tool:
+            candidates = []
             requested_clip_duration = (
                 max(3.0, min(9.0, target_duration / max(1, len(scenes[:6]))))
                 if requested_duration is not None
@@ -233,54 +350,81 @@ class DemoBackend:
             for index, item in enumerate(scenes[:6]):
                 source_in = float(item["source_in"])
                 clip_duration = requested_clip_duration or natural_clip_durations[index]
-                operations.append(
+                candidates.append(
                     {
-                        "op": "add_scene",
                         "scene_id": item["scene_id"],
                         "source_in": source_in,
                         "source_out": min(
                             float(item["source_out"]), source_in + clip_duration
                         ),
                         "label": item["title"],
-                        "reason": "검토된 하이라이트와 특이 포인트를 우선한 데모 선택",
+                        "role": "chronological_highlight",
+                        "reason": "검토된 하이라이트와 특이 포인트를 우선한 데모 후보",
                     }
                 )
             return AgentDecision(
                 tool_calls=[
                     {
-                        "name": "apply_edit_operations",
+                        "name": "create_edit_proposal",
                         "arguments_json": json.dumps(
                             {
-                                "edit_id": created["edit_id"],
-                                "expected_revision_id": created["head_revision_id"],
-                                "summary": "검토된 하이라이트 장면을 시간순으로 추가",
-                                "operations": operations,
+                                "title": "여행 하이라이트 제안",
+                                "objective": message,
+                                "target_duration": target_duration,
+                                "duration_rationale": "후보 장면의 자연스러운 길이 합계",
+                                "candidates": candidates,
                             },
+                            ensure_ascii=False,
+                        ),
+                    },
+                ]
+            )
+        proposal = by_tool["create_edit_proposal"]["result"]
+        if immediate and "apply_edit_proposal" not in by_tool:
+            return AgentDecision(
+                tool_calls=[
+                    {
+                        "name": "apply_edit_proposal",
+                        "arguments_json": json.dumps(
+                            {"proposal_id": proposal["proposal_id"]},
                             ensure_ascii=False,
                         ),
                     }
                 ]
             )
-        edited = by_tool["apply_edit_operations"]["result"]
-        revision = edited["revision"]
+        if immediate:
+            edited = by_tool["apply_edit_proposal"]["result"]["edit"]
+            revision = edited["revision"]
+            if "show_edit_revision" not in by_tool:
+                return AgentDecision(
+                    tool_calls=[
+                        {
+                            "name": "show_edit_revision",
+                            "arguments_json": json.dumps(
+                                {
+                                    "edit_id": edited["edit_id"],
+                                    "revision_id": revision["revision_id"],
+                                },
+                                ensure_ascii=False,
+                            ),
+                        }
+                    ]
+                )
+            return AgentDecision(
+                response=(
+                    f"즉시 실행 요청에 따라 제안의 장면 {revision['clip_count']}개를 "
+                    f"{revision['timeline_duration']:.1f}초 revision으로 적용했습니다."
+                ),
+                suggestions=["첫 컷을 검토", "다른 구성 제안"],
+                done=True,
+            )
         return AgentDecision(
             response=(
-                f"검토된 장면 {revision['clip_count']}개로 {revision['timeline_duration']:.1f}초 초안을 만들었습니다. "
-                "원본은 건드리지 않았고, 각 컷은 원본 타임코드에 연결된 새 revision입니다."
+                f"검토된 장면 {len(proposal['candidates'])}개로 "
+                f"약 {proposal['estimated_duration']:.1f}초 편집 제안을 만들었습니다. "
+                "아직 revision은 생성하지 않았습니다. 카드에서 장면을 빼거나 그대로 적용할 수 있습니다."
             ),
-            tool_calls=[
-                {
-                    "name": "show_edit_revision",
-                    "arguments_json": json.dumps(
-                        {
-                            "edit_id": edited["edit_id"],
-                            "revision_id": revision["revision_id"],
-                        },
-                        ensure_ascii=False,
-                    ),
-                }
-            ],
-            suggestions=["주문 장면은 줄이고 반응을 더 길게", "첫 장면부터 소스 모니터로 재생"],
+            suggestions=["이 제안 전체 적용", "후보 하나를 빼고 다시 제안"],
             done=True,
         )
 
@@ -330,10 +474,24 @@ class AgentOrchestrator:
                         "ok": True,
                         "result": result.for_model(),
                     }
+                    if result.local_image_paths:
+                        observation["attachments"] = [
+                            {
+                                "type": "local_image",
+                                "artifact_id": result.payload.get("evidence_id"),
+                                "path": path,
+                            }
+                            for path in result.local_image_paths
+                        ]
                     observations.append(observation)
                     if result.kind in {"card", "action"}:
                         yield AgentEvent(result.kind, result.payload)
-                except (KeyError, ValueError, RevisionConflictError) as exc:
+                except (
+                    KeyError,
+                    PermissionError,
+                    ValueError,
+                    RevisionConflictError,
+                ) as exc:
                     observations.append(
                         {
                             "tool": name,
@@ -359,7 +517,9 @@ class AgentOrchestrator:
                 )
                 return
             if not decision.tool_calls:
-                raise RuntimeError("agent returned neither a final response nor tool calls")
+                raise RuntimeError(
+                    "agent returned neither a final response nor tool calls"
+                )
         raise RuntimeError(f"agent exceeded the {self.max_steps}-step tool limit")
 
 

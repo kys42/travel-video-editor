@@ -1,3 +1,88 @@
+## 2026-09-04 19:00 KST - 에이전트 편집 제안과 심층 장면 증거
+
+### 작업 내용
+
+- 앱 서버 범위는 보류하고 기존 로컬 Editor Service와 Codex SDK adapter 안에서
+  에이전트가 조사·계획·승인·revision 생성까지 수행하는 기능을 구현했다.
+- 새 편집이나 큰 구조 변경은 바로 revision을 만들지 않고, 실제 장면 범위와
+  선택 이유가 담긴 `video-edit-proposal/v1`을 먼저 보여주게 했다.
+- 필요한 장면만 기존 분석 프레임 또는 프록시 contact sheet, 검토 자막, 원문
+  utterance와 선택적 KO/EN raw STT로 더 깊게 읽는 도구를 추가했다.
+- 후보 체크 해제와 부분 적용, 기존 edit의 전체 교체/뒤에 추가, 정확한 source 구간
+  재생을 Edit Desk의 proposal card와 revision panel에 연결했다.
+
+### 주요 변경사항
+
+- `src/travel_video/editor/evidence.py`: 한 reviewed scene 안에서 최대 180초·12프레임,
+  raw STT 80개로 제한된 심층 evidence와 원자적 contact-sheet cache를 구현했다.
+- `src/travel_video/editor/store.py`: session-owned proposal, 부분 적용, 저장 순서 보존,
+  `replace_all`/`append`, optimistic revision과 단일 SQLite transaction을 구현했다.
+- `src/travel_video/editor/contracts.py`, `docs/contracts/editor-agent.v1.json`: strict tool
+  input 검증과 계약 revision 6의 proposal/evidence 도구·정책을 정본화했다.
+- `src/travel_video/editor/agent.py`: Codex `LocalImageInput` 전달, artifact 중복 억제,
+  proposal-first prompt와 fail-closed demo 승인을 추가했다.
+- `src/travel_video/editor/server.py`: proposal CRUD/apply, contact sheet endpoint,
+  finite-number REST 모델과 session ownership 검증을 추가했다.
+- `src/travel_video/templates/library.html`: 선택 가능한 proposal, 심층 자막·이미지 근거,
+  선택 구간 source monitor 재생과 적용 결과 revision 갱신을 추가했다.
+- Golden 03, 기술 문서, agent guide와 실제 에이전트 QA 스크립트를 계약 revision 6에
+  맞췄다.
+
+### 중요 결정사항
+
+- 모델에 전체 영상이나 임의 FFmpeg 권한을 주지 않는다. 서버가 검증한 한 scene의
+  제한된 구간만 고정 FFmpeg recipe로 contact sheet로 만들고 이미지 한 장만 보낸다.
+- 검토 자막은 권위 있는 표시 대화이고 raw STT는 `미검토 후보` provenance를 유지한
+  보조 근거다. 각 단계의 데이터는 덮어쓰지 않고 재사용 가능하게 남긴다.
+- 30·60·90초 같은 고정 선택지 대신 에이전트가 실제 후보 장면과 대화 완결성에서
+  목표 길이와 순서를 제안한다.
+- proposal의 후보 ID는 subset membership일 뿐 순서 명령이 아니다. 최종 컷은 저장된
+  proposal 순서를 보존하며, 기존 edit 전체 교체는 old clip별 remove로 확장하지 않고
+  snapshot의 clip sequence를 원자적으로 바꾼다.
+- proposal 조회·적용은 이를 만든 같은 chat session에 한정한다. 카드 버튼 적용도
+  session ID를 서버에 보내며 교차 세션은 거부한다.
+
+### 문제 해결
+
+- 문제: 직접 REST 입력의 `NaN`이 범위 비교를 우회해 유효한 revision으로 저장될 수
+  있었다.
+- 해결: Pydantic candidate 모델과 store 양쪽에서 finite number를 검사하고 revision·
+  proposal JSON을 `allow_nan=False`로 저장하며 validation error도 strict JSON으로
+  반환한다.
+- 문제: demo 승인 키워드가 “적용하지 마/적용은 말고”를 승인으로 오인했다.
+- 해결: 데모는 정규화한 전체 문장이 명시적 승인 패턴과 정확히 맞을 때만 허용해
+  부정·보류·선행 수정 표현을 fail closed한다.
+- 문제: 기존 edit proposal이 후보를 뒤에 추가만 했고, 100개 기존 clip 전체 교체는
+  operation 제한을 넘었다.
+- 해결: `replace_all`과 `append` 의미를 계약에 넣고, replace는 후보 sequence로 직접
+  교체해 기존 clip 수와 무관하게 한 revision으로 처리한다.
+- 독립 리뷰에서 비유한 좌표, 교차 세션 적용, 부분 선택 순서 반전, legacy proposal
+  기본값 불일치, 이미지 중복 첨부와 캐시 metadata 누락을 찾아 모두 회귀 테스트로
+  고정했다.
+
+### 테스트 및 검증
+
+- 전체 `pytest`: 98 passed (기존 Starlette/httpx deprecation warning 2개)
+- Ruff, `git diff --check`, agent contract JSON, 인라인 JavaScript 문법: 통과
+- 실제 외장 SSD 프록시의 8초 범위에서 6프레임 contact sheet 생성·cache hit 확인
+- 실제 API에서 deep evidence → proposal → 후보 부분 적용 → revision 생성 확인
+- 1280×720 데스크톱 브라우저에서 proposal 선택, 정확 구간 재생, 심층 evidence,
+  3패널 레이아웃과 콘솔 오류 없음 확인
+
+### 다음 단계
+
+- [ ] Golden 03 PR #14 병합 후 기능 PR #17의 base를 `main`으로 변경
+- [ ] 실제 Codex backend로 대표 시나리오 QA 스크립트 실행 및 응답 품질 평가
+- [ ] revision을 Video Editor 렌더 plan으로 넘기는 렌더 job·progress·artifact 계약 설계
+- [ ] 장기 실행 FFmpeg를 별도 media worker로 격리하는 운영 단계 구현
+
+### 관련 작업
+
+- GitHub Issue: #16
+- GitHub PR: #17 (stacked on #14)
+
+---
+
 ## 2026-09-04 13:45 KST - 여행 영상 분석·편집 파이프라인 정식화
 
 ### 작업 내용

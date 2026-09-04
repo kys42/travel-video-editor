@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
 from typing import Any, Literal
 
-ToolCategory = Literal["data_query", "durable_action", "display", "ui_action"]
+ToolCategory = Literal[
+    "data_query", "proposal_action", "durable_action", "display", "ui_action"
+]
 AGENT_CONTRACT_SCHEMA = "editor-agent-contract/v1"
 SSE_EVENT_TYPES = frozenset(
     {"text", "card", "action", "status", "suggestions", "done", "error"}
@@ -33,6 +36,76 @@ class ToolDefinition:
             "approval": self.approval,
             "parameters": self.input_schema,
         }
+
+    def validate_input(self, value: Any) -> None:
+        _validate_schema_value(self.input_schema, value, path="$arguments")
+
+
+def _validate_schema_value(schema: dict[str, Any], value: Any, *, path: str) -> None:
+    expected = schema.get("type")
+    matches = {
+        "object": lambda item: isinstance(item, dict),
+        "array": lambda item: isinstance(item, list),
+        "string": lambda item: isinstance(item, str),
+        "integer": lambda item: isinstance(item, int) and not isinstance(item, bool),
+        "number": lambda item: (
+            isinstance(item, (int, float)) and not isinstance(item, bool)
+        ),
+        "boolean": lambda item: isinstance(item, bool),
+    }
+    if expected in matches and not matches[expected](value):
+        raise ValueError(f"{path} must be {expected}")
+    if "enum" in schema and value not in schema["enum"]:
+        allowed = ", ".join(str(item) for item in schema["enum"])
+        raise ValueError(f"{path} must be one of: {allowed}")
+
+    if expected == "object":
+        properties = schema.get("properties") or {}
+        required = schema.get("required") or []
+        missing = [name for name in required if name not in value]
+        if missing:
+            raise ValueError(f"{path} is missing required fields: {', '.join(missing)}")
+        if schema.get("additionalProperties") is False:
+            unknown = sorted(set(value) - set(properties))
+            if unknown:
+                raise ValueError(
+                    f"{path} contains unknown fields: {', '.join(unknown)}"
+                )
+        for name, item in value.items():
+            child = properties.get(name)
+            if isinstance(child, dict):
+                _validate_schema_value(child, item, path=f"{path}.{name}")
+    elif expected == "array":
+        if "minItems" in schema and len(value) < int(schema["minItems"]):
+            raise ValueError(f"{path} must contain at least {schema['minItems']} items")
+        if "maxItems" in schema and len(value) > int(schema["maxItems"]):
+            raise ValueError(f"{path} must contain at most {schema['maxItems']} items")
+        child = schema.get("items")
+        if isinstance(child, dict):
+            for index, item in enumerate(value):
+                _validate_schema_value(child, item, path=f"{path}[{index}]")
+    elif expected == "string":
+        if "minLength" in schema and len(value) < int(schema["minLength"]):
+            raise ValueError(
+                f"{path} must contain at least {schema['minLength']} characters"
+            )
+        if "maxLength" in schema and len(value) > int(schema["maxLength"]):
+            raise ValueError(
+                f"{path} must contain at most {schema['maxLength']} characters"
+            )
+    elif expected in {"integer", "number"}:
+        if not math.isfinite(float(value)):
+            raise ValueError(f"{path} must be finite")
+        if "minimum" in schema and value < schema["minimum"]:
+            raise ValueError(f"{path} must be at least {schema['minimum']}")
+        if "maximum" in schema and value > schema["maximum"]:
+            raise ValueError(f"{path} must be at most {schema['maximum']}")
+        if "exclusiveMinimum" in schema and value <= schema["exclusiveMinimum"]:
+            raise ValueError(
+                f"{path} must be greater than {schema['exclusiveMinimum']}"
+            )
+        if "exclusiveMaximum" in schema and value >= schema["exclusiveMaximum"]:
+            raise ValueError(f"{path} must be less than {schema['exclusiveMaximum']}")
 
 
 class EditorAgentContract:
@@ -97,6 +170,11 @@ class EditorAgentContract:
             "project_day_rollup_count",
             "project_asset_index_count",
             "nearby_asset_count",
+            "evidence_range_seconds",
+            "evidence_frame_count",
+            "evidence_context_seconds",
+            "evidence_text_characters",
+            "evidence_raw_candidate_count",
         }
         limits = self.context_policy.get("limits")
         if not isinstance(limits, dict) or required_limits - limits.keys():
@@ -138,7 +216,13 @@ class EditorAgentContract:
         if raw.get("schema_version") != AGENT_CONTRACT_SCHEMA:
             raise ValueError(f"unsupported agent contract: {raw.get('schema_version')}")
         definitions = []
-        valid_categories = {"data_query", "durable_action", "display", "ui_action"}
+        valid_categories = {
+            "data_query",
+            "proposal_action",
+            "durable_action",
+            "display",
+            "ui_action",
+        }
         for item in raw.get("tools", []):
             category = item.get("category")
             if category not in valid_categories:

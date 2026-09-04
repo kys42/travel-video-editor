@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import asyncio
 import json
+import sys
+import types
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
+from travel_video.editor.agent import CodexBackend
 from travel_video.editor.catalog import TimelineCatalog
 from travel_video.editor.contracts import (
     SSE_EVENT_TYPES,
@@ -14,6 +19,7 @@ from travel_video.editor.contracts import (
 )
 from travel_video.editor.server import create_editor_app
 from travel_video.editor.store import EditStore, RevisionConflictError
+from travel_video.editor.evidence import SceneEvidenceService
 from travel_video.editor.tools import ToolGateway
 
 
@@ -39,7 +45,7 @@ def _fixture_project(tmp_path: Path) -> Path:
     ):
         asset_id = f"asset-{index}"
         frame = tmp_path / f"frame-{index}.jpg"
-        frame.write_bytes(b"frame")
+        Image.new("RGB", (320, 180), (40 * index, 80, 110)).save(frame)
         timeline = {
             "schema_version": "phase1-video-summarized-timeline/v1",
             "asset_id": asset_id,
@@ -133,21 +139,41 @@ def _fixture_project(tmp_path: Path) -> Path:
     return manifest
 
 
+def _sse_events(text: str) -> list[tuple[str, dict[str, object]]]:
+    event_name = ""
+    events: list[tuple[str, dict[str, object]]] = []
+    for line in text.splitlines():
+        if line.startswith("event: "):
+            event_name = line.removeprefix("event: ")
+        elif line.startswith("data: "):
+            events.append((event_name, json.loads(line.removeprefix("data: "))))
+    return events
+
+
 def test_contract_matches_gateway_and_event_schema(tmp_path: Path) -> None:
     manifest = _fixture_project(tmp_path)
     catalog = TimelineCatalog(manifest)
     store = EditStore(tmp_path / "state.sqlite3")
     contract = EditorAgentContract.load()
-    gateway = ToolGateway(catalog, store, contract)
+    gateway = ToolGateway(
+        catalog,
+        store,
+        contract,
+        SceneEvidenceService(catalog, tmp_path / "evidence"),
+    )
 
     assert contract.contract_id == "travel-video-editor/editor-agent/v1"
-    assert contract.revision == 4
-    assert len(contract.capabilities) == 6
+    assert contract.revision == 6
+    assert len(contract.capabilities) == 7
     assert len(contract.boundaries) == 4
     assert gateway.contract.names == {
         "list_assets",
         "search_scenes",
         "get_scene_evidence",
+        "inspect_scene_range",
+        "create_edit_proposal",
+        "get_edit_proposal",
+        "apply_edit_proposal",
         "create_edit",
         "get_edit",
         "apply_edit_operations",
@@ -159,7 +185,8 @@ def test_contract_matches_gateway_and_event_schema(tmp_path: Path) -> None:
     }
     planning = contract.decision_policy["planning"]
     assert any(
-        "Do not call create_edit or apply_edit_operations" in rule for rule in planning
+        "Do not call create_edit, apply_edit_proposal, or apply_edit_operations" in rule
+        for rule in planning
     )
     assert any("explicitly says to execute immediately" in rule for rule in planning)
     duration_policy = contract.decision_policy["duration_and_suggestions"]
@@ -169,6 +196,16 @@ def test_contract_matches_gateway_and_event_schema(tmp_path: Path) -> None:
     assert (
         contract.get("apply_edit_operations").approval == "chat_plan_for_major_revision"
     )
+    assert contract.get("create_edit_proposal").category == "proposal_action"
+    assert (
+        contract.get("apply_edit_proposal").approval == "chat_confirmation_of_proposal"
+    )
+    assert set(contract.get("play_source_range").input_schema["properties"]) >= {
+        "scene_id",
+        "source_in",
+        "source_out",
+    }
+    assert contract.context_policy["limits"]["evidence_frame_count"] == 12
     assert '"planning"' in contract.prompt_json()
     event_contract = json.loads(
         (project_root() / "docs/contracts/agent-events.v1.schema.json").read_text()
@@ -177,6 +214,23 @@ def test_contract_matches_gateway_and_event_schema(tmp_path: Path) -> None:
         item["properties"]["event"]["const"] for item in event_contract["oneOf"]
     }
     assert contract_events == SSE_EVENT_TYPES
+
+    with pytest.raises(ValueError, match="unknown fields"):
+        gateway.invoke(
+            "inspect_scene_range",
+            {"scene_id": "asset-1:G001", "arbitrary_path": "/readonly/source"},
+            "session-invalid-tool",
+        )
+    with pytest.raises(ValueError, match=r"\$arguments\.candidates must be array"):
+        gateway.invoke(
+            "create_edit_proposal",
+            {
+                "title": "invalid",
+                "objective": "invalid",
+                "candidates": {"scene_id": "asset-1:G001"},
+            },
+            "session-invalid-tool",
+        )
 
 
 def test_catalog_search_is_compact_and_evidence_is_on_demand(tmp_path: Path) -> None:
@@ -193,6 +247,529 @@ def test_catalog_search_is_compact_and_evidence_is_on_demand(tmp_path: Path) -> 
     assert evidence["segments"][0]["actions"] == ["대화", "반응"]
     assert evidence["segments"][0]["transcript_candidates"] == {
         "ko": [{"text": "연어 타코 하나 주세요."}]
+    }
+
+
+def test_deep_evidence_builds_bounded_sheet_and_separates_raw_stt(
+    tmp_path: Path,
+) -> None:
+    manifest_path = _fixture_project(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    first_timeline = Path(manifest["timelines"][0])
+    timeline = json.loads(first_timeline.read_text(encoding="utf-8"))
+    timeline["segments"][0]["transcript_candidates"]["ko"][0]["avg_logprob"] = float(
+        "nan"
+    )
+    first_timeline.write_text(json.dumps(timeline), encoding="utf-8")
+    catalog = TimelineCatalog(manifest_path)
+    service = SceneEvidenceService(catalog, tmp_path / "evidence-cache")
+
+    inspection = service.inspect(
+        scene_id="asset-1:G001",
+        source_in=1,
+        source_out=8,
+        visual_mode="existing",
+        frame_count=8,
+        include_raw_stt=True,
+        context_seconds=3,
+    )
+
+    assert inspection.card["type"] == "scene_deep_evidence"
+    assert inspection.card["visual"]["source"] == "analysis_frames"
+    assert inspection.card["visual"]["frame_count"] == 1
+    assert inspection.card["transcript"]["raw_stt_candidates"][0] == {
+        "segment_id": "S001",
+        "source_in": 0.0,
+        "source_out": 12.0,
+        "language": "ko",
+        "text": "연어 타코 하나 주세요.",
+        "relation": "selected",
+        "avg_logprob": None,
+        "no_speech_prob": None,
+        "provenance": "raw_asr_candidate_unverified",
+    }
+    json.dumps(inspection.card, allow_nan=False)
+    scene_packet = catalog.scene_evidence("asset-1:G001")
+    assert (
+        scene_packet["segments"][0]["transcript_candidates"]["ko"][0]["avg_logprob"]
+        is None
+    )
+    json.dumps(scene_packet, allow_nan=False)
+    assert len(inspection.local_image_paths) == 1
+    sheet = Path(inspection.local_image_paths[0])
+    assert sheet.is_file()
+    assert service.contact_sheet_path(inspection.card["evidence_id"]) == sheet
+    with Image.open(sheet) as image:
+        assert image.width == 320
+        assert image.height == 214
+
+    cached = service.inspect(
+        scene_id="asset-1:G001",
+        source_in=1,
+        source_out=8,
+        visual_mode="existing",
+        frame_count=8,
+        include_raw_stt=False,
+    )
+    assert cached.card["visual"]["cached"] is True
+    with pytest.raises(ValueError, match="inside the reviewed scene"):
+        service.inspect(scene_id="asset-1:G001", source_in=0, source_out=13)
+    with pytest.raises(KeyError, match="artifact not found"):
+        service.contact_sheet_path("../../readonly/source")
+
+
+def test_deep_evidence_extracts_proxy_frames_once_and_repairs_partial_cache(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest_path = _fixture_project(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    proxy_root = tmp_path / "proxies"
+    proxy_root.mkdir()
+    proxy = proxy_root / "clip-1.mp4"
+    proxy.write_bytes(b"proxy-fixture")
+    manifest["proxy_root"] = str(proxy_root)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    catalog = TimelineCatalog(manifest_path)
+    service = SceneEvidenceService(catalog, tmp_path / "evidence-cache")
+    calls = 0
+
+    def fake_extract(
+        _: Path, directory: Path, start: float, end: float, frame_count: int
+    ) -> list[dict[str, object]]:
+        nonlocal calls
+        calls += 1
+        rows: list[dict[str, object]] = []
+        for index in range(frame_count):
+            path = directory / f"proxy-{index}.jpg"
+            Image.new("RGB", (480, 270), (30 + index * 10, 60, 90)).save(path)
+            rows.append(
+                {
+                    "path": str(path),
+                    "source_time": start + (index + 0.5) * (end - start) / frame_count,
+                    "sample_id": None,
+                }
+            )
+        return rows
+
+    monkeypatch.setattr(service, "_extract_proxy_frames", fake_extract)
+    first = service.inspect(
+        scene_id="asset-1:G001",
+        source_in=1,
+        source_out=9,
+        visual_mode="proxy",
+        frame_count=6,
+    )
+
+    assert first.card["visual"]["source"] == "proxy"
+    assert first.card["visual"]["frame_count"] == 6
+    assert first.card["visual"]["cached"] is False
+    assert calls == 1
+    artifact_id = first.card["evidence_id"]
+    sheet = service.contact_sheet_path(artifact_id)
+    sheet.unlink()
+
+    repaired = service.inspect(
+        scene_id="asset-1:G001",
+        source_in=1,
+        source_out=9,
+        visual_mode="proxy",
+        frame_count=6,
+    )
+    cached = service.inspect(
+        scene_id="asset-1:G001",
+        source_in=1,
+        source_out=9,
+        visual_mode="proxy",
+        frame_count=6,
+    )
+
+    assert repaired.card["visual"]["cached"] is False
+    assert cached.card["visual"]["cached"] is True
+    assert calls == 2
+    assert service.contact_sheet_path(artifact_id).is_file()
+
+
+def test_deep_evidence_auto_falls_back_when_proxy_extraction_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest_path = _fixture_project(tmp_path)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    proxy_root = tmp_path / "proxies"
+    proxy_root.mkdir()
+    (proxy_root / "clip-1.mp4").write_bytes(b"broken proxy")
+    manifest["proxy_root"] = str(proxy_root)
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    service = SceneEvidenceService(
+        TimelineCatalog(manifest_path), tmp_path / "evidence-cache"
+    )
+
+    def fail_extract(*_: object, **__: object) -> list[dict[str, object]]:
+        raise RuntimeError("ffmpeg failed with a private local path")
+
+    monkeypatch.setattr(service, "_extract_proxy_frames", fail_extract)
+    automatic = service.inspect(
+        scene_id="asset-1:G001",
+        source_in=1,
+        source_out=9,
+        visual_mode="auto",
+        frame_count=6,
+    )
+
+    assert automatic.card["visual"]["status"] == "ready"
+    assert automatic.card["visual"]["source"] == "analysis_frames"
+    with pytest.raises(ValueError, match="proxy contact-sheet extraction failed"):
+        service.inspect(
+            scene_id="asset-1:G001",
+            source_in=1,
+            source_out=9,
+            visual_mode="proxy",
+            frame_count=6,
+        )
+
+
+def test_existing_frame_cache_key_includes_timeline_metadata(tmp_path: Path) -> None:
+    frame = tmp_path / "frame.jpg"
+    Image.new("RGB", (16, 9), "navy").save(frame)
+    first = [{"path": str(frame), "source_time": 1.0, "sample_id": "F001"}]
+    retimed = [{"path": str(frame), "source_time": 2.0, "sample_id": "F002"}]
+
+    assert SceneEvidenceService._existing_key(
+        first, "asset:G001", 0, 3
+    ) != SceneEvidenceService._existing_key(retimed, "asset:G001", 0, 3)
+
+
+def test_proposal_is_reviewable_then_partially_applies_as_revision(
+    tmp_path: Path,
+) -> None:
+    catalog = TimelineCatalog(_fixture_project(tmp_path))
+    store = EditStore(tmp_path / "state.sqlite3")
+    proposal = store.create_proposal(
+        catalog=catalog,
+        session_id="session-proposal",
+        title="음식과 반응 제안",
+        objective="주문 다음에 웃긴 반응을 배치",
+        target_duration=14,
+        duration_rationale="대화와 반응을 닫는 실제 후보 길이",
+        candidates=[
+            {
+                "scene_id": "asset-1:G001",
+                "source_in": 1,
+                "source_out": 7,
+                "role": "setup",
+                "reason": "주문 대화를 보존",
+            },
+            {
+                "scene_id": "asset-2:G001",
+                "source_in": 2,
+                "source_out": 10,
+                "role": "payoff",
+                "reason": "웃긴 반응을 보존",
+            },
+        ],
+        created_by="test",
+    )
+
+    assert proposal["status"] == "draft"
+    assert proposal["estimated_duration"] == 14
+    assert store.session("session-proposal")["active_edit_id"] is None
+    selected = proposal["candidates"][1]["candidate_id"]
+    result = store.apply_proposal(
+        catalog=catalog,
+        proposal_id=proposal["proposal_id"],
+        selected_candidate_ids=[selected],
+        expected_session_id="session-proposal",
+        created_by="test",
+    )
+
+    assert result["proposal"]["status"] == "partially_applied"
+    assert result["proposal"]["selected_candidate_ids"] == [selected]
+    assert result["edit"]["revision"]["sequence"] == 2
+    assert result["edit"]["revision"]["clip_count"] == 1
+    assert (
+        result["edit"]["revision"]["plan"]["clips"][0]["metadata"]["scene_id"]
+        == "asset-2:G001"
+    )
+    with pytest.raises(ValueError, match="must be draft"):
+        store.apply_proposal(
+            catalog=catalog,
+            proposal_id=proposal["proposal_id"],
+            selected_candidate_ids=None,
+            expected_session_id="session-proposal",
+            created_by="test",
+        )
+
+
+def test_new_edit_proposal_application_rolls_back_as_one_transaction(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    catalog = TimelineCatalog(_fixture_project(tmp_path))
+    store = EditStore(tmp_path / "state.sqlite3")
+    proposal = store.create_proposal(
+        catalog=catalog,
+        session_id="session-rollback",
+        title="원자적 적용 테스트",
+        objective="중간 실패가 빈 edit을 남기지 않아야 함",
+        candidates=[
+            {
+                "scene_id": "asset-1:G001",
+                "source_in": 1,
+                "source_out": 5,
+                "role": "setup",
+                "reason": "트랜잭션 검증",
+            }
+        ],
+        created_by="test",
+    )
+
+    def fail_after_edit_insert(*_: object, **__: object) -> str:
+        raise RuntimeError("synthetic apply failure")
+
+    monkeypatch.setattr(store, "_apply_operations", fail_after_edit_insert)
+    with pytest.raises(RuntimeError, match="synthetic"):
+        store.apply_proposal(
+            catalog=catalog,
+            proposal_id=proposal["proposal_id"],
+            selected_candidate_ids=None,
+            expected_session_id="session-rollback",
+            created_by="test",
+        )
+
+    assert store.get_proposal(proposal["proposal_id"])["status"] == "draft"
+    assert store.session("session-rollback")["active_edit_id"] is None
+    with store._connection() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM edits").fetchone()[0] == 0
+
+
+def test_store_rejects_non_finite_source_coordinates(tmp_path: Path) -> None:
+    catalog = TimelineCatalog(_fixture_project(tmp_path))
+    store = EditStore(tmp_path / "state.sqlite3")
+
+    with pytest.raises(ValueError, match="source_in must be a finite number"):
+        store.create_proposal(
+            catalog=catalog,
+            session_id="session-finite",
+            title="잘못된 좌표",
+            objective="비유한 수를 저장하지 않음",
+            candidates=[
+                {
+                    "scene_id": "asset-1:G001",
+                    "source_in": float("nan"),
+                    "source_out": 5,
+                    "role": "setup",
+                    "reason": "좌표 검증",
+                }
+            ],
+            created_by="test",
+        )
+
+    edit = store.create_edit(title="좌표 검증", brief="operation도 검증")
+    with pytest.raises(ValueError, match="source_out must be a finite number"):
+        store.apply_operations(
+            catalog=catalog,
+            edit_id=edit["edit_id"],
+            expected_revision_id=edit["head_revision_id"],
+            summary="잘못된 좌표 거부",
+            operations=[
+                {
+                    "op": "add_scene",
+                    "scene_id": "asset-1:G001",
+                    "source_in": 1,
+                    "source_out": float("inf"),
+                }
+            ],
+            created_by="test",
+        )
+
+
+def test_existing_edit_proposal_replace_all_replaces_current_sequence(
+    tmp_path: Path,
+) -> None:
+    catalog = TimelineCatalog(_fixture_project(tmp_path))
+    store = EditStore(tmp_path / "state.sqlite3")
+    edit = store.create_edit(title="기존 컷", brief="전체 교체 검증")
+    edit = store.apply_operations(
+        catalog=catalog,
+        edit_id=edit["edit_id"],
+        expected_revision_id=edit["head_revision_id"],
+        summary="기존 장면 추가",
+        operations=[{"op": "add_scene", "scene_id": "asset-1:G001"}],
+        created_by="test",
+    )
+    proposal = store.create_proposal(
+        catalog=catalog,
+        session_id="session-replace",
+        title="반응 중심 재구성",
+        objective="기존 주문 컷을 반응 컷으로 교체",
+        base_edit_id=edit["edit_id"],
+        base_revision_id=edit["head_revision_id"],
+        application_mode="replace_all",
+        candidates=[
+            {
+                "scene_id": "asset-2:G001",
+                "role": "payoff",
+                "reason": "반응으로 전체 흐름 재구성",
+            }
+        ],
+        created_by="test",
+    )
+
+    result = store.apply_proposal(
+        catalog=catalog,
+        proposal_id=proposal["proposal_id"],
+        selected_candidate_ids=None,
+        expected_session_id="session-replace",
+        created_by="test",
+    )
+
+    clips = result["edit"]["revision"]["plan"]["clips"]
+    assert result["proposal"]["application_mode"] == "replace_all"
+    assert [clip["metadata"]["scene_id"] for clip in clips] == ["asset-2:G001"]
+
+
+def test_proposal_subset_keeps_saved_candidate_order(tmp_path: Path) -> None:
+    catalog = TimelineCatalog(_fixture_project(tmp_path))
+    store = EditStore(tmp_path / "state.sqlite3")
+    proposal = store.create_proposal(
+        catalog=catalog,
+        session_id="session-order",
+        title="순서 보존",
+        objective="요청 배열이 아닌 제안 순서를 사용",
+        candidates=[
+            {
+                "scene_id": "asset-1:G001",
+                "role": "setup",
+                "reason": "먼저 보여줄 주문",
+            },
+            {
+                "scene_id": "asset-2:G001",
+                "role": "payoff",
+                "reason": "나중에 보여줄 반응",
+            },
+        ],
+        created_by="test",
+    )
+    first, second = [item["candidate_id"] for item in proposal["candidates"]]
+
+    result = store.apply_proposal(
+        catalog=catalog,
+        proposal_id=proposal["proposal_id"],
+        selected_candidate_ids=[second, first],
+        expected_session_id="session-order",
+        created_by="test",
+    )
+
+    assert result["proposal"]["selected_candidate_ids"] == [first, second]
+    assert [
+        clip["metadata"]["scene_id"]
+        for clip in result["edit"]["revision"]["plan"]["clips"]
+    ] == ["asset-1:G001", "asset-2:G001"]
+
+
+def test_legacy_proposal_without_application_mode_uses_replace_all(
+    tmp_path: Path,
+) -> None:
+    catalog = TimelineCatalog(_fixture_project(tmp_path))
+    store = EditStore(tmp_path / "state.sqlite3")
+    edit = store.create_edit(title="레거시 기존 컷", brief="기본 모드 검증")
+    edit = store.apply_operations(
+        catalog=catalog,
+        edit_id=edit["edit_id"],
+        expected_revision_id=edit["head_revision_id"],
+        summary="기존 컷",
+        operations=[{"op": "add_scene", "scene_id": "asset-1:G001"}],
+        created_by="test",
+    )
+    proposal = store.create_proposal(
+        catalog=catalog,
+        session_id="session-legacy",
+        title="레거시 교체",
+        objective="application_mode 없는 저장 상태 호환",
+        base_edit_id=edit["edit_id"],
+        base_revision_id=edit["head_revision_id"],
+        candidates=[
+            {
+                "scene_id": "asset-2:G001",
+                "role": "replacement",
+                "reason": "새 최종 컷",
+            }
+        ],
+        created_by="test",
+    )
+    with store._connection() as connection:
+        row = connection.execute(
+            "SELECT proposal_json FROM edit_proposals WHERE proposal_id = ?",
+            (proposal["proposal_id"],),
+        ).fetchone()
+        payload = json.loads(row["proposal_json"])
+        payload.pop("application_mode")
+        connection.execute(
+            "UPDATE edit_proposals SET proposal_json = ? WHERE proposal_id = ?",
+            (json.dumps(payload), proposal["proposal_id"]),
+        )
+        connection.commit()
+
+    legacy = store.get_proposal(
+        proposal["proposal_id"], expected_session_id="session-legacy"
+    )
+    assert ToolGateway.proposal_card(legacy)["application_mode"] == "replace_all"
+    result = store.apply_proposal(
+        catalog=catalog,
+        proposal_id=proposal["proposal_id"],
+        selected_candidate_ids=None,
+        expected_session_id="session-legacy",
+        created_by="test",
+    )
+    assert [
+        clip["metadata"]["scene_id"]
+        for clip in result["edit"]["revision"]["plan"]["clips"]
+    ] == ["asset-2:G001"]
+
+
+def test_replace_all_is_not_limited_by_existing_clip_count(tmp_path: Path) -> None:
+    catalog = TimelineCatalog(_fixture_project(tmp_path))
+    store = EditStore(tmp_path / "state.sqlite3")
+    edit = store.create_edit(title="긴 기존 컷", brief="100개 컷 교체")
+    edit = store.apply_operations(
+        catalog=catalog,
+        edit_id=edit["edit_id"],
+        expected_revision_id=edit["head_revision_id"],
+        summary="기존 컷 100개",
+        operations=[
+            {"op": "add_scene", "scene_id": "asset-1:G001"} for _ in range(100)
+        ],
+        created_by="test",
+    )
+    proposal = store.create_proposal(
+        catalog=catalog,
+        session_id="session-long-replace",
+        title="긴 컷 교체",
+        objective="전체 sequence를 원자적으로 교체",
+        base_edit_id=edit["edit_id"],
+        base_revision_id=edit["head_revision_id"],
+        application_mode="replace_all",
+        candidates=[
+            {
+                "scene_id": "asset-2:G001",
+                "role": "replacement",
+                "reason": "새 최종 sequence",
+            }
+        ],
+        created_by="test",
+    )
+
+    result = store.apply_proposal(
+        catalog=catalog,
+        proposal_id=proposal["proposal_id"],
+        selected_candidate_ids=None,
+        expected_session_id="session-long-replace",
+        created_by="test",
+    )
+
+    assert result["edit"]["revision"]["clip_count"] == 1
+    assert result["edit"]["revision"]["change_summary"][1] == {
+        "type": "clips_replaced",
+        "removed_count": 100,
+        "candidate_count": 1,
     }
 
 
@@ -359,7 +936,12 @@ def test_edit_operations_create_immutable_revision_and_reject_stale_write(
     assert changed["revision"]["plan"]["clips"][0]["source"].startswith(
         "/readonly/source/"
     )
-    card = ToolGateway(catalog, store, EditorAgentContract.load()).invoke(
+    card = ToolGateway(
+        catalog,
+        store,
+        EditorAgentContract.load(),
+        SceneEvidenceService(catalog, tmp_path / "evidence"),
+    ).invoke(
         "show_edit_revision",
         {
             "edit_id": created["edit_id"],
@@ -383,25 +965,92 @@ def test_edit_operations_create_immutable_revision_and_reject_stale_write(
         )
 
 
-def test_demo_agent_runs_search_cards_and_revision_over_sse(tmp_path: Path) -> None:
+def test_play_source_range_preserves_and_validates_explicit_bounds(
+    tmp_path: Path,
+) -> None:
+    catalog = TimelineCatalog(_fixture_project(tmp_path))
+    gateway = ToolGateway(
+        catalog,
+        EditStore(tmp_path / "state.sqlite3"),
+        EditorAgentContract.load(),
+        SceneEvidenceService(catalog, tmp_path / "evidence"),
+    )
+
+    result = gateway.invoke(
+        "play_source_range",
+        {
+            "scene_id": "asset-1:G001",
+            "source_in": 2.5,
+            "source_out": 5.75,
+            "autoplay": False,
+        },
+        "session-playback",
+    )
+
+    assert result.payload["source_in"] == 2.5
+    assert result.payload["source_out"] == 5.75
+    assert result.payload["autoplay"] is False
+    with pytest.raises(ValueError, match="inside the reviewed scene"):
+        gateway.invoke(
+            "play_source_range",
+            {
+                "scene_id": "asset-1:G001",
+                "source_in": 2.5,
+                "source_out": 15,
+            },
+            "session-playback",
+        )
+
+
+def test_demo_agent_proposes_then_applies_revision_over_sse(tmp_path: Path) -> None:
     app = create_editor_app(
         _fixture_project(tmp_path), tmp_path / "state", agent_backend="demo"
     )
     client = TestClient(app)
 
     assert client.get("/health").json()["catalog"] == {"assets": 2, "scenes": 2}
-    response = client.post(
+    planning = client.post(
         "/api/agent/chat",
         json={"message": "음식과 웃긴 반응으로 30초 하이라이트 만들어줘"},
     )
 
-    assert response.status_code == 200
-    assert "event: card" in response.text
-    assert '"type":"scene_refs"' in response.text
-    assert '"type":"edit_revision_ref"' in response.text
-    assert "이 장면들로 60초 초안 만들기" not in response.text
-    assert "event: done" in response.text
-    assert '"backend":"demo"' in response.text
+    assert planning.status_code == 200
+    assert "event: card" in planning.text
+    assert '"type":"edit_proposal_ref"' in planning.text
+    assert '"type":"edit_revision_ref"' not in planning.text
+    planning_events = _sse_events(planning.text)
+    planning_text = "".join(
+        str(data.get("content", "")) for name, data in planning_events if name == "text"
+    )
+    assert "아직 revision은 생성하지 않았습니다" in planning_text
+    planning_done = next(data for name, data in planning_events if name == "done")
+    proposal_card = next(
+        data
+        for name, data in planning_events
+        if name == "card" and data.get("type") == "edit_proposal_ref"
+    )
+    assert planning_done["edit_id"] is None
+    assert proposal_card["status"] == "draft"
+
+    approval = client.post(
+        "/api/agent/chat",
+        json={
+            "message": "좋아, 이 제안 전체 적용",
+            "session_id": planning_done["session_id"],
+        },
+    )
+    assert '"type":"edit_revision_ref"' in approval.text
+    assert "event: done" in approval.text
+    assert '"backend":"demo"' in approval.text
+    approval_done = next(
+        data for name, data in _sse_events(approval.text) if name == "done"
+    )
+    edit = client.get(f"/api/edits/{approval_done['edit_id']}").json()
+    assert edit["revision"]["clip_count"] == 2
+    assert (
+        app.state.store.session(planning_done["session_id"])["active_proposal_id"]
+        is None
+    )
     assert client.get("/openapi.json").status_code == 200
     assert client.get("/").text == "<h1>Edit Desk</h1>"
     rough_cut = client.get("/rough-cut")
@@ -415,16 +1064,77 @@ def test_demo_agent_runs_search_cards_and_revision_over_sse(tmp_path: Path) -> N
     assert "확인 후 revision 생성" in guide.text
     assert "60초 초안 요청" not in guide.text
     assert "fetch('/api/contracts/agent')" in guide.text
+    assert 'data-filter="proposal_action"' in guide.text
+    assert "chat_confirmation_of_proposal: 'CONFIRM'" in guide.text
     live_contract = client.get("/api/contracts/agent").json()
     assert live_contract["schema_version"] == "editor-agent-contract/v1"
     assert live_contract["contract_id"] == "travel-video-editor/editor-agent/v1"
-    assert live_contract["revision"] == 4
+    assert live_contract["revision"] == 6
     assert len(live_contract["decision_policy"]["planning"]) == 7
     assert live_contract["context_policy"]["limits"]["selected_scene_count"] == 24
     assert set(live_contract["event_contract"]["events"]) == SSE_EVENT_TYPES
-    assert len(live_contract["capabilities"]) == 6
+    assert len(live_contract["capabilities"]) == 7
     assert client.get("/api/contracts/tools").json() == live_contract
     assert live_contract["identity"]["name"] == "AI Editor"
+
+    inspection = app.state.evidence.inspect(
+        scene_id="asset-1:G001",
+        source_in=1,
+        source_out=8,
+        visual_mode="existing",
+    )
+    sheet_response = client.get(inspection.card["visual"]["contact_sheet_url"])
+    assert sheet_response.status_code == 200
+    assert sheet_response.headers["content-type"] == "image/jpeg"
+    assert "immutable" in sheet_response.headers["cache-control"]
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "적용하지 말고 후보를 바꿔줘",
+        "좋지만 아직 적용하지 말자",
+        "후보를 바꾼 뒤 적용",
+        "좋아, 적용은 말고 후보만 바꿔줘",
+        "지금은 적용 안 해",
+        "전체 적용은 하지 말자",
+        "그대로 진행은 안 할게",
+    ],
+)
+def test_demo_agent_never_treats_deferral_as_proposal_approval(
+    tmp_path: Path, message: str
+) -> None:
+    app = create_editor_app(
+        _fixture_project(tmp_path), tmp_path / "state", agent_backend="demo"
+    )
+    client = TestClient(app)
+    planning = client.post(
+        "/api/agent/chat",
+        json={"message": "음식 장면으로 하이라이트 만들어줘"},
+    )
+    planning_events = _sse_events(planning.text)
+    session_id = next(
+        data["session_id"] for name, data in planning_events if name == "done"
+    )
+    proposal_id = next(
+        data["proposal_id"]
+        for name, data in planning_events
+        if name == "card" and data.get("type") == "edit_proposal_ref"
+    )
+
+    response = client.post(
+        "/api/agent/chat",
+        json={"message": message, "session_id": session_id},
+    )
+
+    done = next(data for name, data in _sse_events(response.text) if name == "done")
+    assert done["edit_id"] is None
+    assert (
+        app.state.store.get_proposal(proposal_id, expected_session_id=session_id)[
+            "status"
+        ]
+        == "draft"
+    )
 
 
 def test_demo_agent_derives_unspecified_duration_from_scene_evidence(
@@ -440,15 +1150,236 @@ def test_demo_agent_derives_unspecified_duration_from_scene_evidence(
         json={"message": "이 영상들로 자연스러운 길이의 하이라이트를 만들어줘"},
     )
 
-    event_name = ""
-    events: list[tuple[str, dict[str, object]]] = []
-    for line in response.text.splitlines():
-        if line.startswith("event: "):
-            event_name = line.removeprefix("event: ")
-        elif line.startswith("data: "):
-            events.append((event_name, json.loads(line.removeprefix("data: "))))
+    events = _sse_events(response.text)
     done = next(data for name, data in events if name == "done")
-    edit = client.get(f"/api/edits/{done['edit_id']}").json()
+    proposal = next(
+        data
+        for name, data in events
+        if name == "card" and data.get("type") == "edit_proposal_ref"
+    )
 
-    assert edit["target_duration"] == 18.0
-    assert edit["revision"]["timeline_duration"] == 18.0
+    assert done["edit_id"] is None
+    assert proposal["target_duration"] == 18.0
+    assert proposal["estimated_duration"] == 18.0
+
+
+def test_demo_deep_review_does_not_turn_a_highlight_reference_into_an_edit(
+    tmp_path: Path,
+) -> None:
+    app = create_editor_app(
+        _fixture_project(tmp_path), tmp_path / "state", agent_backend="demo"
+    )
+    response = TestClient(app).post(
+        "/api/agent/chat",
+        json={"message": "첫 하이라이트 장면을 이미지 시트와 원문까지 자세히 봐줘"},
+    )
+
+    events = _sse_events(response.text)
+
+    assert any(
+        name == "card" and data.get("type") == "scene_deep_evidence"
+        for name, data in events
+    )
+    assert not any(
+        name == "card" and data.get("type") == "edit_proposal_ref"
+        for name, data in events
+    )
+    assert next(data for name, data in events if name == "done")["edit_id"] is None
+
+
+def test_proposal_api_applies_selected_candidates_and_updates_session(
+    tmp_path: Path,
+) -> None:
+    app = create_editor_app(
+        _fixture_project(tmp_path), tmp_path / "state", agent_backend="demo"
+    )
+    client = TestClient(app)
+    created = client.post(
+        "/api/proposals",
+        json={
+            "session_id": "session-api",
+            "title": "부분 적용 제안",
+            "objective": "반응 장면을 먼저 검토",
+            "candidates": [
+                {
+                    "scene_id": "asset-1:G001",
+                    "source_in": 1,
+                    "source_out": 5,
+                    "role": "setup",
+                    "reason": "주문 맥락",
+                },
+                {
+                    "scene_id": "asset-2:G001",
+                    "source_in": 3,
+                    "source_out": 9,
+                    "role": "payoff",
+                    "reason": "반응 보존",
+                },
+            ],
+        },
+    )
+
+    assert created.status_code == 201
+    payload = created.json()
+    proposal = payload["proposal"]
+    assert payload["card"]["type"] == "edit_proposal_ref"
+    assert payload["card"]["session_id"] == "session-api"
+    assert client.get(f"/api/proposals/{proposal['proposal_id']}").status_code == 422
+    assert (
+        client.get(
+            f"/api/proposals/{proposal['proposal_id']}",
+            params={"session_id": "session-other"},
+        ).status_code
+        == 403
+    )
+    assert (
+        client.post(
+            f"/api/proposals/{proposal['proposal_id']}/apply",
+            json={"session_id": "session-other"},
+        ).status_code
+        == 403
+    )
+    assert app.state.store.get_proposal(proposal["proposal_id"])["status"] == "draft"
+    selected = proposal["candidates"][1]["candidate_id"]
+    applied = client.post(
+        f"/api/proposals/{proposal['proposal_id']}/apply",
+        json={
+            "session_id": "session-api",
+            "selected_candidate_ids": [selected],
+        },
+    )
+
+    assert applied.status_code == 200
+    assert applied.json()["proposal"]["status"] == "partially_applied"
+    assert applied.json()["edit"]["revision"]["clip_count"] == 1
+    assert (
+        app.state.store.session("session-api")["active_edit_id"]
+        == applied.json()["edit"]["edit_id"]
+    )
+    assert app.state.store.session("session-api")["active_proposal_id"] is None
+
+
+def test_proposal_api_rejects_non_finite_candidate_coordinates(
+    tmp_path: Path,
+) -> None:
+    app = create_editor_app(
+        _fixture_project(tmp_path), tmp_path / "state", agent_backend="demo"
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/proposals",
+        content=(
+            '{"session_id":"session-nan","title":"비유한 좌표",'
+            '"objective":"API 경계 검증","candidates":[{'
+            '"scene_id":"asset-1:G001","source_in":NaN,"source_out":5,'
+            '"role":"setup","reason":"거부되어야 함"}]}'
+        ),
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 422
+    with app.state.store._connection() as connection:
+        assert (
+            connection.execute("SELECT COUNT(*) FROM edit_proposals").fetchone()[0] == 0
+        )
+
+
+def test_codex_backend_attaches_each_evidence_image_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_inputs: list[list[object]] = []
+
+    class TextInput:
+        def __init__(self, text: str):
+            self.text = text
+
+    class LocalImageInput:
+        def __init__(self, path: str):
+            self.path = path
+
+    class FakeThread:
+        id = "thread-test"
+
+        async def run(self, input_items: list[object], **_: object) -> object:
+            run_inputs.append(input_items)
+            return types.SimpleNamespace(
+                final_response=json.dumps(
+                    {
+                        "response": "확인했습니다.",
+                        "tool_calls": [],
+                        "suggestions": [],
+                        "done": True,
+                    }
+                )
+            )
+
+    class AsyncCodex:
+        async def __aenter__(self) -> "AsyncCodex":
+            return self
+
+        async def __aexit__(self, *_: object) -> None:
+            return None
+
+        async def thread_start(self, **_: object) -> FakeThread:
+            return FakeThread()
+
+        async def thread_resume(self, *_: object, **__: object) -> FakeThread:
+            return FakeThread()
+
+    fake_module = types.ModuleType("openai_codex")
+    fake_module.ApprovalMode = types.SimpleNamespace(deny_all="deny_all")
+    fake_module.AsyncCodex = AsyncCodex
+    fake_module.LocalImageInput = LocalImageInput
+    fake_module.Sandbox = types.SimpleNamespace(read_only="read_only")
+    fake_module.TextInput = TextInput
+    monkeypatch.setitem(sys.modules, "openai_codex", fake_module)
+
+    store = EditStore(tmp_path / "state.sqlite3")
+    backend = object.__new__(CodexBackend)
+    backend.store = store
+    backend.contract = EditorAgentContract.load()
+    backend.project_root = tmp_path
+    backend.model = "test-model"
+    backend.developer_instructions = "test"
+    backend._delivered_image_artifacts = {}
+    observations = [
+        {
+            "tool": "inspect_scene_range",
+            "ok": True,
+            "result": {"evidence_id": "evidence-1"},
+            "attachments": [
+                {
+                    "type": "local_image",
+                    "artifact_id": "evidence-1",
+                    "path": str(tmp_path / "sheet.jpg"),
+                },
+                {
+                    "type": "local_image",
+                    "artifact_id": "evidence-1",
+                    "path": str(tmp_path / "sheet.jpg"),
+                },
+            ],
+        }
+    ]
+
+    asyncio.run(
+        backend.decide(
+            session_id="session-image",
+            message="이미지 확인",
+            context={},
+            observations=observations,
+        )
+    )
+    asyncio.run(
+        backend.decide(
+            session_id="session-image",
+            message="계속",
+            context={},
+            observations=observations,
+        )
+    )
+
+    assert sum(isinstance(item, LocalImageInput) for item in run_inputs[0]) == 1
+    assert sum(isinstance(item, LocalImageInput) for item in run_inputs[1]) == 0
+    assert "attachments" not in run_inputs[0][0].text

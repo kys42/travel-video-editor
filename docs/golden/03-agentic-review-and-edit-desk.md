@@ -76,7 +76,10 @@ Workspace 인스턴스를 공유하고, 모드에 따라 주변 도구만 달라
 
 프로젝트 개요와 현재 작업 범위는 매 턴 작은 컨텍스트로 제공한다. 전체 타임라인,
 모든 원시 STT와 이미지 바이트는 기본 프롬프트에 넣지 않는다. 상세 행동·대화·
-프레임은 shortlist에 든 장면에만 조회한다.
+프레임은 shortlist에 든 장면에만 조회한다. 대사나 컷 경계가 모호하면 선택한
+source range에 한해 검토 자막, 앞뒤 대화, 명시적으로 요청한 원시 STT와 최대
+12프레임 contact sheet를 만든다. 기존 분석 프레임을 우선 재사용하고 부족할 때만
+프록시에서 캐시 가능한 시트를 생성한다.
 
 ### 보지 않은 것을 봤다고 하지 않는다
 
@@ -87,9 +90,11 @@ Workspace 인스턴스를 공유하고, 모드에 따라 주변 도구만 달라
 ### 대화 계획이 durable action보다 먼저다
 
 새 편집과 큰 구조 변경은 사용할 장면, 순서, 길이, 주요 행동·대화와 불확실성을
-먼저 설명한다. 사용자가 동의하거나 수정한 다음 revision을 만든다. 사용자가
+검증된 `video-edit-proposal/v1`로 먼저 설명한다. 사용자는 후보별로 검토하거나
+일부만 선택할 수 있고, 동의하거나 수정한 다음 revision을 만든다. 사용자가
 명시적으로 즉시 실행을 요청했거나 현재 edit의 작은 변경만 정확히 지정한 경우만
-예외로 한다.
+예외로 한다. 기존 edit을 대상으로 한 proposal은 후보가 기존 컷 전체를 교체하는
+최종 순서인지(`replace_all`), 기존 컷 뒤에 추가할 순서인지(`append`)를 명시한다.
 
 ### 제안은 현재 맥락에서 에이전트가 만든다
 
@@ -171,7 +176,7 @@ Timeline Catalog와 Edit Store를 기준으로 검증·확장한 뒤 에이전�
 |---|---|---|
 | L0 Project | 항상 | 날짜 범위, 총 길이, 영상·장면 수, 날짜별 rollup, 태그, compact asset index |
 | L1 Workspace | 항상 | 현재 영상, 인접 영상, 포커스 장면, 명시적 선택, 검색·재생 상태 |
-| L2 Evidence | 도구 조회 | shortlist 한 장면의 세부 행동, 검토 대화, STT 후보, 특이점, 프레임 참조 |
+| L2 Evidence | 도구 조회 | shortlist 한 장면의 세부 행동, 검토 대화, 요청된 원시 STT, 앞뒤 맥락, 프레임 참조와 bounded contact sheet |
 | L3 Media | 모델 밖 | 4K·프록시 바이트, FFmpeg 실행, 최종 렌더와 업로드 |
 
 해석 우선순위는 다음과 같다.
@@ -191,14 +196,17 @@ Timeline Catalog와 Edit Store를 기준으로 검증·확장한 뒤 에이전�
 |---|---|---|---|---|
 | 촬영분 파악 | 영상과 사건을 시간순으로 설명 | `list_assets` | 텍스트 | 없음 |
 | 장면·대화 찾기 | compact 검색 후 필요한 후보만 상세 조회 | `search_scenes`, `get_scene_evidence`, `show_scene_refs` | scene card | 없음 |
+| 모호한 구간 심층 검토 | 선택 범위만 이미지 시트·자막·원시 STT로 재검토 | `inspect_scene_range` | evidence card | 캐시만 생성 |
 | 원본 맥락 검토 | 장면을 펼치거나 source 구간 재생 | `focus_scene`, `play_source_range`, `open_inspector_tab` | 포커스·플레이어 | 없음 |
-| 새 러프컷 계획 | 목적에 맞는 장면·순서·길이와 근거 제안 | 조회 도구 | 계획 텍스트 | 없음 |
-| 러프컷 생성 | 확인된 계획을 source-linked clip으로 저장 | `create_edit`, `apply_edit_operations`, `show_edit_revision` | revision card·panel | 새 revision |
+| 새 러프컷 계획 | 목적에 맞는 장면·순서·길이와 근거 제안 | 조회 도구, `create_edit_proposal` | 선택 가능한 proposal card | proposal 저장 |
+| 러프컷 생성 | 확인된 proposal 전체 또는 선택 후보를 source-linked clip으로 저장 | `get_edit_proposal`, `apply_edit_proposal`, `show_edit_revision` | revision card·panel | 새 revision |
 | 기존 컷 수정 | head 확인 후 trim·이동·추가·제거 | `get_edit`, `apply_edit_operations`, `show_edit_revision` | 새 revision | 새 revision |
 | 선택 근거 설명 | 실제 revision과 장면 근거를 연결해 설명 | `get_edit`, evidence 도구 | 텍스트·scene card | 없음 |
 
-Durable action은 `create_edit`와 `apply_edit_operations`뿐이다. Display와 UI
-action은 사용자가 볼 화면을 바꾸지만 편집 데이터나 원본을 변경하지 않는다.
+`create_edit_proposal`은 revision을 만들지 않는 가역적 계획 상태다. Durable
+action인 `apply_edit_proposal`, `create_edit`, `apply_edit_operations`만 편집
+revision을 만든다. Display와 UI action은 사용자가 볼 화면을 바꾸지만 편집
+데이터나 원본을 변경하지 않는다.
 
 ## 7. 표준 대화 흐름
 
@@ -213,19 +221,23 @@ action은 사용자가 볼 화면을 바꾸지만 편집 데이터나 원본을 
 목적·범위 파악
   → 후보 검색
   → shortlist evidence 확인
-  → 장면 순서·예상 source range·역할·대화·불확실성 설명
-  → “이 구성으로 진행할까요?”
+  → 장면 순서·예상 source range·역할·대화·불확실성을 proposal로 저장·표시
+  → 후보별 검토·선택과 “이 구성으로 진행할까요?”
   → 사용자 동의 또는 수정
-  → durable action
+  → proposal 전체 또는 선택 후보 적용
   → 새 revision 카드와 검토 위치 표시
 ```
 
-계획 턴에서는 `create_edit`나 `apply_edit_operations`를 호출하지 않는다. 다음 턴의
-명확한 동의는 방금 제시한 계획만 승인하며, 사용자가 수정 의견을 주면 계획에 먼저
-반영한다.
+계획 턴에서는 `create_edit_proposal`까지만 호출하고 `create_edit`,
+`apply_edit_proposal`, `apply_edit_operations`는 호출하지 않는다. 다음 턴의 명확한
+동의는 ID로 연결된 방금 proposal만 승인한다. 사용자가 후보를 해제하면 선택 후보만
+적용하고, 구성 수정 의견을 주면 새 proposal에 먼저 반영한다. proposal 조회와
+적용은 이를 만든 같은 채팅 세션에서만 허용하며, 명시적 부정·보류 표현은 승인으로
+취급하지 않는다.
 
-현재 draft revision의 이 확인 절차는 실제 Codex backend가 실행 계약을 따르는
-대화 정책이며, 서버가 별도 approval object를 발급해 강제하는 경계는 아니다.
+proposal 자체와 후보 범위·상태 전이는 서버가 검증하지만, “좋아”라는 문장이 실제
+사용자 확인인지 판단하는 절차는 Codex backend가 실행 계약을 따르는 대화 정책이다.
+서버가 별도 고위험 approval token을 발급해 강제하는 경계는 아니다.
 되돌릴 수 있는 JSON revision까지만 허용되는 현재 범위에서는 이 방식을 사용하되,
 렌더·외부 전송·게시처럼 비용이나 외부 효과가 생기는 기능은 서버가 검증하는 별도
 승인 상태 없이는 추가하지 않는다. Deterministic demo는 프로토콜 점검용이므로 이
@@ -302,6 +314,11 @@ revision은 보존하되, UI는 성공을 추측하지 않고 다시 조회한�
 
 ## 10. Revision과 동시성
 
+- proposal은 후보 ID, 장면·원본 범위, 순서, 역할, 이유, 가정과 불확실성을 보존한다.
+- 기존 edit proposal은 `replace_all` 또는 `append` 적용 의미를 보존하고,
+  선택 후보 ID의 요청 순서와 무관하게 저장된 proposal 순서로 컷을 만든다.
+- proposal 조회·적용은 소유 채팅 세션이 일치해야 한다.
+- draft proposal만 한 번 적용할 수 있으며 일부 후보만 적용한 사실도 기록한다.
 - `create_edit`는 빈 첫 revision을 만든다.
 - 모든 편집 operation 묶음은 하나의 새 immutable snapshot을 만든다.
 - 기존 edit을 바꾸기 전에 현재 head revision을 읽는다.
@@ -345,6 +362,7 @@ revision은 보존하되, UI는 성공을 추측하지 않고 다시 조회한�
 | 브라우저가 알 수 없는 asset/scene ID 전달 | 서버에서 거부하고 모델 컨텍스트에 넣지 않음 |
 | “이거 더”의 대상이 없음 | clarification, durable action 없음 |
 | 프록시가 없음 | 스틸 근거와 타임코드는 유지하고 재생 불가를 표시 |
+| contact sheet 생성 실패 | 기존 텍스트 근거는 유지하고 영상 확인 실패를 명시 |
 | STT가 불확실함 | 원문 후보와 불확실성을 보존하고 대사를 발명하지 않음 |
 | source range가 장면 밖임 | operation 거부 |
 | revision head가 바뀜 | conflict 후 최신 edit 재조회 |
@@ -364,8 +382,9 @@ revision은 보존하되, UI는 성공을 추측하지 않고 다시 조회한�
 |---|---|---|
 | 공용 Review Workspace | 구현 | Review와 Rough Cut이 같은 footage·scene detail 사용 |
 | 장면·대화 검색 | 구현 | compact 검색과 shortlist evidence 조회 |
+| 선택 구간 심층 근거 | 구현 | 분석 프레임 재사용 또는 프록시 contact sheet, 검토 자막·요청된 원시 STT를 제한된 범위로 제공 |
 | 다중 장면 컨텍스트 | 구현 | 여러 영상의 명시적 선택을 시간순 전달 |
-| 계획 후 revision 생성 | 부분 구현 | 실 Codex는 프롬프트 정책·대표 QA로 확인했지만 서버 강제 승인은 아니며 demo는 계획 턴을 재현하지 않음 |
+| 구조화 proposal 후 revision 생성 | 구현 | 서버가 후보 범위를 검증·저장하고 UI에서 전체/부분 적용; 대화 확인의 의미 판단은 prompt policy |
 | 작은 후속 수정 | 구현 | trim·이동·추가·제거와 새 revision |
 | scene/revision 카드와 UI action | 구현 | 닫힌 SSE event와 dispatcher 사용 |
 | 개별 source clip 프리뷰 | 구현 | 가운데 Program Preview에서 bounded proxy playback |
@@ -389,12 +408,20 @@ revision은 보존하되, UI는 성공을 추측하지 않고 다시 조회한�
 ### 명시적 다중 선택
 
 두 장면을 선택해 18초 편집을 요청하면 선택 밖 장면을 사용하지 않고, 각 source
-range와 역할을 설명한 계획을 먼저 제시한다. 계획 턴에는 edit ID가 생기지 않는다.
+range와 역할을 설명한 proposal을 먼저 제시한다. 계획 턴에는 proposal ID만 생기고
+edit ID는 생기지 않는다.
 
 ### 대화 확인 후 생성
 
 같은 세션에서 “좋아, 그대로 만들어줘”라고 답하면 계획과 같은 장면 순서·범위로
 새 revision을 만들고 카드와 Revision 패널에 표시한다.
+
+### 심층 구간 검토
+
+한 장면의 정확한 대사나 컷 경계를 물으면 전체 원본을 모델에 넣지 않는다. 선택
+범위의 검토 자막과 앞뒤 맥락을 우선 보여주고, 요청된 경우 원시 KO/EN STT를
+미검토 후보로 구분한다. 이미지가 더 필요하면 최대 12프레임 contact sheet 한 장을
+생성해 웹과 모델에 같은 artifact로 전달한다.
 
 ### 동적 길이 제안
 
@@ -435,6 +462,8 @@ Agentic Edit Desk 변경은 다음을 만족해야 완료다.
 
 - 사용자가 현재 보고 있고 선택한 범위가 에이전트 컨텍스트와 일치함
 - 모델이 읽은 근거와 읽지 않은 근거가 구분됨
+- 심층 근거가 선택 source range와 계약 한도 안에서만 만들어지고 캐시됨
+- proposal 후보가 검증된 장면 좌표를 가지며 사용자가 전체 또는 일부를 적용할 수 있음
 - 모든 durable edit이 새 revision이며 원본 좌표로 역추적 가능함
 - 장면·대화 근거, revision clip과 프록시 재생이 같은 source range를 가리킴
 - 동적 suggestion과 길이 제안이 현재 맥락에 근거하고 정적 기본값으로 위장하지 않음

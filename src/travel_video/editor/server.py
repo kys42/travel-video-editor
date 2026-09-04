@@ -5,12 +5,14 @@ from pathlib import Path
 from typing import Any, AsyncIterator, Literal
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from pydantic import BaseModel, ConfigDict, Field
 
 from .agent import AgentOrchestrator, CodexBackend, DemoBackend, new_session_id
 from .catalog import TimelineCatalog
 from .contracts import EditorAgentContract, project_root
+from .evidence import SceneEvidenceService
 from .store import EditStore, RevisionConflictError
 from .tools import ToolGateway
 
@@ -18,13 +20,48 @@ from .tools import ToolGateway
 class CreateEditRequest(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     brief: str = Field(min_length=1, max_length=2000)
-    target_duration: float | None = Field(default=None, ge=5, le=7200)
+    target_duration: float | None = Field(
+        default=None, ge=5, le=7200, allow_inf_nan=False
+    )
 
 
 class ApplyOperationsRequest(BaseModel):
     expected_revision_id: str = Field(min_length=1, max_length=80)
     summary: str = Field(min_length=1, max_length=240)
     operations: list[dict[str, Any]] = Field(min_length=1, max_length=100)
+
+
+class ProposalCandidateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    scene_id: str = Field(min_length=1, max_length=160)
+    source_in: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    source_out: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+    label: str | None = Field(default=None, max_length=160)
+    role: str = Field(min_length=1, max_length=80)
+    reason: str = Field(min_length=1, max_length=600)
+    uncertainty: str = Field(default="", max_length=600)
+
+
+class CreateProposalRequest(BaseModel):
+    session_id: str = Field(min_length=1, max_length=80)
+    title: str = Field(min_length=1, max_length=120)
+    objective: str = Field(min_length=1, max_length=2000)
+    candidates: list[ProposalCandidateRequest] = Field(min_length=1, max_length=24)
+    target_duration: float | None = Field(
+        default=None, ge=5, le=7200, allow_inf_nan=False
+    )
+    duration_rationale: str = Field(default="", max_length=800)
+    assumptions: list[str] = Field(default_factory=list, max_length=12)
+    uncertainties: list[str] = Field(default_factory=list, max_length=12)
+    base_edit_id: str | None = Field(default=None, max_length=80)
+    base_revision_id: str | None = Field(default=None, max_length=80)
+    application_mode: Literal["replace_all", "append"] = "replace_all"
+
+
+class ApplyProposalRequest(BaseModel):
+    session_id: str = Field(min_length=1, max_length=80)
+    selected_candidate_ids: list[str] = Field(default_factory=list, max_length=24)
 
 
 class ChatRequest(BaseModel):
@@ -35,7 +72,8 @@ class ChatRequest(BaseModel):
 
 def _sse(event: str, data: dict[str, Any]) -> bytes:
     return (
-        f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False, separators=(',', ':'))}\n\n"
+        f"event: {event}\ndata: "
+        f"{json.dumps(data, ensure_ascii=False, separators=(',', ':'), allow_nan=False)}\n\n"
     ).encode("utf-8")
 
 
@@ -44,6 +82,8 @@ def _http_error(exc: Exception) -> HTTPException:
         return HTTPException(status_code=404, detail=str(exc))
     if isinstance(exc, RevisionConflictError):
         return HTTPException(status_code=409, detail=str(exc))
+    if isinstance(exc, PermissionError):
+        return HTTPException(status_code=403, detail=str(exc))
     if isinstance(exc, ValueError):
         return HTTPException(status_code=422, detail=str(exc))
     return HTTPException(status_code=500, detail="internal editor service error")
@@ -61,10 +101,20 @@ def create_editor_app(
     catalog = TimelineCatalog(manifest_path)
     store = EditStore(state_dir / "editor.sqlite3")
     agent_contract = EditorAgentContract.load()
-    gateway = ToolGateway(catalog, store, agent_contract)
+    evidence_limits = agent_contract.context_policy["limits"]
+    evidence = SceneEvidenceService(
+        catalog,
+        state_dir / "evidence-cache",
+        max_range_seconds=float(evidence_limits["evidence_range_seconds"]),
+        max_frames=int(evidence_limits["evidence_frame_count"]),
+        max_context_seconds=float(evidence_limits["evidence_context_seconds"]),
+        max_text_characters=int(evidence_limits["evidence_text_characters"]),
+        max_raw_candidates=int(evidence_limits["evidence_raw_candidate_count"]),
+    )
+    gateway = ToolGateway(catalog, store, agent_contract, evidence)
     backend_error: str | None = None
     if agent_backend == "demo":
-        backend = DemoBackend()
+        backend = DemoBackend(store)
     else:
         try:
             backend = CodexBackend(
@@ -77,7 +127,7 @@ def create_editor_app(
             if agent_backend == "codex":
                 raise
             backend_error = str(exc)
-            backend = DemoBackend()
+            backend = DemoBackend(store)
     orchestrator = AgentOrchestrator(backend, gateway, store)
 
     app = FastAPI(
@@ -88,7 +138,20 @@ def create_editor_app(
     app.state.catalog = catalog
     app.state.store = store
     app.state.gateway = gateway
+    app.state.evidence = evidence
     app.state.orchestrator = orchestrator
+
+    @app.exception_handler(RequestValidationError)
+    async def request_validation_error(
+        _: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        # A non-standard JSON NaN can survive Python's decoder. Never echo the
+        # offending value through Starlette's strict JSON renderer.
+        details = [
+            {key: value for key, value in error.items() if key not in {"input", "ctx"}}
+            for error in exc.errors()
+        ]
+        return JSONResponse(status_code=422, content={"detail": details})
 
     @app.get("/health", tags=["system"])
     async def health() -> dict[str, Any]:
@@ -154,6 +217,81 @@ def create_editor_app(
     async def scene_evidence(scene_id: str) -> dict[str, Any]:
         try:
             return catalog.scene_evidence(scene_id)
+        except Exception as exc:
+            raise _http_error(exc) from exc
+
+    @app.get(
+        "/api/evidence/contact-sheets/{artifact_id}.jpg",
+        tags=["catalog"],
+        include_in_schema=False,
+    )
+    async def contact_sheet(artifact_id: str) -> FileResponse:
+        try:
+            path = evidence.contact_sheet_path(artifact_id)
+        except Exception as exc:
+            raise _http_error(exc) from exc
+        return FileResponse(
+            path,
+            media_type="image/jpeg",
+            headers={"Cache-Control": "private, max-age=31536000, immutable"},
+        )
+
+    @app.post("/api/proposals", status_code=201, tags=["proposals"])
+    async def create_proposal(payload: CreateProposalRequest) -> dict[str, Any]:
+        try:
+            proposal = store.create_proposal(
+                catalog=catalog,
+                session_id=payload.session_id,
+                title=payload.title,
+                objective=payload.objective,
+                candidates=[
+                    item.model_dump(exclude_none=True) for item in payload.candidates
+                ],
+                target_duration=payload.target_duration,
+                duration_rationale=payload.duration_rationale,
+                assumptions=payload.assumptions,
+                uncertainties=payload.uncertainties,
+                base_edit_id=payload.base_edit_id,
+                base_revision_id=payload.base_revision_id,
+                application_mode=payload.application_mode,
+                created_by="user:api",
+            )
+            return {
+                "proposal": proposal,
+                "card": ToolGateway.proposal_card(
+                    proposal, session_id=payload.session_id
+                ),
+            }
+        except Exception as exc:
+            raise _http_error(exc) from exc
+
+    @app.get("/api/proposals/{proposal_id}", tags=["proposals"])
+    async def get_proposal(
+        proposal_id: str,
+        session_id: str = Query(min_length=1, max_length=80),
+    ) -> dict[str, Any]:
+        try:
+            proposal = store.get_proposal(proposal_id, expected_session_id=session_id)
+            return {
+                "proposal": proposal,
+                "card": ToolGateway.proposal_card(proposal, session_id=session_id),
+            }
+        except Exception as exc:
+            raise _http_error(exc) from exc
+
+    @app.post("/api/proposals/{proposal_id}/apply", tags=["proposals"])
+    async def apply_proposal(
+        proposal_id: str, payload: ApplyProposalRequest
+    ) -> dict[str, Any]:
+        try:
+            result = store.apply_proposal(
+                catalog=catalog,
+                proposal_id=proposal_id,
+                selected_candidate_ids=payload.selected_candidate_ids or None,
+                expected_session_id=payload.session_id,
+                created_by="user:api",
+            )
+            return result
         except Exception as exc:
             raise _http_error(exc) from exc
 

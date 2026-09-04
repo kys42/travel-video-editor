@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -13,6 +14,7 @@ from .catalog import TimelineCatalog
 
 EDIT_REVISION_SCHEMA = "video-edit-revision/v1"
 EDIT_PLAN_SCHEMA = "video-edit-plan/v1"
+EDIT_PROPOSAL_SCHEMA = "video-edit-proposal/v1"
 
 
 class RevisionConflictError(RuntimeError):
@@ -25,6 +27,16 @@ def _now() -> str:
 
 def _id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:16]}"
+
+
+def _finite_float(value: Any, field: str) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field} must be a finite number") from exc
+    if not math.isfinite(number):
+        raise ValueError(f"{field} must be a finite number")
+    return number
 
 
 class EditStore:
@@ -71,6 +83,18 @@ class EditStore:
                     session_id TEXT PRIMARY KEY,
                     codex_thread_id TEXT,
                     active_edit_id TEXT,
+                    active_proposal_id TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS edit_proposals (
+                    proposal_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    proposal_json TEXT NOT NULL,
+                    applied_edit_id TEXT,
+                    applied_revision_id TEXT,
+                    selected_candidate_ids_json TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 );
@@ -87,6 +111,14 @@ class EditStore:
                 );
                 """
             )
+            session_columns = {
+                str(row[1])
+                for row in connection.execute("PRAGMA table_info(chat_sessions)")
+            }
+            if "active_proposal_id" not in session_columns:
+                connection.execute(
+                    "ALTER TABLE chat_sessions ADD COLUMN active_proposal_id TEXT"
+                )
             connection.commit()
 
     def ping(self) -> None:
@@ -101,14 +133,37 @@ class EditStore:
         target_duration: float | None = None,
         created_by: str = "user",
     ) -> dict[str, Any]:
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            edit_id, _ = self._insert_edit(
+                connection,
+                title=title,
+                brief=brief,
+                target_duration=target_duration,
+                created_by=created_by,
+            )
+            connection.commit()
+        return self.get_edit(edit_id)
+
+    @staticmethod
+    def _insert_edit(
+        connection: sqlite3.Connection,
+        *,
+        title: str,
+        brief: str,
+        target_duration: float | None,
+        created_by: str,
+    ) -> tuple[str, str]:
         title = title.strip()
         brief = brief.strip()
         if not title or len(title) > 120:
             raise ValueError("title must contain 1 to 120 characters")
         if not brief or len(brief) > 2000:
             raise ValueError("brief must contain 1 to 2000 characters")
-        if target_duration is not None and not 5 <= target_duration <= 7200:
-            raise ValueError("target_duration must be between 5 and 7200 seconds")
+        if target_duration is not None:
+            target_duration = _finite_float(target_duration, "target_duration")
+            if not 5 <= target_duration <= 7200:
+                raise ValueError("target_duration must be between 5 and 7200 seconds")
         edit_id = _id("edit")
         revision_id = _id("rev")
         created_at = _now()
@@ -141,38 +196,33 @@ class EditStore:
             "change_summary": [{"type": "edit_created", "title": title}],
             "validation": {"status": "draft", "warnings": ["No clips yet"]},
         }
-        with self._connection() as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            connection.execute(
-                "INSERT INTO edits VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (
-                    edit_id,
-                    title,
-                    brief,
-                    target_duration,
-                    revision_id,
-                    created_at,
-                    created_at,
-                ),
-            )
-            connection.execute(
-                "INSERT INTO edit_revisions VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (
-                    revision_id,
-                    edit_id,
-                    None,
-                    1,
-                    json.dumps(snapshot, ensure_ascii=False),
-                    created_at,
-                    created_by,
-                ),
-            )
-            connection.commit()
-        return self.get_edit(edit_id)
+        connection.execute(
+            "INSERT INTO edits VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                edit_id,
+                title,
+                brief,
+                target_duration,
+                revision_id,
+                created_at,
+                created_at,
+            ),
+        )
+        connection.execute(
+            "INSERT INTO edit_revisions VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                revision_id,
+                edit_id,
+                None,
+                1,
+                json.dumps(snapshot, ensure_ascii=False, allow_nan=False),
+                created_at,
+                created_by,
+            ),
+        )
+        return edit_id, revision_id
 
-    def get_edit(
-        self, edit_id: str, revision_id: str | None = None
-    ) -> dict[str, Any]:
+    def get_edit(self, edit_id: str, revision_id: str | None = None) -> dict[str, Any]:
         with self._connection() as connection:
             edit = connection.execute(
                 "SELECT * FROM edits WHERE edit_id = ?", (edit_id,)
@@ -227,69 +277,114 @@ class EditStore:
         operations: list[dict[str, Any]],
         created_by: str,
     ) -> dict[str, Any]:
-        if not summary.strip() or len(summary) > 240:
-            raise ValueError("summary must contain 1 to 240 characters")
-        if not operations or len(operations) > 100:
-            raise ValueError("operations must contain 1 to 100 items")
         with self._connection() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            edit = connection.execute(
-                "SELECT * FROM edits WHERE edit_id = ?", (edit_id,)
-            ).fetchone()
-            if edit is None:
-                raise KeyError(f"edit not found: {edit_id}")
-            if edit["head_revision_id"] != expected_revision_id:
-                raise RevisionConflictError(
-                    f"expected {expected_revision_id}, current head is {edit['head_revision_id']}"
-                )
-            previous = connection.execute(
-                "SELECT * FROM edit_revisions WHERE revision_id = ?",
-                (expected_revision_id,),
-            ).fetchone()
-            snapshot = json.loads(previous["snapshot_json"])
-            change_summary = self._mutate_snapshot(snapshot, operations, catalog)
-            sequence = int(previous["sequence"]) + 1
-            revision_id = _id("rev")
-            created_at = _now()
-            snapshot.update(
-                {
-                    "revision_id": revision_id,
-                    "parent_revision_id": expected_revision_id,
-                    "sequence": sequence,
-                    "created_at": created_at,
-                    "created_by": created_by,
-                    "change_summary": [
-                        {"type": "batch", "summary": summary.strip()},
-                        *change_summary,
-                    ],
-                    "validation": self._validation(snapshot),
-                }
-            )
-            plan = snapshot["plan"]
-            connection.execute(
-                "INSERT INTO edit_revisions VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (
-                    revision_id,
-                    edit_id,
-                    expected_revision_id,
-                    sequence,
-                    json.dumps(snapshot, ensure_ascii=False),
-                    created_at,
-                    created_by,
-                ),
-            )
-            connection.execute(
-                "UPDATE edits SET title = ?, target_duration = ?, head_revision_id = ?, updated_at = ? WHERE edit_id = ?",
-                (
-                    plan["title"],
-                    snapshot.get("target_duration"),
-                    revision_id,
-                    created_at,
-                    edit_id,
-                ),
+            self._apply_operations(
+                connection,
+                catalog=catalog,
+                edit_id=edit_id,
+                expected_revision_id=expected_revision_id,
+                summary=summary,
+                operations=operations,
+                created_by=created_by,
             )
             connection.commit()
         return self.get_edit(edit_id)
+
+    def _apply_operations(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        catalog: TimelineCatalog,
+        edit_id: str,
+        expected_revision_id: str,
+        summary: str,
+        operations: list[dict[str, Any]],
+        created_by: str,
+        replacement_operations: list[dict[str, Any]] | None = None,
+    ) -> str:
+        if not summary.strip() or len(summary) > 240:
+            raise ValueError("summary must contain 1 to 240 characters")
+        if replacement_operations is None and (not operations or len(operations) > 100):
+            raise ValueError("operations must contain 1 to 100 items")
+        if (
+            replacement_operations is not None
+            and not 1 <= len(replacement_operations) <= 24
+        ):
+            raise ValueError("replacement operations must contain 1 to 24 items")
+        edit = connection.execute(
+            "SELECT * FROM edits WHERE edit_id = ?", (edit_id,)
+        ).fetchone()
+        if edit is None:
+            raise KeyError(f"edit not found: {edit_id}")
+        if edit["head_revision_id"] != expected_revision_id:
+            raise RevisionConflictError(
+                f"expected {expected_revision_id}, current head is {edit['head_revision_id']}"
+            )
+        previous = connection.execute(
+            "SELECT * FROM edit_revisions WHERE revision_id = ?",
+            (expected_revision_id,),
+        ).fetchone()
+        if previous is None:
+            raise KeyError(f"revision not found: {expected_revision_id}")
+        snapshot = json.loads(previous["snapshot_json"])
+        change_summary: list[dict[str, Any]] = []
+        if replacement_operations is not None:
+            removed_count = len(snapshot["plan"].get("clips", []))
+            snapshot["plan"]["clips"] = []
+            change_summary.append(
+                {
+                    "type": "clips_replaced",
+                    "removed_count": removed_count,
+                    "candidate_count": len(replacement_operations),
+                }
+            )
+            change_summary.extend(
+                self._mutate_snapshot(snapshot, replacement_operations, catalog)
+            )
+        change_summary.extend(self._mutate_snapshot(snapshot, operations, catalog))
+        sequence = int(previous["sequence"]) + 1
+        revision_id = _id("rev")
+        created_at = _now()
+        snapshot.update(
+            {
+                "revision_id": revision_id,
+                "parent_revision_id": expected_revision_id,
+                "sequence": sequence,
+                "created_at": created_at,
+                "created_by": created_by,
+                "change_summary": [
+                    {"type": "batch", "summary": summary.strip()},
+                    *change_summary,
+                ],
+                "validation": self._validation(snapshot),
+            }
+        )
+        plan = snapshot["plan"]
+        connection.execute(
+            "INSERT INTO edit_revisions VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                revision_id,
+                edit_id,
+                expected_revision_id,
+                sequence,
+                json.dumps(snapshot, ensure_ascii=False, allow_nan=False),
+                created_at,
+                created_by,
+            ),
+        )
+        connection.execute(
+            "UPDATE edits SET title = ?, target_duration = ?, head_revision_id = ?, "
+            "updated_at = ? WHERE edit_id = ?",
+            (
+                plan["title"],
+                snapshot.get("target_duration"),
+                revision_id,
+                created_at,
+                edit_id,
+            ),
+        )
+        return revision_id
 
     def _mutate_snapshot(
         self,
@@ -314,10 +409,19 @@ class EditStore:
             if op == "add_scene":
                 scene = catalog.scene(str(operation.get("scene_id") or ""))
                 asset = catalog.asset(scene.asset_id)
-                source_in = float(operation.get("source_in", scene.source_in))
-                source_out = float(operation.get("source_out", scene.source_out))
-                if source_in < scene.source_in - 0.001 or source_out > scene.source_out + 0.001:
-                    raise ValueError("add_scene range must stay inside the reviewed scene")
+                source_in = _finite_float(
+                    operation.get("source_in", scene.source_in), "source_in"
+                )
+                source_out = _finite_float(
+                    operation.get("source_out", scene.source_out), "source_out"
+                )
+                if (
+                    source_in < scene.source_in - 0.001
+                    or source_out > scene.source_out + 0.001
+                ):
+                    raise ValueError(
+                        "add_scene range must stay inside the reviewed scene"
+                    )
                 if source_out <= source_in:
                     raise ValueError("source_out must be greater than source_in")
                 clip = {
@@ -326,7 +430,9 @@ class EditStore:
                     "source_in": round(source_in, 6),
                     "source_out": round(source_out, 6),
                     "label": str(operation.get("label") or scene.title)[:160],
-                    "reason": str(operation.get("reason") or "Reviewed scene selection")[:600],
+                    "reason": str(
+                        operation.get("reason") or "Reviewed scene selection"
+                    )[:600],
                     "speed": 1.0,
                     "volume_db": 0.0,
                     "metadata": {
@@ -339,14 +445,30 @@ class EditStore:
                 if asset.proxy_path:
                     clip["proxy"] = asset.proxy_path
                 clips.append(clip)
-                changes.append({"type": "clip_added", "clip_id": clip["id"], "scene_id": scene.scene_id})
+                changes.append(
+                    {
+                        "type": "clip_added",
+                        "clip_id": clip["id"],
+                        "scene_id": scene.scene_id,
+                    }
+                )
             elif op == "trim_clip":
                 clip = self._find_clip(clips, operation.get("clip_id"))
                 scene = catalog.scene(clip["metadata"]["scene_id"])
-                source_in = float(operation.get("source_in", clip["source_in"]))
-                source_out = float(operation.get("source_out", clip["source_out"]))
-                if source_in < scene.source_in - 0.001 or source_out > scene.source_out + 0.001 or source_out <= source_in:
-                    raise ValueError("trim range must be positive and stay inside the reviewed scene")
+                source_in = _finite_float(
+                    operation.get("source_in", clip["source_in"]), "source_in"
+                )
+                source_out = _finite_float(
+                    operation.get("source_out", clip["source_out"]), "source_out"
+                )
+                if (
+                    source_in < scene.source_in - 0.001
+                    or source_out > scene.source_out + 0.001
+                    or source_out <= source_in
+                ):
+                    raise ValueError(
+                        "trim range must be positive and stay inside the reviewed scene"
+                    )
                 clip["source_in"] = round(source_in, 6)
                 clip["source_out"] = round(source_out, 6)
                 changes.append({"type": "clip_trimmed", "clip_id": clip["id"]})
@@ -357,7 +479,13 @@ class EditStore:
                     raise ValueError("to_index must point inside the current clip list")
                 clips.remove(clip)
                 clips.insert(destination, clip)
-                changes.append({"type": "clip_moved", "clip_id": clip["id"], "to_index": destination})
+                changes.append(
+                    {
+                        "type": "clip_moved",
+                        "clip_id": clip["id"],
+                        "to_index": destination,
+                    }
+                )
             elif op == "remove_clip":
                 clip = self._find_clip(clips, operation.get("clip_id"))
                 clips.remove(clip)
@@ -369,11 +497,17 @@ class EditStore:
                 snapshot["plan"]["title"] = title
                 changes.append({"type": "title_changed", "title": title})
             elif op == "set_target_duration":
-                duration = float(operation.get("target_duration", 0))
+                duration = _finite_float(
+                    operation.get("target_duration", 0), "target_duration"
+                )
                 if not 5 <= duration <= 7200:
-                    raise ValueError("target_duration must be between 5 and 7200 seconds")
+                    raise ValueError(
+                        "target_duration must be between 5 and 7200 seconds"
+                    )
                 snapshot["target_duration"] = duration
-                changes.append({"type": "target_duration_changed", "target_duration": duration})
+                changes.append(
+                    {"type": "target_duration_changed", "target_duration": duration}
+                )
         return changes
 
     @staticmethod
@@ -389,6 +523,324 @@ class EditStore:
         warnings = [] if clips else ["No clips yet"]
         return {"status": "valid" if clips else "draft", "warnings": warnings}
 
+    def create_proposal(
+        self,
+        *,
+        catalog: TimelineCatalog,
+        session_id: str,
+        title: str,
+        objective: str,
+        candidates: list[dict[str, Any]],
+        target_duration: float | None = None,
+        duration_rationale: str = "",
+        assumptions: list[str] | None = None,
+        uncertainties: list[str] | None = None,
+        base_edit_id: str | None = None,
+        base_revision_id: str | None = None,
+        application_mode: str = "replace_all",
+        created_by: str,
+    ) -> dict[str, Any]:
+        title = title.strip()
+        objective = objective.strip()
+        if not title or len(title) > 120:
+            raise ValueError("proposal title must contain 1 to 120 characters")
+        if not objective or len(objective) > 2000:
+            raise ValueError("proposal objective must contain 1 to 2000 characters")
+        if not 1 <= len(candidates) <= 24:
+            raise ValueError("proposal candidates must contain 1 to 24 items")
+        if target_duration is not None:
+            target_duration = _finite_float(target_duration, "target_duration")
+            if not 5 <= target_duration <= 7200:
+                raise ValueError("target_duration must be between 5 and 7200 seconds")
+        if application_mode not in {"replace_all", "append"}:
+            raise ValueError("application_mode must be replace_all or append")
+        if bool(base_edit_id) != bool(base_revision_id):
+            raise ValueError(
+                "base_edit_id and base_revision_id must be supplied together"
+            )
+        if base_edit_id and base_revision_id:
+            edit = self.get_edit(base_edit_id)
+            if edit["head_revision_id"] != base_revision_id:
+                raise RevisionConflictError(
+                    f"expected {base_revision_id}, current head is {edit['head_revision_id']}"
+                )
+
+        normalized_candidates = []
+        for item in candidates:
+            scene = catalog.scene(str(item.get("scene_id") or ""))
+            source_in = _finite_float(
+                item.get("source_in", scene.source_in), "source_in"
+            )
+            source_out = _finite_float(
+                item.get("source_out", scene.source_out), "source_out"
+            )
+            if (
+                source_in < scene.source_in - 0.001
+                or source_out > scene.source_out + 0.001
+                or source_out <= source_in
+            ):
+                raise ValueError(
+                    "proposal candidate range must be positive and stay inside the reviewed scene"
+                )
+            reason = str(item.get("reason") or "").strip()
+            if not reason or len(reason) > 600:
+                raise ValueError(
+                    "proposal candidate reason must contain 1 to 600 characters"
+                )
+            role = str(item.get("role") or "supporting").strip()
+            if not role or len(role) > 80:
+                raise ValueError(
+                    "proposal candidate role must contain 1 to 80 characters"
+                )
+            normalized_candidates.append(
+                {
+                    "candidate_id": _id("candidate"),
+                    "scene_id": scene.scene_id,
+                    "asset_id": scene.asset_id,
+                    "source_in": round(source_in, 6),
+                    "source_out": round(source_out, 6),
+                    "duration": round(source_out - source_in, 3),
+                    "label": str(item.get("label") or scene.title)[:160],
+                    "role": role,
+                    "reason": reason,
+                    "uncertainty": str(item.get("uncertainty") or "")[:600],
+                    "evidence": {
+                        "group_id": scene.group_id,
+                        "analysis_confidence": scene.confidence,
+                    },
+                }
+            )
+
+        normalized_assumptions = [
+            str(item).strip()[:400]
+            for item in (assumptions or [])[:12]
+            if str(item).strip()
+        ]
+        normalized_uncertainties = [
+            str(item).strip()[:400]
+            for item in (uncertainties or [])[:12]
+            if str(item).strip()
+        ]
+        proposal_id = _id("proposal")
+        now = _now()
+        payload = {
+            "schema_version": EDIT_PROPOSAL_SCHEMA,
+            "proposal_id": proposal_id,
+            "title": title,
+            "objective": objective,
+            "target_duration": target_duration,
+            "duration_rationale": duration_rationale.strip()[:800],
+            "estimated_duration": round(
+                sum(item["duration"] for item in normalized_candidates), 3
+            ),
+            "base_edit_id": base_edit_id,
+            "base_revision_id": base_revision_id,
+            "application_mode": application_mode,
+            "candidates": normalized_candidates,
+            "assumptions": normalized_assumptions,
+            "uncertainties": normalized_uncertainties,
+            "created_at": now,
+            "created_by": created_by,
+        }
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                """
+                INSERT INTO edit_proposals (
+                    proposal_id, session_id, status, proposal_json,
+                    applied_edit_id, applied_revision_id,
+                    selected_candidate_ids_json, created_at, updated_at
+                ) VALUES (?, ?, 'draft', ?, NULL, NULL, NULL, ?, ?)
+                """,
+                (
+                    proposal_id,
+                    session_id,
+                    json.dumps(payload, ensure_ascii=False, allow_nan=False),
+                    now,
+                    now,
+                ),
+            )
+            connection.execute(
+                """
+                INSERT INTO chat_sessions (
+                    session_id, codex_thread_id, active_edit_id,
+                    active_proposal_id, created_at, updated_at
+                ) VALUES (?, NULL, NULL, ?, ?, ?)
+                ON CONFLICT(session_id) DO UPDATE SET
+                    active_proposal_id = excluded.active_proposal_id,
+                    updated_at = excluded.updated_at
+                """,
+                (session_id, proposal_id, now, now),
+            )
+            connection.commit()
+        return self.get_proposal(proposal_id, expected_session_id=session_id)
+
+    def get_proposal(
+        self, proposal_id: str, *, expected_session_id: str | None = None
+    ) -> dict[str, Any]:
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM edit_proposals WHERE proposal_id = ?", (proposal_id,)
+            ).fetchone()
+        if row is None:
+            raise KeyError(f"proposal not found: {proposal_id}")
+        if expected_session_id is not None and row["session_id"] != expected_session_id:
+            raise PermissionError("proposal belongs to a different chat session")
+        result = json.loads(row["proposal_json"])
+        result.update(
+            {
+                "status": row["status"],
+                "applied_edit_id": row["applied_edit_id"],
+                "applied_revision_id": row["applied_revision_id"],
+                "selected_candidate_ids": (
+                    json.loads(row["selected_candidate_ids_json"])
+                    if row["selected_candidate_ids_json"]
+                    else []
+                ),
+                "updated_at": row["updated_at"],
+            }
+        )
+        return result
+
+    def apply_proposal(
+        self,
+        *,
+        catalog: TimelineCatalog,
+        proposal_id: str,
+        selected_candidate_ids: list[str] | None,
+        expected_session_id: str,
+        created_by: str,
+    ) -> dict[str, Any]:
+        with self._connection() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            current = connection.execute(
+                "SELECT status, session_id, proposal_json FROM edit_proposals "
+                "WHERE proposal_id = ?",
+                (proposal_id,),
+            ).fetchone()
+            if current is None:
+                raise KeyError(f"proposal not found: {proposal_id}")
+            if current["session_id"] != expected_session_id:
+                raise PermissionError("proposal belongs to a different chat session")
+            if current["status"] != "draft":
+                raise ValueError(
+                    "proposal must be draft before applying; "
+                    f"status={current['status']}"
+                )
+            proposal = json.loads(current["proposal_json"])
+            available = {
+                str(item["candidate_id"]): item for item in proposal["candidates"]
+            }
+            requested_ids = set(selected_candidate_ids or available.keys())
+            if not requested_ids:
+                raise ValueError("at least one proposal candidate must be selected")
+            unknown = requested_ids - available.keys()
+            if unknown:
+                raise KeyError(
+                    f"unknown proposal candidates: {', '.join(sorted(unknown))}"
+                )
+            selected_ids = [
+                str(item["candidate_id"])
+                for item in proposal["candidates"]
+                if str(item["candidate_id"]) in requested_ids
+            ]
+            proposal_session_id = str(current["session_id"])
+            operations: list[dict[str, Any]] = []
+            if (
+                proposal.get("base_edit_id")
+                and proposal.get("target_duration") is not None
+            ):
+                operations.append(
+                    {
+                        "op": "set_target_duration",
+                        "target_duration": proposal["target_duration"],
+                    }
+                )
+            candidate_operations = [
+                {
+                    "op": "add_scene",
+                    "scene_id": available[candidate_id]["scene_id"],
+                    "source_in": available[candidate_id]["source_in"],
+                    "source_out": available[candidate_id]["source_out"],
+                    "label": available[candidate_id]["label"],
+                    "reason": available[candidate_id]["reason"],
+                }
+                for candidate_id in selected_ids
+            ]
+            replacement_operations = None
+            if (
+                proposal.get("base_edit_id")
+                and proposal.get("application_mode", "replace_all") == "replace_all"
+            ):
+                replacement_operations = candidate_operations
+            else:
+                operations.extend(candidate_operations)
+            if proposal.get("base_edit_id"):
+                edit_id = str(proposal["base_edit_id"])
+                expected_revision_id = str(proposal["base_revision_id"])
+                revision_id = self._apply_operations(
+                    connection,
+                    catalog=catalog,
+                    edit_id=edit_id,
+                    expected_revision_id=expected_revision_id,
+                    summary=f"편집 제안 적용: {proposal['title']}",
+                    operations=operations,
+                    created_by=created_by,
+                    replacement_operations=replacement_operations,
+                )
+            else:
+                edit_id, expected_revision_id = self._insert_edit(
+                    connection,
+                    title=str(proposal["title"]),
+                    brief=str(proposal["objective"]),
+                    target_duration=proposal.get("target_duration"),
+                    created_by=created_by,
+                )
+                revision_id = self._apply_operations(
+                    connection,
+                    catalog=catalog,
+                    edit_id=edit_id,
+                    expected_revision_id=expected_revision_id,
+                    summary=f"편집 제안 적용: {proposal['title']}",
+                    operations=operations,
+                    created_by=created_by,
+                )
+            status = (
+                "applied"
+                if len(selected_ids) == len(available)
+                else "partially_applied"
+            )
+            updated_at = _now()
+            connection.execute(
+                """
+                UPDATE edit_proposals
+                SET status = ?, applied_edit_id = ?, applied_revision_id = ?,
+                    selected_candidate_ids_json = ?, updated_at = ?
+                WHERE proposal_id = ?
+                """,
+                (
+                    status,
+                    edit_id,
+                    revision_id,
+                    json.dumps(selected_ids),
+                    updated_at,
+                    proposal_id,
+                ),
+            )
+            connection.execute(
+                "UPDATE chat_sessions SET active_edit_id = ?, "
+                "active_proposal_id = NULL, updated_at = ? WHERE session_id = ?",
+                (edit_id, updated_at, proposal_session_id),
+            )
+            connection.commit()
+        edit = self.get_edit(edit_id)
+        return {
+            "proposal": self.get_proposal(
+                proposal_id, expected_session_id=proposal_session_id
+            ),
+            "edit": edit,
+        }
+
     def session(self, session_id: str) -> dict[str, Any]:
         with self._connection() as connection:
             row = connection.execute(
@@ -397,11 +849,21 @@ class EditStore:
             if row is None:
                 now = _now()
                 connection.execute(
-                    "INSERT INTO chat_sessions VALUES (?, NULL, NULL, ?, ?)",
+                    """
+                    INSERT INTO chat_sessions (
+                        session_id, codex_thread_id, active_edit_id,
+                        active_proposal_id, created_at, updated_at
+                    ) VALUES (?, NULL, NULL, NULL, ?, ?)
+                    """,
                     (session_id, now, now),
                 )
                 connection.commit()
-                return {"session_id": session_id, "codex_thread_id": None, "active_edit_id": None}
+                return {
+                    "session_id": session_id,
+                    "codex_thread_id": None,
+                    "active_edit_id": None,
+                    "active_proposal_id": None,
+                }
             return dict(row)
 
     def update_session(
@@ -410,14 +872,27 @@ class EditStore:
         *,
         codex_thread_id: str | None = None,
         active_edit_id: str | None = None,
+        active_proposal_id: str | None = None,
     ) -> None:
         current = self.session(session_id)
         with self._connection() as connection:
             connection.execute(
-                "UPDATE chat_sessions SET codex_thread_id = ?, active_edit_id = ?, updated_at = ? WHERE session_id = ?",
+                """
+                UPDATE chat_sessions
+                SET codex_thread_id = ?, active_edit_id = ?, active_proposal_id = ?,
+                    updated_at = ?
+                WHERE session_id = ?
+                """,
                 (
-                    codex_thread_id if codex_thread_id is not None else current.get("codex_thread_id"),
-                    active_edit_id if active_edit_id is not None else current.get("active_edit_id"),
+                    codex_thread_id
+                    if codex_thread_id is not None
+                    else current.get("codex_thread_id"),
+                    active_edit_id
+                    if active_edit_id is not None
+                    else current.get("active_edit_id"),
+                    active_proposal_id
+                    if active_proposal_id is not None
+                    else current.get("active_proposal_id"),
                     _now(),
                     session_id,
                 ),

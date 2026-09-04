@@ -349,6 +349,38 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
     .revision-clips { display: flex; gap: 2px; padding: 0 8px 8px; }
     .revision-clips i { flex: var(--clip-duration, 1); min-width: 3px; height: 14px; background: color-mix(in srgb, var(--accent) 35%, var(--panel-3)); }
     .revision-actions { padding: 0 8px 8px; }
+    .proposal-summary { padding: 8px; border-bottom: 1px solid var(--line); }
+    .proposal-summary p { margin: 3px 0 0; color: var(--muted); font-size: 8px; line-height: 1.45; }
+    .proposal-summary dl { display: flex; gap: 12px; margin: 7px 0 0; }
+    .proposal-summary dt { color: var(--faint); font: 7px var(--font-time); }
+    .proposal-summary dd { margin: 2px 0 0; color: var(--text-2); font: 8px var(--font-time); }
+    .proposal-candidates { max-height: 260px; overflow-y: auto; }
+    .proposal-candidate { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 6px; align-items: start; padding: 7px 8px; border-bottom: 1px solid var(--line); }
+    .proposal-candidate input { width: 13px; height: 13px; margin: 2px 0 0; accent-color: var(--accent); }
+    .proposal-candidate div { min-width: 0; }
+    .proposal-candidate strong, .proposal-candidate span, .proposal-candidate small { display: block; }
+    .proposal-candidate strong { overflow: hidden; color: var(--text-2); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+    .proposal-candidate span { margin-top: 2px; color: var(--accent); font: 7px var(--font-time); }
+    .proposal-candidate small { margin-top: 3px; color: var(--muted); font-size: 8px; line-height: 1.4; }
+    .proposal-candidate button { min-height: 21px; padding: 0 5px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); background: transparent; font-size: 7px; }
+    .proposal-notes { padding: 6px 8px; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 8px; line-height: 1.45; }
+    .proposal-notes b { color: var(--text-2); }
+    .proposal-actions { align-items: center; justify-content: space-between; padding: 7px 8px; }
+    .proposal-actions span { color: var(--faint); font: 7px var(--font-time); }
+    .proposal-actions button:disabled { cursor: wait; opacity: .55; }
+    .evidence-visual { display: block; position: relative; border-bottom: 1px solid var(--line); background: #090a0b; }
+    .evidence-visual img { display: block; width: 100%; max-height: 240px; object-fit: contain; }
+    .evidence-visual span { position: absolute; right: 6px; bottom: 6px; padding: 2px 4px; border: 1px solid rgba(255, 255, 255, .25); border-radius: 2px; color: #fff; background: rgba(0, 0, 0, .72); font: 7px var(--font-time); }
+    .evidence-empty { padding: 15px 8px; color: var(--faint); font-size: 8px; text-align: center; }
+    .evidence-transcript details { border-bottom: 1px solid var(--line); }
+    .evidence-transcript summary { padding: 7px 8px; color: var(--text-2); cursor: pointer; font-size: 8px; }
+    .evidence-lines { max-height: 180px; padding: 0 8px 7px; overflow-y: auto; }
+    .evidence-line { display: grid; grid-template-columns: 56px 24px minmax(0, 1fr); gap: 5px; padding: 4px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 8px; line-height: 1.35; }
+    .evidence-line time, .evidence-line b { font: 7px var(--font-time); }
+    .evidence-line time { color: var(--faint); }
+    .evidence-line b { color: var(--audio); text-transform: uppercase; }
+    .evidence-line.is-context { opacity: .68; }
+    .evidence-warning { padding: 6px 8px; border-bottom: 1px solid var(--line); color: var(--accent); font-size: 8px; line-height: 1.4; }
     .suggestions { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 10px; }
     .suggestions button { min-height: 24px; padding: 0 7px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); background: transparent; font-size: 8px; text-align: left; }
     .suggestions button:hover { color: var(--text-2); border-color: var(--accent); }
@@ -781,9 +813,17 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
         if (action.type === 'play_source_range') {
           const scene = focusSceneById(action.scene_id, true);
           if (!scene) return;
+          const sceneStart = Number(scene.dataset.previewStart || 0);
+          const sceneEnd = Number(scene.dataset.previewEnd || sceneStart);
+          const requestedStart = Number(action.source_in);
+          const requestedEnd = Number(action.source_out);
+          const sourceIn = Number.isFinite(requestedStart) ? requestedStart : sceneStart;
+          const sourceOut = Number.isFinite(requestedEnd) ? requestedEnd : sceneEnd;
+          if (sourceIn < sceneStart || sourceOut > sceneEnd || sourceOut <= sourceIn) {
+            showToast('재생 구간이 검토된 장면 범위를 벗어났습니다.');
+            return;
+          }
           if (workspaceMode === 'rough-cut') {
-            const sourceIn = Number.isFinite(Number(action.source_in)) ? Number(action.source_in) : Number(scene.dataset.previewStart || 0);
-            const sourceOut = Number.isFinite(Number(action.source_out)) ? Number(action.source_out) : Number(scene.dataset.previewEnd || sourceIn);
             const clip = {
               label: scene.dataset.previewTitle,
               source_in: sourceIn,
@@ -794,8 +834,11 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
             return;
           }
           setInspectorTab('monitor');
+          selectedStart = sourceIn;
+          selectedEnd = sourceOut;
+          previewTime.textContent = `${timeLabel(sourceIn)} — ${timeLabel(sourceOut)}`;
+          seekToSelectedStart();
           if (action.autoplay !== false && !playButton.disabled) {
-            seekToSelectedStart();
             rangePlayback = true;
             try { await previewVideo.play(); } catch { showToast('자동 재생이 차단됐습니다. 재생 버튼을 눌러주세요.'); }
           }
@@ -1101,6 +1144,193 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
         root.append(shell);
       };
 
+      const revisionCardFromEdit = edit => {
+        const revision = edit.revision;
+        return {
+          type: 'edit_revision_ref',
+          edit_id: edit.edit_id,
+          title: edit.title,
+          revision_id: revision.revision_id,
+          sequence: revision.sequence,
+          clip_count: revision.clip_count,
+          duration: revision.timeline_duration,
+          target_duration: edit.target_duration,
+          changes: revision.change_summary,
+          clips: (revision.plan?.clips || []).map(item => ({
+            clip_id: item.id,
+            scene_id: item.metadata?.scene_id,
+            label: item.label,
+            source_in: item.source_in,
+            source_out: item.source_out,
+            duration: Number(item.source_out) - Number(item.source_in)
+          }))
+        };
+      };
+
+      const renderProposalCard = (card, root) => {
+        const shell = element('section', 'agent-card proposal-card');
+        const header = element('header');
+        const state = element('span', '', card.status === 'draft' ? 'PROPOSAL · DRAFT' : String(card.status || '').toUpperCase());
+        header.append(element('strong', '', card.title || '편집 제안'), state);
+        const summary = element('div', 'proposal-summary');
+        summary.append(element('p', '', card.objective || '검토된 장면을 바탕으로 한 편집 제안'));
+        const facts = document.createElement('dl');
+        const fact = (label, value) => {
+          const wrap = document.createElement('div');
+          wrap.append(element('dt', '', label), element('dd', '', value));
+          facts.append(wrap);
+        };
+        fact('후보', `${card.candidates?.length || 0} clips`);
+        fact('예상 길이', timeLabel(card.estimated_duration));
+        if (card.target_duration) fact('목표', timeLabel(card.target_duration));
+        if (card.base_edit_id) {
+          fact('적용 방식', card.application_mode === 'append' ? '현재 컷 뒤에 추가' : '현재 컷 전체 교체');
+        }
+        summary.append(facts);
+        if (card.duration_rationale) summary.append(element('p', '', card.duration_rationale));
+
+        const candidates = element('div', 'proposal-candidates');
+        (card.candidates || []).forEach((candidate, index) => {
+          const row = element('label', 'proposal-candidate');
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.checked = true;
+          checkbox.dataset.proposalCandidate = candidate.candidate_id;
+          const copy = document.createElement('div');
+          copy.append(
+            element('strong', '', `${String(index + 1).padStart(2, '0')} · ${candidate.label}`),
+            element('span', '', `${candidate.role} · ${timeLabel(candidate.source_in)}—${timeLabel(candidate.source_out)} · ${Number(candidate.duration).toFixed(1)}s`),
+            element('small', '', candidate.reason)
+          );
+          if (candidate.uncertainty) copy.append(element('small', '', `확인 필요 · ${candidate.uncertainty}`));
+          const review = element('button', '', '검토');
+          review.type = 'button';
+          review.addEventListener('click', event => {
+            event.preventDefault();
+            dispatchAgentAction({
+              type: 'play_source_range',
+              scene_id: candidate.scene_id,
+              source_in: candidate.source_in,
+              source_out: candidate.source_out,
+              autoplay: true
+            });
+          });
+          row.append(checkbox, copy, review);
+          candidates.append(row);
+        });
+
+        const notes = [...(card.assumptions || []).map(item => `가정 · ${item}`), ...(card.uncertainties || []).map(item => `확인 필요 · ${item}`)];
+        const noteBox = notes.length ? element('div', 'proposal-notes') : null;
+        if (noteBox) notes.forEach((item, index) => noteBox.append(index ? document.createElement('br') : '', item));
+        const actions = element('div', 'card-actions proposal-actions');
+        const selectedCount = element('span', '', `${card.candidates?.length || 0}개 선택`);
+        const apply = element('button', 'is-primary', '선택 적용');
+        apply.type = 'button';
+        const updateCount = () => {
+          const count = candidates.querySelectorAll('input:checked').length;
+          selectedCount.textContent = `${count}개 선택`;
+          apply.disabled = count === 0 || card.status !== 'draft';
+        };
+        candidates.addEventListener('change', updateCount);
+        apply.addEventListener('click', async () => {
+          const selected_candidate_ids = [...candidates.querySelectorAll('input:checked')].map(input => input.dataset.proposalCandidate);
+          if (!selected_candidate_ids.length) return;
+          apply.disabled = true;
+          apply.textContent = '적용 중…';
+          try {
+            const response = await fetch(`/api/proposals/${encodeURIComponent(card.proposal_id)}/apply`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+              body: JSON.stringify({
+                session_id: card.session_id || chatSessionId,
+                selected_candidate_ids
+              })
+            });
+            if (!response.ok) {
+              const failure = await response.json().catch(() => ({}));
+              throw new Error(failure.detail || `Editor API ${response.status}`);
+            }
+            const result = await response.json();
+            card.status = result.proposal.status;
+            state.textContent = `PROPOSAL · ${card.status.toUpperCase()}`;
+            candidates.querySelectorAll('input, button').forEach(control => { control.disabled = true; });
+            apply.textContent = '적용 완료';
+            renderRevisionCard(revisionCardFromEdit(result.edit), root);
+            showToast('선택한 후보를 새 immutable revision으로 적용했습니다.');
+          } catch (error) {
+            apply.disabled = false;
+            apply.textContent = '다시 적용';
+            showToast(`제안을 적용하지 못했습니다: ${error.message}`);
+          }
+        });
+        actions.append(selectedCount, apply);
+        shell.append(header, summary, candidates);
+        if (noteBox) shell.append(noteBox);
+        shell.append(actions);
+        root.append(shell);
+        updateCount();
+      };
+
+      const renderDeepEvidenceCard = (card, root) => {
+        const shell = element('section', 'agent-card evidence-card');
+        const header = element('header');
+        header.append(
+          element('strong', '', card.title || '장면 심층 근거'),
+          element('span', '', `${timeLabel(card.source_in)}—${timeLabel(card.source_out)} · ${Number(card.duration).toFixed(1)}s`)
+        );
+        shell.append(header);
+        if (card.visual?.status === 'ready' && card.visual.contact_sheet_url) {
+          const link = element('a', 'evidence-visual');
+          link.href = card.visual.contact_sheet_url;
+          link.target = '_blank';
+          link.rel = 'noopener';
+          const image = document.createElement('img');
+          image.src = card.visual.contact_sheet_url;
+          image.alt = `${card.title} 구간의 ${card.visual.frame_count}프레임 contact sheet`;
+          link.append(image, element('span', '', `${card.visual.source} · ${card.visual.frame_count} frames`));
+          shell.append(link);
+        } else {
+          shell.append(element('div', 'evidence-empty', card.visual?.reason || '이 구간에서 사용할 수 있는 시각 근거가 없습니다.'));
+        }
+        const transcript = card.transcript || {};
+        const groups = element('div', 'evidence-transcript');
+        const addGroup = (label, rows, open = false) => {
+          if (!rows?.length) return;
+          const details = document.createElement('details');
+          details.open = open;
+          details.append(element('summary', '', `${label} · ${rows.length}`));
+          const lines = element('div', 'evidence-lines');
+          rows.forEach(row => {
+            const line = element('div', `evidence-line${row.relation === 'context' ? ' is-context' : ''}`);
+            line.append(
+              element('time', '', `${timeLabel(row.source_in)}—${timeLabel(row.source_out)}`),
+              element('b', '', row.language || '—'),
+              element('span', '', row.text || '')
+            );
+            lines.append(line);
+          });
+          details.append(lines);
+          groups.append(details);
+        };
+        addGroup('검토 자막', transcript.reviewed_captions, true);
+        addGroup('원문 발화', transcript.source_utterances, !transcript.reviewed_captions?.length);
+        addGroup('원시 STT 후보', transcript.raw_stt_candidates);
+        shell.append(groups);
+        if (transcript.raw_stt_included) {
+          shell.append(element('div', 'evidence-warning', `원시 STT는 미검증 보조 근거입니다. 검토 자막을 덮어쓰지 않습니다.${transcript.truncated ? ' 출력 한도에 따라 일부가 생략됐습니다.' : ''}`));
+        }
+        const actions = element('div', 'card-actions revision-actions');
+        const play = element('button', 'is-primary', '구간 재생');
+        play.type = 'button';
+        play.addEventListener('click', () => dispatchAgentAction({ type: 'play_source_range', scene_id: card.scene_id, source_in: card.source_in, source_out: card.source_out, autoplay: true }));
+        const detail = element('button', '', '장면에서 보기');
+        detail.type = 'button';
+        detail.addEventListener('click', () => focusSceneById(card.scene_id, true));
+        actions.append(play, detail);
+        shell.append(actions);
+        root.append(shell);
+      };
+
       const renderRevisionCard = (card, root) => {
         const shell = element('section', 'agent-card');
         const header = element('header');
@@ -1143,6 +1373,8 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
 
       const renderCard = (card, root) => {
         if (card.type === 'scene_refs') renderSceneCard(card, root);
+        else if (card.type === 'edit_proposal_ref') renderProposalCard(card, root);
+        else if (card.type === 'scene_deep_evidence') renderDeepEvidenceCard(card, root);
         else if (card.type === 'edit_revision_ref') renderRevisionCard(card, root);
         else {
           const notice = element('section', 'agent-card');

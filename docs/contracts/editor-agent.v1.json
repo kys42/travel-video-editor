@@ -2,7 +2,7 @@
   "schema_version": "editor-agent-contract/v1",
   "contract_id": "travel-video-editor/editor-agent/v1",
   "status": "active",
-  "revision": 4,
+  "revision": 6,
   "updated_at": "2026-09-04",
   "service": "travel-video-editor",
   "owners": ["editor-api", "agent-runtime", "edit-desk-ui"],
@@ -13,6 +13,7 @@
   },
   "principles": [
     "Query compact scene metadata before requesting detailed evidence.",
+    "Represent a plan as a validated edit proposal before applying it as an edit revision so the user can inspect or partially accept the candidates.",
     "For a new edit or substantial restructuring, inspect relevant footage evidence, present a concise edit plan, and wait for conversational confirmation before creating a revision unless the user explicitly requests immediate execution.",
     "Never expose arbitrary filesystem, shell, FFmpeg, or source mutation capabilities.",
     "Every edit mutation creates a new immutable revision.",
@@ -43,8 +44,8 @@
         "id": "L2-evidence",
         "title": "Detailed scene evidence",
         "delivery": "tool_on_demand",
-        "contents": ["chronological action segments", "reviewed original-language caption lines", "legacy utterances or STT candidates when reviewed captions are unavailable", "notable moments", "selected frame references"],
-        "detail_boundary": "One shortlisted scene per get_scene_evidence call; never preload full transcripts or image bytes."
+        "contents": ["chronological action segments", "reviewed original-language caption lines", "explicitly requested raw STT candidates", "nearby dialogue context", "notable moments", "selected frame references", "bounded proxy or analysis-frame contact sheets"],
+        "detail_boundary": "One shortlisted scene per call. inspect_scene_range is capped to a 180-second source range, 12 frames, 15 seconds of dialogue context, 80 raw candidates, and 12,000 transcript characters."
       },
       {
         "id": "L3-media",
@@ -76,7 +77,12 @@
       "visible_asset_id_count": 100,
       "project_day_rollup_count": 31,
       "project_asset_index_count": 40,
-      "nearby_asset_count": 5
+      "nearby_asset_count": 5,
+      "evidence_range_seconds": 180,
+      "evidence_frame_count": 12,
+      "evidence_context_seconds": 15,
+      "evidence_text_characters": 12000,
+      "evidence_raw_candidate_count": 80
     }
   },
   "decision_policy": {
@@ -88,21 +94,21 @@
     ],
     "tool_use": [
       "Do not call a query tool merely to repeat data already present in the context snapshot.",
-      "Search compact metadata before detailed evidence and inspect only a small shortlist.",
+      "Search compact metadata before detailed evidence and inspect only a small shortlist. Use inspect_scene_range only when exact dialogue, cut boundaries, or visual ambiguity require denser evidence.",
       "For explicit multi-selection, stay inside selected scenes unless the user asks for additional material.",
       "Use display and UI-action tools instead of writing internal commands or guessed links in chat."
     ],
     "planning": [
       "For a new edit or substantial structural revision, first determine the user's purpose, target scope, and target duration from the resolved workspace context; if the scope or intent is unresolved, ask a clarification without calling a durable-action tool.",
       "Before proposing a plan, inspect the current selection and compact scene summaries, search only when more footage is needed, and load detailed evidence only for shortlisted scenes whose dialogue or exact cut point matters.",
-      "Present a concise plan grounded in inspected data: list the intended scene titles in sequence, estimated source ranges or durations, the editing role of each scene, important dialogue or actions, and material uncertainty.",
-      "End the planning turn by asking whether to proceed or what to change. Do not call create_edit or apply_edit_operations in that turn.",
-      "On a later turn, clear conversational consent such as approval of the just-presented plan authorizes creating the revision; requested plan changes must be incorporated before mutation.",
+      "Create one validated edit proposal grounded in inspected data: list the intended scene titles in sequence, estimated source ranges or durations, the editing role of each scene, important dialogue or actions, and material uncertainty.",
+      "End the planning turn by showing the proposal and asking whether to apply it or what to change. Do not call create_edit, apply_edit_proposal, or apply_edit_operations in that turn.",
+      "On a later turn, clear conversational consent such as approval of the just-presented proposal authorizes applying it as a revision; requested plan changes must become a new proposal before mutation.",
       "If the user explicitly says to execute immediately, skip confirmation, or not present a plan, briefly state the intended edit and perform it in the same turn.",
       "A precise, small change to an existing active edit, such as one trim, move, or removal, may be applied directly after reading the current head; substantial restructuring still requires a plan-first turn."
     ],
     "mutations": [
-      "Create or substantially modify an edit only after conversational confirmation of the preceding plan or an explicit immediate-execution bypass; precise small changes to an active edit are the only direct-edit exception.",
+      "Creating a proposal is reversible planning state and does not create an edit revision. Apply or substantially modify an edit only after conversational confirmation, an explicit apply action on the proposal card, or an explicit immediate-execution bypass; precise small changes to an active edit are the only direct-edit exception.",
       "Read the active edit head before changing an existing edit.",
       "Every successful mutation creates a new immutable revision guarded by expected_revision_id.",
       "Never report a change as completed until the durable-action observation confirms it."
@@ -167,23 +173,31 @@
       "title": "장면·대화 찾기",
       "summary": "장면 설명, 행동, 특이 포인트, 태그와 원문 대화를 함께 검색하고 후보를 근거와 함께 좁힙니다.",
       "examples": ["음식 주문하는 장면 찾아줘", "웃긴 표정 다음에 나온 대화가 뭐였지?"],
-      "tools": ["search_scenes", "get_scene_evidence", "show_scene_refs"],
+      "tools": ["search_scenes", "get_scene_evidence", "inspect_scene_range", "show_scene_refs"],
       "outcome": "후보 장면 카드와 원본 타임코드를 반환하며, 상세 데이터는 선택한 장면에만 요청합니다."
+    },
+    {
+      "id": "inspect-scene-deeply",
+      "title": "장면 구간 심층 검토",
+      "summary": "선택한 scene의 필요한 source range만 촘촘한 이미지 시트, 검토 자막, 원시 KO/EN STT와 앞뒤 대화 문맥으로 확인합니다.",
+      "examples": ["이 장면을 이미지 시트와 원문 대화까지 자세히 봐줘", "마지막 반응 전후 20초만 촘촘하게 확인해줘"],
+      "tools": ["inspect_scene_range", "play_source_range", "focus_scene"],
+      "outcome": "전체 영상을 다시 읽지 않고 최대 12프레임과 제한된 대화 근거만 모델과 웹에 전달합니다."
     },
     {
       "id": "create-rough-cut",
       "title": "러프컷 초안 만들기",
       "summary": "목적과 목표 길이에 맞는 장면을 살펴보고 구성을 먼저 제안한 뒤, 대화로 확인된 계획을 원본 타임코드에 연결된 편집 초안으로 만듭니다.",
       "examples": ["이 영상들로 자연스러운 길이의 여행 하이라이트 구성을 제안해줘", "음식과 사람 반응 중심의 쇼츠 초안을 만들어줘"],
-      "tools": ["search_scenes", "create_edit", "apply_edit_operations", "show_edit_revision"],
-      "outcome": "장면 순서·길이·선택 이유를 먼저 설명하고 확인받은 다음, 원본을 건드리지 않는 새 edit와 immutable revision을 생성합니다."
+      "tools": ["search_scenes", "get_scene_evidence", "create_edit_proposal", "get_edit_proposal", "apply_edit_proposal", "show_edit_revision"],
+      "outcome": "장면 순서·길이·선택 이유를 구조화 proposal로 보여주고 전체 또는 선택 후보를 확인받은 다음, 원본을 건드리지 않는 immutable revision을 생성합니다."
     },
     {
       "id": "revise-cut",
       "title": "컷 구성 수정",
       "summary": "기존 초안의 작은 변경은 바로 적용하고, 큰 구조 변경은 현재 revision을 살펴본 뒤 변경 계획을 먼저 제안합니다.",
       "examples": ["주문 장면은 줄이고 반응을 더 길게 해줘", "마지막 컷을 앞으로 옮기고 전체를 45초로 맞춰줘"],
-      "tools": ["get_edit", "apply_edit_operations", "show_edit_revision"],
+      "tools": ["get_edit", "create_edit_proposal", "get_edit_proposal", "apply_edit_proposal", "apply_edit_operations", "show_edit_revision"],
       "outcome": "큰 구조 변경은 계획 확인 후, 작은 명시적 변경은 바로 적용하며 이전 결과를 덮어쓰지 않는 다음 revision을 생성합니다."
     },
     {
@@ -276,6 +290,106 @@
         "additionalProperties": false
       },
       "output": "Detailed evidence for a single scene, capped to reviewed metadata and frame references."
+    },
+    {
+      "name": "inspect_scene_range",
+      "category": "data_query",
+      "intent": "Inspect one shortlisted source range more deeply when reviewed metadata is insufficient for exact dialogue, cut boundaries, or visual context. Prefer existing analysis frames; in auto mode generate and cache a denser contact sheet from the configured proxy only when existing frames are sparse. Raw KO/EN STT is explicitly requested secondary evidence and never overrides reviewed captions.",
+      "side_effect": "creates_regenerable_evidence_cache",
+      "approval": "never",
+      "status_message": "선택 구간의 이미지와 원문 대화를 자세히 확인하는 중",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "scene_id": {"type": "string"},
+          "source_in": {"type": "number", "minimum": 0},
+          "source_out": {"type": "number", "exclusiveMinimum": 0},
+          "visual_mode": {"type": "string", "enum": ["none", "auto", "existing", "proxy"], "default": "auto"},
+          "frame_count": {"type": "integer", "minimum": 1, "maximum": 12, "default": 8},
+          "include_raw_stt": {"type": "boolean", "default": false},
+          "context_seconds": {"type": "number", "minimum": 0, "maximum": 15, "default": 4}
+        },
+        "required": ["scene_id"],
+        "additionalProperties": false
+      },
+      "output": "One bounded evidence packet, a web card, and at most one locally generated contact-sheet image input."
+    },
+    {
+      "name": "create_edit_proposal",
+      "category": "proposal_action",
+      "intent": "Create a validated, inspectable edit proposal after reviewing a compact shortlist. This is the normal planning-turn output and does not create an edit revision. Every candidate needs a reviewed scene, source range, editorial role, and selection reason. For an existing edit, declare whether the proposed final sequence replaces all current clips or appends to them.",
+      "side_effect": "creates_proposal",
+      "approval": "never",
+      "status_message": "검토 가능한 편집 제안을 구성하는 중",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "title": {"type": "string", "minLength": 1, "maxLength": 120},
+          "objective": {"type": "string", "minLength": 1, "maxLength": 2000},
+          "target_duration": {"type": "number", "minimum": 5, "maximum": 7200},
+          "duration_rationale": {"type": "string", "maxLength": 800},
+          "base_edit_id": {"type": "string"},
+          "base_revision_id": {"type": "string"},
+          "application_mode": {"type": "string", "enum": ["replace_all", "append"], "default": "replace_all"},
+          "assumptions": {"type": "array", "maxItems": 12, "items": {"type": "string", "maxLength": 400}},
+          "uncertainties": {"type": "array", "maxItems": 12, "items": {"type": "string", "maxLength": 400}},
+          "candidates": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 24,
+            "items": {
+              "type": "object",
+              "required": ["scene_id", "role", "reason"],
+              "properties": {
+                "scene_id": {"type": "string"},
+                "source_in": {"type": "number", "minimum": 0},
+                "source_out": {"type": "number", "exclusiveMinimum": 0},
+                "label": {"type": "string", "maxLength": 160},
+                "role": {"type": "string", "minLength": 1, "maxLength": 80},
+                "reason": {"type": "string", "minLength": 1, "maxLength": 600},
+                "uncertainty": {"type": "string", "maxLength": 600}
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["title", "objective", "candidates"],
+        "additionalProperties": false
+      },
+      "output": "A persisted draft proposal and edit_proposal_ref card; no edit or revision is created."
+    },
+    {
+      "name": "get_edit_proposal",
+      "category": "data_query",
+      "intent": "Read the active or specified proposal from the same chat session before applying it or explaining its candidate choices.",
+      "side_effect": "none",
+      "approval": "never",
+      "status_message": "편집 제안의 후보와 적용 상태를 확인하는 중",
+      "input_schema": {
+        "type": "object",
+        "properties": {"proposal_id": {"type": "string"}},
+        "required": ["proposal_id"],
+        "additionalProperties": false
+      },
+      "output": "One proposal with validated candidate IDs, source ranges, rationale, assumptions, uncertainty, and application status."
+    },
+    {
+      "name": "apply_edit_proposal",
+      "category": "durable_action",
+      "intent": "Apply all or an explicitly selected subset of a draft proposal from the same chat session only after conversational confirmation, an explicit proposal-card apply action, or an explicit immediate-execution request. Creates a new edit when the proposal has no base edit; for an existing edit it requires the base revision to remain current and follows the proposal's replace_all or append mode.",
+      "side_effect": "creates_revision",
+      "approval": "chat_confirmation_of_proposal",
+      "status_message": "확인된 편집 제안을 새 리비전으로 적용하는 중",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "proposal_id": {"type": "string"},
+          "selected_candidate_ids": {"type": "array", "minItems": 1, "maxItems": 24, "items": {"type": "string"}}
+        },
+        "required": ["proposal_id"],
+        "additionalProperties": false
+      },
+      "output": "Applied proposal status and the new immutable edit revision."
     },
     {
       "name": "create_edit",
@@ -400,6 +514,8 @@
         "type": "object",
         "properties": {
           "scene_id": {"type": "string"},
+          "source_in": {"type": "number", "minimum": 0},
+          "source_out": {"type": "number", "exclusiveMinimum": 0},
           "autoplay": {"type": "boolean", "default": true}
         },
         "required": ["scene_id"],
