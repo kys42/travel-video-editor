@@ -109,6 +109,7 @@ Supported operations are `add_scene`, `trim_clip`, `move_clip`, `remove_clip`, `
 - `POST /api/edits/{edit_id}/operations` — optimistic-concurrency mutation.
 - `POST /api/agent/chat` — SSE stream using the seven event types in the event contract.
 - `GET /guide` — live operations manual rendered from the current tool contract and runtime health.
+- `GET /rough-cut` — serves the same generated Review Workspace as `/`; the client switches only the revision/chat companion layout.
 
 The normal SSE order is `status* → card/action* → text* → suggestions? → done`. An `error` terminates the stream. The UI treats a transport close without `done` as an incomplete turn.
 
@@ -138,6 +139,8 @@ Open `http://localhost:8765`. Do not open the generated page with `file://` when
 - demo backend completes an end-to-end search → cards → draft revision flow;
 - Codex backend uses structured output and can resume the stored session thread;
 - the Edit Desk supports cancelable SSE, scene cards, semantic actions, and persistent session IDs;
+- Review and Rough Cut contain one shared footage/scene workspace implementation, and revision clips navigate back to their authoritative scene evidence;
+- revision cards expose source in/out coordinates, the visible Rough Cut program monitor plays that bounded proxy range, and cached UI references are scoped by library fingerprint and validated against the server;
 - existing Phase 1 tests and new editor tests pass.
 
 ## Deferred production work

@@ -60,10 +60,16 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
     .identity span:last-child::before { margin-right: 8px; color: var(--faint); content: "/"; }
     .dataset { gap: 13px; color: var(--muted); font: 9px var(--font-time); }
     .dataset b { color: var(--text-2); font-weight: 500; }
+    .app-center { display: flex; align-items: center; gap: 10px; }
+    .mode-switch { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 4px; background: #111315; }
+    .mode-switch a { min-width: 72px; height: 25px; padding: 0 9px; border-radius: 2px; color: var(--faint); font: 650 8px/25px var(--font-time); text-align: center; text-decoration: none; }
+    .mode-switch a:hover { color: var(--text-2); background: var(--hover); }
+    .mode-switch a[aria-current="page"] { color: var(--accent); background: var(--panel-3); box-shadow: inset 0 0 0 1px var(--line-strong); }
     .app-meta { justify-content: flex-end; gap: 10px; color: var(--faint); font: 9px var(--font-time); }
     .key { padding: 2px 5px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); background: #121416; }
 
-    .workspace { display: grid; grid-template-columns: 232px minmax(520px, 1fr) 330px; height: calc(100vh - var(--bar-h) - 24px); min-height: 0; }
+    .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 330px; height: calc(100vh - var(--bar-h) - 24px); min-height: 0; }
+    .review-workspace { display: grid; grid-template-columns: 232px minmax(520px, 1fr); min-width: 0; min-height: 0; }
     .panel { min-width: 0; min-height: 0; background: var(--panel); }
     .panel-titlebar { display: flex; align-items: center; justify-content: space-between; min-height: 36px; padding: 0 10px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
     .panel-titlebar h2 { margin: 0; font-size: 11px; font-weight: 650; }
@@ -204,6 +210,50 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
     .story-frame figcaption b { color: var(--text-2); font: 8px var(--font-time); }
     .story-frame figcaption span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+    .revision-panel { display: none; grid-template-rows: 36px auto 176px minmax(0, 1fr); min-width: 0; min-height: 0; border-left: 1px solid var(--line-strong); background: #121518; }
+    .revision-titlebar { display: flex; align-items: center; justify-content: space-between; padding: 0 9px 0 11px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
+    .revision-titlebar div { min-width: 0; }
+    .revision-titlebar span, .revision-titlebar strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .revision-titlebar span { color: var(--faint); font: 7px var(--font-time); }
+    .revision-titlebar strong { margin-top: 1px; font-size: 10px; }
+    .revision-titlebar button { height: 25px; padding: 0 7px; border: 1px solid var(--accent); border-radius: 3px; color: #211a0f; background: var(--accent); font-size: 8px; font-weight: 650; }
+    .revision-summary { display: grid; grid-template-columns: 94px minmax(0, 1fr); min-height: 52px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
+    .revision-current { display: grid; align-content: center; padding: 0 10px; border-right: 1px solid var(--line); }
+    .revision-current span { color: var(--faint); font: 7px var(--font-time); }
+    .revision-current strong { margin-top: 3px; color: var(--accent); font: 650 10px var(--font-time); }
+    .revision-facts { display: grid; grid-template-columns: repeat(3, 1fr); margin: 0; }
+    .revision-facts div { display: grid; align-content: center; padding-left: 8px; border-right: 1px solid var(--line); }
+    .revision-facts div:last-child { border-right: 0; }
+    .revision-facts dt { color: var(--faint); font: 7px var(--font-time); }
+    .revision-facts dd { margin: 2px 0 0; color: var(--text-2); font: 8px var(--font-time); }
+    .program-preview { position: relative; min-height: 0; overflow: hidden; border-bottom: 1px solid var(--line-strong); background: #090a0b; }
+    .program-preview img, .program-preview video { width: 100%; height: 100%; object-fit: cover; opacity: .9; }
+    .program-preview video { position: absolute; inset: 0; z-index: 1; background: #090a0b; }
+    .program-preview::after { position: absolute; inset: 45% 0 0; background: linear-gradient(transparent, rgba(0, 0, 0, .82)); content: ""; pointer-events: none; }
+    .program-preview > span { position: absolute; z-index: 2; top: 7px; right: 8px; color: rgba(255, 255, 255, .68); font: 7px var(--font-time); pointer-events: none; }
+    .program-preview div { position: absolute; z-index: 2; right: 10px; bottom: 8px; left: 10px; pointer-events: none; }
+    .program-preview.has-video div { bottom: 34px; }
+    .program-preview strong, .program-preview small { display: block; overflow: hidden; color: #fff; text-overflow: ellipsis; white-space: nowrap; }
+    .program-preview strong { font-size: 10px; }
+    .program-preview small { margin-top: 2px; color: rgba(255, 255, 255, .7); font: 7px var(--font-time); }
+    .revision-body { display: grid; grid-template-rows: 32px minmax(0, 1fr); min-height: 0; }
+    .revision-body > header { display: flex; align-items: center; justify-content: space-between; padding: 0 9px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
+    .revision-body > header strong { font: 650 8px var(--font-time); letter-spacing: .04em; }
+    .revision-body > header span { color: var(--faint); font-size: 8px; }
+    .rough-clips { min-height: 0; margin: 0; padding: 0; overflow-y: auto; list-style: none; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+    .rough-clip { border-bottom: 1px solid var(--line); }
+    .rough-clip button { display: grid; grid-template-columns: 24px 62px minmax(0, 1fr) auto; gap: 7px; align-items: center; width: 100%; min-height: 58px; padding: 6px 8px; border: 0; color: var(--text); text-align: left; background: transparent; }
+    .rough-clip button:hover { background: var(--hover); }
+    .rough-clip button[aria-current="true"] { background: var(--selected); box-shadow: inset 2px 0 var(--accent); }
+    .rough-clip-index { color: var(--faint); font: 8px var(--font-time); }
+    .rough-clip img { width: 62px; height: 40px; object-fit: cover; border: 1px solid var(--line); }
+    .rough-clip-copy { min-width: 0; }
+    .rough-clip-copy strong, .rough-clip-copy span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rough-clip-copy strong { font-size: 9px; }
+    .rough-clip-copy span { margin-top: 3px; color: var(--muted); font: 7px var(--font-time); }
+    .rough-clip time { color: var(--text-2); font: 8px var(--font-time); }
+    .rough-empty { padding: 24px 14px; color: var(--muted); font-size: 9px; line-height: 1.55; text-align: center; }
+
     .monitor-panel { display: grid; grid-template-rows: auto minmax(0, 1fr); background: var(--panel); }
     .inspector-head { display: flex; align-items: stretch; justify-content: space-between; min-height: 36px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
     .inspector-tabs { display: flex; align-items: stretch; }
@@ -313,8 +363,29 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
     .toast { position: fixed; right: 12px; bottom: 35px; z-index: 100; max-width: 360px; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: 5px; color: var(--text); background: var(--panel-3); box-shadow: 0 8px 26px rgba(0, 0, 0, .28); opacity: 0; pointer-events: none; transform: translateY(6px); transition: opacity 160ms cubic-bezier(.2, .7, .2, 1), transform 160ms cubic-bezier(.2, .7, .2, 1); }
     .toast.is-visible { opacity: 1; transform: translateY(0); }
 
+    .workspace.is-rough-cut { grid-template-columns: minmax(580px, 1fr) 330px 330px; }
+    .workspace.is-rough-cut .review-workspace { grid-template-columns: 200px minmax(380px, 1fr); }
+    .workspace.is-rough-cut .revision-panel { display: grid; }
+    .workspace.is-rough-cut .monitor-panel { border-left: 1px solid var(--line-strong); }
+    .workspace.is-rough-cut .inspector-tabs { display: none; }
+    .workspace.is-rough-cut .inspector-head::before { display: flex; align-items: center; padding-left: 11px; color: var(--accent); font: 650 9px var(--font-time); content: "AI EDITOR"; }
+    .workspace.is-rough-cut [data-inspector-panel="monitor"] { display: none !important; }
+    .workspace.is-rough-cut [data-inspector-panel="ai"] { display: grid !important; }
+    .workspace.is-rough-cut .scene-summary { grid-template-columns: 34px 52px 78px minmax(120px, 1fr) 58px; gap: 7px; }
+    .workspace.is-rough-cut .scene-thumb { width: 78px; height: 50px; }
+    .workspace.is-rough-cut .scene-dialogue { display: none; }
+    .workspace.is-rough-cut .analysis-grid { grid-template-columns: 1fr 1fr; }
+    .workspace.is-rough-cut .analysis-grid > section:nth-child(2) { border-right: 0; }
+    .workspace.is-rough-cut .analysis-grid > section:last-child { grid-column: 1 / -1; padding-left: 0; border-top: 1px solid var(--line); }
+    .workspace.is-rough-cut .segment-row { grid-template-columns: 58px 88px minmax(0, 1fr); }
+    .workspace.is-rough-cut .segment-frame { width: 88px; height: 52px; }
+    .workspace.is-rough-cut .segment-stt { grid-column: 2 / -1; padding: 7px 0 0; border-top: 1px solid var(--line); border-left: 0; }
+
     @media (max-width: 1240px) {
-      .workspace { grid-template-columns: 210px minmax(480px, 1fr) 300px; }
+      .workspace { grid-template-columns: minmax(0, 1fr) 300px; }
+      .review-workspace { grid-template-columns: 210px minmax(480px, 1fr); }
+      .workspace.is-rough-cut { grid-template-columns: minmax(500px, 1fr) 290px 270px; }
+      .workspace.is-rough-cut .review-workspace { grid-template-columns: 175px minmax(325px, 1fr); }
       .scene-summary { grid-template-columns: 38px 60px 96px minmax(170px, 1fr) 76px; }
       .scene-thumb { width: 96px; height: 58px; }
       .scene-dialogue { display: none; }
@@ -323,21 +394,25 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
       .analysis-grid > section:last-child { grid-column: 1 / -1; padding-left: 0; border-top: 1px solid var(--line); }
     }
 
-    @media (max-width: 980px) {
+    @media (max-width: 1060px) {
       body { overflow: auto; }
       .appbar { position: sticky; top: 0; z-index: 20; grid-template-columns: 1fr auto; }
       .dataset { display: none; }
-      .workspace { display: block; height: auto; }
+      .workspace, .workspace.is-rough-cut { display: block; height: auto; }
+      .review-workspace, .workspace.is-rough-cut .review-workspace { display: block; }
       .footage-panel { max-height: 250px; border-right: 0; border-bottom: 1px solid var(--line-strong); }
       .timeline-panel { display: block; overflow: visible; border-right: 0; }
       .timeline-scroll { height: auto; overflow: visible; }
       .monitor-panel { min-height: 540px; border-top: 1px solid var(--line-strong); }
+      .revision-panel { min-height: 620px; }
       .statusbar { display: none; }
     }
 
     @media (max-width: 680px) {
       .app-meta { display: none; }
-      .appbar { grid-template-columns: 1fr; }
+      .appbar { grid-template-columns: auto 1fr; }
+      .app-center { justify-content: flex-end; }
+      .mode-switch a { min-width: 62px; }
       .identity span:last-child { display: none; }
       .clip-header { grid-template-columns: 1fr; }
       .clip-header dl { display: none; }
@@ -346,8 +421,12 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
       .scene-summary { grid-template-columns: 40px 55px 82px minmax(0, 1fr); }
       .scene-thumb { width: 82px; height: 50px; }
       .scene-state { display: none; }
+      .workspace.is-rough-cut .scene-summary { grid-template-columns: 40px 55px 82px minmax(0, 1fr); }
+      .workspace.is-rough-cut .scene-thumb { width: 82px; height: 50px; }
       .scene-depth { padding-left: 10px; }
       .analysis-grid { grid-template-columns: 1fr; }
+      .workspace.is-rough-cut .analysis-grid { grid-template-columns: 1fr; }
+      .workspace.is-rough-cut .analysis-grid > section:last-child { grid-column: auto; }
       .analysis-grid > section { padding: 9px 0; border-right: 0; border-bottom: 1px solid var(--line); }
       .analysis-grid > section:last-child { grid-column: auto; }
       .segment-row { grid-template-columns: 60px 84px minmax(0, 1fr); }
@@ -360,24 +439,33 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
     }
   </style>
 </head>
-<body>
+<body data-library-id="__LIBRARY_ID__">
   <a class="skip-link" href="#timeline">장면 타임라인으로 건너뛰기</a>
   <header class="appbar">
     <div class="identity"><span class="mark" aria-hidden="true"><i></i><i></i></span><strong>Travel Video Editor</strong><span>__TITLE__</span></div>
-    <div class="dataset"><span><b>__VIDEO_COUNT__</b> CLIPS</span><span><b>__TOTAL_SCENES__</b> SCENES</span><span><b>__TOTAL_DURATION__</b></span></div>
+    <div class="app-center"><nav class="mode-switch" aria-label="작업 화면"><a href="?mode=review" data-workspace-mode="review">REVIEW</a><a href="?mode=rough-cut" data-workspace-mode="rough-cut">ROUGH CUT</a></nav><div class="dataset"><span><b>__VIDEO_COUNT__</b> CLIPS</span><span><b>__TOTAL_SCENES__</b> SCENES</span><span><b>__TOTAL_DURATION__</b></span></div></div>
     <div class="app-meta"><span>__DATE_LABEL__ · __TIME_RANGE__</span><a class="key" href="/guide" data-guide-link>AI GUIDE</a><span class="key">/ 검색</span></div>
   </header>
 
-  <main class="workspace">
-    <aside class="panel footage-panel" aria-label="영상 목록">
-      <div class="panel-titlebar"><h2>Footage</h2><span><b data-count>__VIDEO_COUNT__</b> clips</span></div>
-      <label class="search"><span hidden>영상과 장면 검색</span><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="4.5" stroke="currentColor"/><path d="m10.5 10.5 3 3" stroke="currentColor" stroke-linecap="round"/></svg><input type="search" placeholder="클립·장면·대화 검색" autocomplete="off" data-search></label>
-      <div class="footage-scroll"><ol class="footage-list">__FOOTAGE_ITEMS__</ol><p class="empty-search" data-empty hidden><strong>일치하는 장면이 없습니다.</strong><span>다른 장면명, 행동, 대사로 검색해보세요.</span></p></div>
-    </aside>
+  <main class="workspace" data-workspace>
+    <section class="review-workspace" data-review-workspace aria-label="공용 영상 검토 작업공간">
+      <aside class="panel footage-panel" aria-label="영상 목록">
+        <div class="panel-titlebar"><h2>Footage</h2><span><b data-count>__VIDEO_COUNT__</b> clips</span></div>
+        <label class="search"><span hidden>영상과 장면 검색</span><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="4.5" stroke="currentColor"/><path d="m10.5 10.5 3 3" stroke="currentColor" stroke-linecap="round"/></svg><input type="search" placeholder="클립·장면·대화 검색" autocomplete="off" data-search></label>
+        <div class="footage-scroll"><ol class="footage-list">__FOOTAGE_ITEMS__</ol><p class="empty-search" data-empty hidden><strong>일치하는 장면이 없습니다.</strong><span>다른 장면명, 행동, 대사로 검색해보세요.</span></p></div>
+      </aside>
 
-    <section class="panel timeline-panel" id="timeline" tabindex="-1" aria-label="장면 타임라인">
-      <div class="timeline-scroll">__CLIP_PANELS__</div>
+      <section class="panel timeline-panel" id="timeline" tabindex="-1" aria-label="장면 타임라인">
+        <div class="timeline-scroll">__CLIP_PANELS__</div>
+      </section>
     </section>
+
+    <aside class="panel revision-panel" data-revision-panel aria-label="Rough Cut revision">
+      <header class="revision-titlebar"><div><span>ACTIVE EDIT</span><strong data-rough-title>편집 초안 없음</strong></div><button type="button" data-rough-export>내보내기</button></header>
+      <section class="revision-summary"><div class="revision-current"><span>CURRENT REVISION</span><strong data-rough-revision>NO REV</strong></div><dl class="revision-facts"><div><dt>길이</dt><dd data-rough-duration>00:00</dd></div><div><dt>클립</dt><dd data-rough-count>0</dd></div><div><dt>작성</dt><dd data-rough-author>—</dd></div></dl></section>
+      <section class="program-preview" aria-label="선택 편집 클립 미리보기" data-rough-preview><img src="__INITIAL_PREVIEW_URL__" alt="선택 편집 클립 대표 프레임" data-rough-preview-image><video controls playsinline preload="metadata" data-rough-preview-video hidden></video><span>PROGRAM · SOURCE LINK</span><div><strong data-rough-preview-title>Revision이 생성되면 클립을 바로 검토할 수 있습니다.</strong><small data-rough-preview-time>원본 타임코드 연결 대기</small></div></section>
+      <section class="revision-body"><header><strong>EDIT CLIPS</strong><span>클립 선택 → 왼쪽 원본 장면</span></header><ol class="rough-clips" data-rough-clips><li class="rough-empty">AI Editor와 편집 방향을 정하면 revision과 원본에 연결된 클립 목록이 여기에 표시됩니다.</li></ol></section>
+    </aside>
 
     <aside class="panel monitor-panel" aria-label="소스 모니터와 AI 편집기">
       <div class="inspector-head">
@@ -408,6 +496,10 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
 
   <script>
     (() => {
+      const workspace = document.querySelector('[data-workspace]');
+      const workspaceModeLinks = [...document.querySelectorAll('[data-workspace-mode]')];
+      const requestedMode = new URLSearchParams(location.search).get('mode');
+      let workspaceMode = requestedMode === 'rough-cut' || (!requestedMode && location.pathname.replace(/\/$/, '').endsWith('/rough-cut')) ? 'rough-cut' : 'review';
       const clipButtons = [...document.querySelectorAll('[data-select-clip]')];
       const clipPanels = [...document.querySelectorAll('[data-clip-panel]')];
       const search = document.querySelector('[data-search]');
@@ -438,13 +530,29 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
       const chatInput = document.querySelector('[data-chat-input]');
       const chatSend = document.querySelector('[data-chat-send]');
       const suggestionRoot = document.querySelector('[data-suggestions]');
+      const roughTitle = document.querySelector('[data-rough-title]');
+      const roughRevision = document.querySelector('[data-rough-revision]');
+      const roughDuration = document.querySelector('[data-rough-duration]');
+      const roughCount = document.querySelector('[data-rough-count]');
+      const roughAuthor = document.querySelector('[data-rough-author]');
+      const roughPreview = document.querySelector('[data-rough-preview]');
+      const roughPreviewImage = document.querySelector('[data-rough-preview-image]');
+      const roughPreviewVideo = document.querySelector('[data-rough-preview-video]');
+      const roughPreviewTitle = document.querySelector('[data-rough-preview-title]');
+      const roughPreviewTime = document.querySelector('[data-rough-preview-time]');
+      const roughClips = document.querySelector('[data-rough-clips]');
+      const revisionStorageKey = `tve-active-revision:${document.body.dataset.libraryId}`;
       let selectedStart = 0;
       let selectedEnd = 0;
       let rangePlayback = false;
       let loadedMediaUrl = '';
+      let roughLoadedMediaUrl = '';
+      let roughStart = 0;
+      let roughEnd = 0;
+      let roughRangePlayback = false;
       let activeEditId = null;
       let chatController = null;
-      let inspectorTab = 'monitor';
+      let inspectorTab = workspaceMode === 'rough-cut' ? 'ai' : 'monitor';
       let chatSessionId = sessionStorage.getItem('tve-chat-session') || null;
       let restoredSceneSelection = [];
       try { restoredSceneSelection = JSON.parse(sessionStorage.getItem('tve-selected-scenes') || '[]'); } catch {}
@@ -482,13 +590,45 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
         updateAgentContext();
       };
 
+      const setWorkspaceMode = (mode, updateUrl = false) => {
+        if (!['review', 'rough-cut'].includes(mode)) return;
+        workspaceMode = mode;
+        workspace.classList.toggle('is-rough-cut', mode === 'rough-cut');
+        workspaceModeLinks.forEach(link => link.setAttribute('aria-current', link.dataset.workspaceMode === mode ? 'page' : 'false'));
+        if (mode === 'rough-cut') {
+          setInspectorTab('ai');
+          const selectedClip = roughClips.querySelector('button[aria-current="true"]') || roughClips.querySelector('button');
+          if (selectedClip) selectedClip.click();
+        }
+        else {
+          roughRangePlayback = false;
+          roughPreviewVideo.pause();
+          setInspectorTab('monitor');
+        }
+        if (updateUrl) {
+          const target = location.protocol === 'file:' ? `?mode=${mode}` : mode === 'rough-cut' ? '/rough-cut' : '/';
+          history.pushState({ workspaceMode: mode }, '', target);
+        }
+      };
+
       const setInspectorTab = tab => {
         if (!['monitor', 'ai'].includes(tab)) return;
+        if (workspaceMode === 'rough-cut') tab = 'ai';
         inspectorTab = tab;
         inspectorTabs.forEach(button => button.setAttribute('aria-selected', String(button.dataset.inspectorTab === tab)));
         inspectorPanels.forEach(panel => { panel.hidden = panel.dataset.inspectorPanel !== tab; });
         if (tab === 'ai') requestAnimationFrame(() => chatInput.focus({ preventScroll: true }));
       };
+
+      workspaceModeLinks.forEach(link => link.addEventListener('click', event => {
+        event.preventDefault();
+        setWorkspaceMode(link.dataset.workspaceMode, true);
+      }));
+      window.addEventListener('popstate', () => {
+        const queryMode = new URLSearchParams(location.search).get('mode');
+        setWorkspaceMode(queryMode === 'rough-cut' || (!queryMode && location.pathname.replace(/\/$/, '').endsWith('/rough-cut')) ? 'rough-cut' : 'review');
+      });
+      setWorkspaceMode(workspaceMode);
 
       const setRuntime = (label, state = '') => {
         agentRuntime.textContent = label;
@@ -565,7 +705,7 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
       };
 
       const scrollSceneIntoTimeline = scene => requestAnimationFrame(() => {
-        if (window.matchMedia('(max-width: 980px)').matches) {
+        if (window.matchMedia('(max-width: 1060px)').matches) {
           scene.scrollIntoView({ behavior: 'smooth', block: 'start' });
           return;
         }
@@ -632,6 +772,18 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
         if (action.type === 'play_source_range') {
           const scene = focusSceneById(action.scene_id, true);
           if (!scene) return;
+          if (workspaceMode === 'rough-cut') {
+            const sourceIn = Number.isFinite(Number(action.source_in)) ? Number(action.source_in) : Number(scene.dataset.previewStart || 0);
+            const sourceOut = Number.isFinite(Number(action.source_out)) ? Number(action.source_out) : Number(scene.dataset.previewEnd || sourceIn);
+            const clip = {
+              label: scene.dataset.previewTitle,
+              source_in: sourceIn,
+              source_out: sourceOut,
+              duration: sourceOut - sourceIn
+            };
+            await updateRoughPreview(clip, scene, action.autoplay !== false);
+            return;
+          }
           setInspectorTab('monitor');
           if (action.autoplay !== false && !playButton.disabled) {
             seekToSelectedStart();
@@ -732,6 +884,165 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
         return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
       };
 
+      const seekRoughPreview = () => {
+        const seek = () => { roughPreviewVideo.currentTime = Math.min(roughStart, roughPreviewVideo.duration || roughStart); };
+        if (roughPreviewVideo.readyState >= 1) seek();
+        else roughPreviewVideo.addEventListener('loadedmetadata', seek, { once: true });
+      };
+
+      const updateRoughPreview = async (clip, sourceScene, autoplay = false) => {
+        if (!clip || !sourceScene) return;
+        const clipDuration = Number(clip.duration) || Math.max(0, Number(clip.source_out) - Number(clip.source_in));
+        const image = sourceScene.querySelector('.scene-thumb img');
+        if (image?.src) roughPreviewImage.src = image.src;
+        roughPreviewImage.alt = `${clip.label || sourceScene.dataset.previewTitle} 대표 프레임`;
+        roughPreviewTitle.textContent = clip.label || sourceScene.dataset.previewTitle;
+        roughPreviewTime.textContent = `${timeLabel(clip.source_in)} — ${timeLabel(clip.source_out)} · ${clipDuration.toFixed(1)}s · 원본 연결`;
+        roughStart = Number(clip.source_in ?? sourceScene.dataset.previewStart ?? 0);
+        roughEnd = Number(clip.source_out ?? sourceScene.dataset.previewEnd ?? roughStart);
+        roughRangePlayback = false;
+        roughPreviewVideo.pause();
+        const mediaUrl = sourceScene.closest('[data-clip-panel]')?.dataset.mediaUrl || '';
+        if (!mediaUrl) {
+          roughLoadedMediaUrl = '';
+          roughPreviewVideo.removeAttribute('src');
+          roughPreviewVideo.hidden = true;
+          roughPreviewImage.hidden = false;
+          roughPreview.classList.remove('has-video');
+          if (autoplay) showToast('이 원본에는 재생용 프록시가 없어 스틸 프레임으로 표시합니다.');
+          return;
+        }
+        roughPreviewImage.hidden = true;
+        roughPreviewVideo.hidden = false;
+        roughPreview.classList.add('has-video');
+        if (roughLoadedMediaUrl !== mediaUrl) {
+          roughLoadedMediaUrl = mediaUrl;
+          roughPreviewVideo.src = mediaUrl;
+          roughPreviewVideo.load();
+        }
+        seekRoughPreview();
+        if (autoplay) {
+          roughRangePlayback = true;
+          try { await roughPreviewVideo.play(); }
+          catch {
+            roughRangePlayback = false;
+            showToast('자동 재생이 차단됐습니다. 가운데 영상의 재생 버튼을 눌러주세요.');
+          }
+        }
+      };
+
+      roughPreviewVideo.addEventListener('play', () => {
+        if (roughPreviewVideo.currentTime < roughStart || roughPreviewVideo.currentTime >= roughEnd) seekRoughPreview();
+        roughRangePlayback = true;
+      });
+      roughPreviewVideo.addEventListener('pause', () => { roughRangePlayback = false; });
+      roughPreviewVideo.addEventListener('timeupdate', () => {
+        if (roughRangePlayback && roughPreviewVideo.currentTime < roughStart) {
+          roughPreviewVideo.currentTime = roughStart;
+          return;
+        }
+        if (roughRangePlayback && roughPreviewVideo.currentTime >= roughEnd) {
+          roughRangePlayback = false;
+          roughPreviewVideo.pause();
+        }
+      });
+      roughPreviewVideo.addEventListener('error', () => {
+        roughRangePlayback = false;
+        roughPreviewVideo.hidden = true;
+        roughPreviewImage.hidden = false;
+        roughPreview.classList.remove('has-video');
+        showToast('프록시 영상을 열 수 없습니다. 외장 SSD 연결과 파일 경로를 확인해주세요.');
+      });
+
+      const syncRoughRevision = card => {
+        if (!card || card.type !== 'edit_revision_ref') return;
+        sessionStorage.setItem(revisionStorageKey, JSON.stringify(card));
+        roughTitle.textContent = card.title || '편집 초안';
+        roughRevision.textContent = `REV ${String(card.sequence).padStart(2, '0')}`;
+        roughDuration.textContent = timeLabel(card.duration);
+        roughCount.textContent = String(card.clip_count || card.clips?.length || 0);
+        roughAuthor.textContent = 'AI Editor';
+        roughClips.replaceChildren();
+        (card.clips || []).forEach((clip, index) => {
+          const sourceScene = sceneById(clip.scene_id);
+          const item = element('li', 'rough-clip');
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.dataset.roughClip = clip.clip_id || `${clip.scene_id}:${index}`;
+          const image = document.createElement('img');
+          image.alt = '';
+          const sourceImage = sourceScene?.querySelector('.scene-thumb img');
+          if (sourceImage?.src) image.src = sourceImage.src;
+          else image.hidden = true;
+          const copy = element('span', 'rough-clip-copy');
+          copy.append(element('strong', '', clip.label || sourceScene?.dataset.previewTitle || `클립 ${index + 1}`), element('span', '', `${timeLabel(clip.source_in)} — ${timeLabel(clip.source_out)} · ${sourceScene?.dataset.sceneId || 'scene link 없음'}`));
+          button.append(element('span', 'rough-clip-index', String(index + 1).padStart(2, '0')), image, copy, element('time', '', timeLabel(clip.duration)));
+          button.addEventListener('click', () => {
+            roughClips.querySelectorAll('button').forEach(candidate => candidate.setAttribute('aria-current', String(candidate === button)));
+            if (sourceScene) {
+              focusSceneById(clip.scene_id, true);
+              updateRoughPreview(clip, sourceScene);
+            } else showToast('연결된 원본 장면을 현재 라이브러리에서 찾지 못했습니다.');
+          });
+          item.append(button);
+          roughClips.append(item);
+        });
+        const firstButton = roughClips.querySelector('button');
+        if (firstButton) {
+          if (workspaceMode === 'rough-cut') firstButton.click();
+        } else roughClips.innerHTML = '<li class="rough-empty">이 revision에는 클립이 없습니다.</li>';
+      };
+
+      const restoreActiveRevision = async () => {
+        let card;
+        try { card = JSON.parse(sessionStorage.getItem(revisionStorageKey) || 'null'); }
+        catch {
+          sessionStorage.removeItem(revisionStorageKey);
+          return;
+        }
+        if (!card?.edit_id || !card?.revision_id) return;
+        if (location.protocol !== 'file:') {
+          try {
+            const url = `/api/edits/${encodeURIComponent(card.edit_id)}?revision_id=${encodeURIComponent(card.revision_id)}`;
+            const response = await fetch(url, { headers: { 'Accept': 'application/json' } });
+            if (!response.ok) throw new Error(String(response.status));
+            const edit = await response.json();
+            const revision = edit.revision;
+            if (revision?.revision_id !== card.revision_id) throw new Error('revision mismatch');
+            card = {
+              type: 'edit_revision_ref',
+              edit_id: edit.edit_id,
+              title: edit.title,
+              revision_id: revision.revision_id,
+              sequence: revision.sequence,
+              clip_count: revision.clip_count,
+              duration: revision.timeline_duration,
+              target_duration: edit.target_duration,
+              changes: revision.change_summary,
+              clips: (revision.plan?.clips || []).map(item => ({
+                clip_id: item.id,
+                scene_id: item.metadata?.scene_id,
+                label: item.label,
+                source_in: item.source_in,
+                source_out: item.source_out,
+                duration: Number(item.source_out) - Number(item.source_in)
+              }))
+            };
+          } catch {
+            sessionStorage.removeItem(revisionStorageKey);
+            return;
+          }
+        }
+        if ((card.clips || []).some(item => !item.scene_id || !sceneById(item.scene_id))) {
+          sessionStorage.removeItem(revisionStorageKey);
+          return;
+        }
+        activeEditId = card.edit_id;
+        activeEdit.textContent = `REV ${String(card.sequence).padStart(2, '0')}`;
+        activeEdit.title = card.edit_id;
+        syncRoughRevision(card);
+      };
+
       const scrollChatToEnd = () => requestAnimationFrame(() => { chatScroll.scrollTop = chatScroll.scrollHeight; });
 
       const appendMessage = (role, text = '') => {
@@ -806,7 +1117,7 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
         const review = element('button', 'is-primary', '첫 컷 검토');
         review.type = 'button';
         review.disabled = !first;
-        review.addEventListener('click', () => first && dispatchAgentAction({ type: 'play_source_range', scene_id: first.scene_id, autoplay: true }));
+        review.addEventListener('click', () => first && dispatchAgentAction({ type: 'play_source_range', scene_id: first.scene_id, source_in: first.source_in, source_out: first.source_out, autoplay: true }));
         const copyId = element('button', '', 'Revision ID 복사');
         copyId.type = 'button';
         copyId.addEventListener('click', async () => {
@@ -818,6 +1129,7 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
         activeEditId = card.edit_id;
         activeEdit.textContent = `REV ${String(card.sequence).padStart(2, '0')}`;
         activeEdit.title = card.edit_id;
+        syncRoughRevision(card);
       };
 
       const renderCard = (card, root) => {
@@ -963,6 +1275,9 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
       chatInput.addEventListener('keydown', event => {
         if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendChat(); }
       });
+      document.querySelector('[data-rough-export]').addEventListener('click', () => {
+        showToast(activeEditId ? '내보내기는 승인된 revision 렌더 단계에 연결됩니다.' : '먼저 AI Editor에서 편집 revision을 만들어주세요.');
+      });
 
       const guidePrompt = new URLSearchParams(window.location.search).get('prompt');
       if (guidePrompt) {
@@ -986,6 +1301,7 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
       });
 
       openScene(document.querySelector('[data-scene][open]') || document.querySelector('[data-scene]'));
+      restoreActiveRevision();
       if (location.protocol === 'file:') {
         setRuntime('SERVER OFF', 'error');
         const guideLink = document.querySelector('[data-guide-link]');

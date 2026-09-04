@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import html
+import json
 import os
 from datetime import datetime
 from importlib.resources import files
@@ -575,7 +577,32 @@ def render_video_library(
     template = (
         files("travel_video.templates").joinpath("library.html").read_text("utf-8")
     )
+    library_identity = json.dumps(
+        [
+            {
+                "schema_version": timeline["schema_version"],
+                "asset_id": timeline["asset_id"],
+                "source_name": timeline["source"]["name"],
+                "creation_time": timeline["media"].get("creation_time"),
+                "duration": timeline["media"]["duration"],
+                "scenes": [
+                    {
+                        "group_id": group["group_id"],
+                        "source_in": group["start"],
+                        "source_out": group["end"],
+                    }
+                    for group in timeline["context_groups"]
+                ],
+            }
+            for _, timeline in loaded
+        ],
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    library_id = hashlib.sha256(library_identity.encode("utf-8")).hexdigest()[:16]
     replacements = {
+        "__LIBRARY_ID__": library_id,
         "__DOCUMENT_TITLE__": _escape(title),
         "__TITLE__": _escape(title),
         "__VIDEO_COUNT__": str(len(loaded)),
@@ -602,6 +629,7 @@ def render_video_library(
         "schema_version": LIBRARY_SCHEMA,
         "output": str(output_path),
         "title": title,
+        "library_id": library_id,
         "asset_mode": asset_mode,
         "embedded_asset_count": assets.unique_count,
         "embedded_source_bytes": assets.embedded_bytes,
