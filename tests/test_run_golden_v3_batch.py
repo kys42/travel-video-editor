@@ -217,6 +217,34 @@ def make_fake_runner(calls: list[list[str]], *, fail_asset: str | None = None):
     return fake_runner
 
 
+def test_practical_ready_story_day_manifest_alias_is_supported(tmp_path: Path) -> None:
+    batch = load_batch_module()
+    asset, _ = make_asset(tmp_path, "practical-ready")
+    asset["practical_ready"] = asset.pop("eligible_for_golden_v3_extraction")
+    manifest = make_manifest(
+        tmp_path,
+        [{**asset, "eligible_for_golden_v3_extraction": True}],
+    )
+    value = json.loads(manifest.read_text(encoding="utf-8"))
+    value["schema_version"] = "travel-video-story-day-preflight/v2"
+    value["assets"][0].pop("eligible_for_golden_v3_extraction")
+    value["assets"][0]["practical_ready"] = True
+    day = value["story_days"][0]
+    day["practical_ready_assets"] = day.pop("eligible_assets")
+    day.pop("eligible_asset_count")
+    write_json(manifest, value)
+
+    result = batch.prepare_batch(
+        manifest,
+        tmp_path / "golden-v3",
+        jobs=1,
+        runner=make_fake_runner([]),
+    )
+
+    assert result["summary"]["completed"] == 1
+    assert result["summary"]["excluded"] == 0
+
+
 def test_prepare_orders_multimodal_stages_and_resumes_by_content_hash(
     tmp_path: Path,
 ) -> None:

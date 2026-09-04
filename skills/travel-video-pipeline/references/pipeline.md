@@ -219,7 +219,7 @@ uv run python scripts/run_golden_v3_batch.py \
   --jobs 2
 ```
 
-The input must use `travel-video-story-day-preflight/v1`. Existing reviewed
+The input must use `travel-video-story-day-preflight/v1` or `/v2`. Existing reviewed
 grouping may be reused only when the manifest verifies it; newly authored grouping
 must be listed in a `golden-v3-grouping-overrides/v1` file with its current SHA-256
 and `accepted: true`. Missing grouping is reported as `blocked`, never silently

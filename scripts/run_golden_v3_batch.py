@@ -33,7 +33,10 @@ from pathlib import Path
 from typing import Any, Callable, Iterator
 
 
-STORY_DAYS_SCHEMA = "travel-video-story-day-preflight/v1"
+STORY_DAYS_SCHEMAS = {
+    "travel-video-story-day-preflight/v1",
+    "travel-video-story-day-preflight/v2",
+}
 OVERRIDES_SCHEMA = "golden-v3-grouping-overrides/v1"
 STATE_SCHEMA = "golden-v3-preparation-asset-state/v1"
 MANIFEST_SCHEMA = "golden-v3-preparation-manifest/v1"
@@ -517,9 +520,17 @@ def select_assets(
             continue
         eligible_members = day_map[day].get("eligible_assets")
         if not isinstance(eligible_members, list):
-            raise ValueError(f"Story day {day} eligible_assets must be a list")
+            eligible_members = day_map[day].get("practical_ready_assets")
+        if not isinstance(eligible_members, list):
+            raise ValueError(
+                f"Story day {day} must provide eligible_assets or "
+                "practical_ready_assets"
+            )
         listed = relative_path in eligible_members
-        eligible = raw.get("eligible_for_golden_v3_extraction") is True
+        if "eligible_for_golden_v3_extraction" in raw:
+            eligible = raw.get("eligible_for_golden_v3_extraction") is True
+        else:
+            eligible = raw.get("practical_ready") is True
         if listed != eligible:
             raise ValueError(
                 f"Story-day eligible list disagrees with asset status: {relative_path}"
@@ -714,7 +725,12 @@ def prepare_asset(
     story_day = str(asset["story_day"])
     asset_root = output_root / "assets" / asset_id
     state_path = asset_root / "state.json"
-    if asset.get("eligible_for_golden_v3_extraction") is not True:
+    eligible = (
+        asset.get("eligible_for_golden_v3_extraction") is True
+        if "eligible_for_golden_v3_extraction" in asset
+        else asset.get("practical_ready") is True
+    )
+    if not eligible:
         return {
             "asset_id": asset_id,
             "source_relative_path": relative_path,
@@ -1116,8 +1132,11 @@ def prepare_batch(
     story_days_path = story_days_path.expanduser().resolve()
     output_root = output_root.expanduser().resolve()
     manifest = load_json(story_days_path)
-    if manifest.get("schema_version") != STORY_DAYS_SCHEMA:
-        raise ValueError(f"Expected story-day schema {STORY_DAYS_SCHEMA}")
+    if manifest.get("schema_version") not in STORY_DAYS_SCHEMAS:
+        raise ValueError(
+            "Expected story-day schema in "
+            f"{sorted(STORY_DAYS_SCHEMAS)}, got {manifest.get('schema_version')!r}"
+        )
     output_root_is_safe(manifest, output_root)
     story_days = select_days(manifest, requested_days or [], excluded_days or [])
     assets = select_assets(manifest, story_days, asset_regex)
