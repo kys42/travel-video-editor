@@ -55,6 +55,10 @@ FINISHER_MANIFEST_SCHEMA = "golden-v3-finisher-manifest/v1"
 FINISHER_DAY_MANIFEST_SCHEMA = "golden-v3-finisher-day-manifest/v1"
 SCENE_AUDIT_SCHEMA = "golden-v3-scene-dialogue-audit/v1"
 DIALOGUE_POLICY = "dialogue-preservation/v1"
+STORY_DAY_MANIFEST_SCHEMAS = {
+    "travel-video-story-day-preflight/v1",
+    "travel-video-story-day-preflight/v2",
+}
 Runner = Callable[[list[str], Path], dict[str, str]]
 
 
@@ -119,7 +123,7 @@ def preparation_source_manifest(
             f"Preparation manifest references a changed story-day source: {preparation_path}"
         )
     source = load_json(Path(str(record["path"])))
-    if source.get("schema_version") != "travel-video-story-day-preflight/v1":
+    if source.get("schema_version") not in STORY_DAY_MANIFEST_SCHEMAS:
         raise ValueError("Preparation source is not a story-day preflight manifest")
     return source, record
 

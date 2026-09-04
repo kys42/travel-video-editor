@@ -333,6 +333,28 @@ def test_accepts_one_day_preparation_manifest(tmp_path: Path) -> None:
     assert result["selection"]["story_days"] == ["2026-08-20"]
 
 
+def test_accepts_v2_story_day_source_manifest(tmp_path: Path) -> None:
+    batch = load_module()
+    record = make_prepared_asset(batch, tmp_path, "asset-a")
+    root_manifest = make_preparation_manifest(batch, tmp_path, [record])
+    root = json.loads(root_manifest.read_text(encoding="utf-8"))
+    source_path = Path(root["story_day_manifest"]["path"])
+    source = json.loads(source_path.read_text(encoding="utf-8"))
+    source["schema_version"] = "travel-video-story-day-preflight/v2"
+    write_json(source_path, source)
+    root["story_day_manifest"] = batch.file_record(source_path)
+    write_json(root_manifest, root)
+
+    result = batch.finish_batch(
+        root_manifest,
+        tmp_path / "reviews",
+        tmp_path / "finished",
+        runner=make_fake_runner([]),
+    )
+
+    assert result["summary"]["awaiting_review"] == 1
+
+
 def test_builds_review_merge_and_summary_packet_then_waits(tmp_path: Path) -> None:
     batch = load_module()
     record = make_prepared_asset(batch, tmp_path, "asset-a")
