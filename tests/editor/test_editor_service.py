@@ -425,3 +425,30 @@ def test_demo_agent_runs_search_cards_and_revision_over_sse(tmp_path: Path) -> N
     assert len(live_contract["capabilities"]) == 6
     assert client.get("/api/contracts/tools").json() == live_contract
     assert live_contract["identity"]["name"] == "AI Editor"
+
+
+def test_demo_agent_derives_unspecified_duration_from_scene_evidence(
+    tmp_path: Path,
+) -> None:
+    app = create_editor_app(
+        _fixture_project(tmp_path), tmp_path / "state", agent_backend="demo"
+    )
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/agent/chat",
+        json={"message": "이 영상들로 자연스러운 길이의 하이라이트를 만들어줘"},
+    )
+
+    event_name = ""
+    events: list[tuple[str, dict[str, object]]] = []
+    for line in response.text.splitlines():
+        if line.startswith("event: "):
+            event_name = line.removeprefix("event: ")
+        elif line.startswith("data: "):
+            events.append((event_name, json.loads(line.removeprefix("data: "))))
+    done = next(data for name, data in events if name == "done")
+    edit = client.get(f"/api/edits/{done['edit_id']}").json()
+
+    assert edit["target_duration"] == 18.0
+    assert edit["revision"]["timeline_duration"] == 18.0
