@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from travel_video.cli import build_parser
+from travel_video.context import select_storyboard_samples
 from travel_video.scene_dialogue import (
     BOUNDARY_PROPOSAL_SCHEMA,
     DIALOGUE_PRESERVATION_POLICY,
@@ -906,10 +907,14 @@ def test_visual_moments_are_added_to_group_evidence_and_require_beat_coverage(
     merged = json.loads(output_path.read_text(encoding="utf-8"))
     sample_ids = {sample["sample_id"] for sample in merged["samples"]}
     assert {"VM0001-FRAME", "VM0002-FRAME"} <= sample_ids
+    assert select_storyboard_samples(
+        merged["samples"], 0.0, 12.0, max_frames=1
+    )
     render_timeline_web(
         output_path,
         tmp_path / "web",
         asset_mode="relative",
+        frame_limit=4,
     )
 
     review["scenes"][0]["editorial_beats"][0]["source_visual_moment_ids"] = []

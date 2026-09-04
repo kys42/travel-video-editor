@@ -36,6 +36,19 @@ def select_storyboard_samples(
     end: float,
     max_frames: int = 8,
 ) -> list[dict[str, Any]]:
+    def quality(item: dict[str, Any]) -> float:
+        # Visual-moment evidence frames carry the detector score instead of the
+        # Phase 1 sample-quality field.  They are valid reviewed timeline samples,
+        # so use that score while keeping a neutral fallback for other evidence.
+        return float(item.get("quality", item.get("score", 0.5)))
+
+    def visual_distance(item: dict[str, Any], other: dict[str, Any]) -> float:
+        item_hash = item.get("average_hash")
+        other_hash = other.get("average_hash")
+        if item_hash is None or other_hash is None:
+            return 0.0
+        return hash_distance(item_hash, other_hash)
+
     if max_frames < 1:
         raise ValueError("max_frames must be at least 1")
     candidates = [sample for sample in samples if start <= float(sample["time"]) < end]
@@ -49,7 +62,7 @@ def select_storyboard_samples(
     first = max(
         candidates,
         key=lambda item: (
-            float(item["quality"]) - 0.12 * abs(float(item["time"]) - midpoint) / span
+            quality(item) - 0.12 * abs(float(item["time"]) - midpoint) / span
         ),
     )
     selected = [first]
@@ -64,14 +77,13 @@ def select_storyboard_samples(
                 )
                 / span
             )
-            visual_distance = min(
-                hash_distance(item["average_hash"], other["average_hash"])
-                for other in selected
+            minimum_visual_distance = min(
+                visual_distance(item, other) for other in selected
             )
             return (
                 time_distance * 0.55
-                + visual_distance * 0.35
-                + float(item["quality"]) * 0.10
+                + minimum_visual_distance * 0.35
+                + quality(item) * 0.10
             )
 
         chosen = max(remaining, key=diversity_score)
