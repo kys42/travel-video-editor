@@ -158,6 +158,12 @@ Apple `SpeechTranscriber`를 실행할 때 항상 `SpeechDetector`를 같은 `Sp
 
 4K·카메라 원본은 `/Volumes/T7/시애틀알래스카`에서 읽기 전용으로 유지합니다. 분석·검토·웹 재생용 1080p H.264 프록시는 `/Volumes/ExternalSSD/travel-video-editor/proxies/1080p-h264`에 원본 상대 경로를 미러링해 일괄 생성합니다. 프록시에서 내린 모든 판단은 원본 타임코드로 저장하며 최종 편집과 렌더에는 T7 원본을 다시 연결합니다. 프록시는 재생성 가능한 캐시이고 manifest와 편집 결정은 보존합니다.
 
+### D-027: 비격자 경계는 제안 근거로 통합 리뷰에 전달
+
+상태: 채택, signal producer는 후속 구현
+
+약 5초 Phase 1 샘플과 5~30초 기계 세그먼트는 coverage·overview용으로만 유지합니다. STT·음성 활동·FFmpeg·Apple Vision 신호는 `boundary-proposal/v1`의 source-relative timestamp와 evidence ID로 합치고, 기존 그룹별 통합 장면-대화 리뷰에 선택 입력으로 전달합니다. proposal은 자동 컷이 아니며 모델은 화면·행동·대화 완결성을 함께 보고 채택하거나 무시합니다. 채택한 시각은 `editorial_beats.source_boundary_proposal_ids`로 역추적합니다. Vision 운영 목표는 약 3fps이고, FFmpeg와 STT는 자체 timestamp 정밀도를 유지하며, 후보 주변 원본 FPS 재검사는 기본 실행하지 않습니다.
+
 ## 미결 사항
 
 ### Q-001: 카메라와 메타데이터

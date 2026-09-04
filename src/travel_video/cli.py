@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from .apple_speech import AppleSTTConfig, process_apple_stt
+from .boundary_proposals import BoundaryProposalConfig, build_boundary_proposals
 from .context import build_context_packet, merge_context_review, validate_context_review
 from .dialogue_script import attach_dialogue_script
 from .library import render_video_library
@@ -17,7 +18,9 @@ from .scene_dialogue import (
     merge_scene_dialogue_review,
     merge_scene_dialogue_review_shards,
     slice_scene_dialogue_packet,
+    validate_boundary_proposals,
     validate_scene_dialogue_review,
+    validate_visual_moments,
 )
 from .speech import AdaptiveSTTConfig, process_adaptive_stt
 from .transcript_reconcile import (
@@ -153,6 +156,63 @@ def build_parser() -> argparse.ArgumentParser:
             "Use a fresh phase1 context packet for one-pass visual, dialogue, "
             "caption, and editorial-beat review"
         ),
+    )
+    scene_dialogue_packet.add_argument(
+        "--visual-moments",
+        type=Path,
+        help=(
+            "Add lineage-checked visual-moment/v1 intervals and representative "
+            "frames to the integrated visual/dialogue review"
+        ),
+    )
+    scene_dialogue_packet.add_argument(
+        "--boundary-proposals",
+        type=Path,
+        help=(
+            "Add lineage-checked boundary-proposal/v1 evidence to the integrated "
+            "visual/dialogue review"
+        ),
+    )
+
+    validate_boundaries = subparsers.add_parser(
+        "validate-boundary-proposals",
+        help="Validate boundary-proposal/v1 lineage, timing, and evidence",
+    )
+    validate_boundaries.add_argument("proposals", type=Path)
+    validate_boundaries.add_argument("timeline", type=Path)
+
+    validate_moments = subparsers.add_parser(
+        "validate-visual-moments",
+        help="Validate visual-moment/v1 lineage, timing, roles, and frames",
+    )
+    validate_moments.add_argument("visual_moments", type=Path)
+    validate_moments.add_argument("timeline", type=Path)
+
+    build_boundaries = subparsers.add_parser(
+        "build-boundary-proposals",
+        help="Extract Apple STT, FFmpeg, and Apple Vision signals and fuse boundaries",
+    )
+    build_boundaries.add_argument("processing_input", type=Path)
+    build_boundaries.add_argument("timeline", type=Path)
+    build_boundaries.add_argument("apple_transcript", type=Path)
+    build_boundaries.add_argument("--output-dir", type=Path, required=True)
+    build_boundaries.add_argument("--lineage", type=Path)
+    build_boundaries.add_argument("--vision-interval", type=float, default=1 / 3)
+    build_boundaries.add_argument("--ocr-interval", type=float, default=1.0)
+    build_boundaries.add_argument("--motion-interval", type=float, default=1 / 3)
+    build_boundaries.add_argument("--ffmpeg-scene-threshold", type=float, default=0.30)
+    build_boundaries.add_argument("--cluster-tolerance", type=float, default=0.55)
+    build_boundaries.add_argument("--neighbor-context", type=float, default=5.0)
+    build_boundaries.add_argument("--feature-distance-floor", type=float, default=0.12)
+    build_boundaries.add_argument("--feature-distance-quantile", type=float, default=0.90)
+    build_boundaries.add_argument("--motion-delta-quantile", type=float, default=0.92)
+    build_boundaries.add_argument("--visual-moment-window", type=float, default=6.0)
+    build_boundaries.add_argument("--visual-moment-nms", type=float, default=3.0)
+    build_boundaries.add_argument(
+        "--visual-moments-per-minute", type=float, default=6.0
+    )
+    build_boundaries.add_argument(
+        "--visual-moment-thumbnail-width", type=int, default=960
     )
 
     validate_scene_dialogue = subparsers.add_parser(
@@ -411,6 +471,8 @@ def main(argv: list[str] | None = None) -> int:
                     mlx_normalized_path=args.mlx_normalized,
                     max_window=args.max_window,
                     visual_packet_path=args.visual_packet,
+                    boundary_proposals_path=args.boundary_proposals,
+                    visual_moments_path=args.visual_moments,
                 )
             )
         elif args.command == "validate-scene-dialogue-review":
@@ -419,6 +481,38 @@ def main(argv: list[str] | None = None) -> int:
                 load_json(args.review),
             )
             print("scene dialogue review valid")
+        elif args.command == "validate-boundary-proposals":
+            validate_boundary_proposals(args.proposals, args.timeline)
+            print("boundary proposals valid")
+        elif args.command == "validate-visual-moments":
+            validate_visual_moments(args.visual_moments, args.timeline)
+            print("visual moments valid")
+        elif args.command == "build-boundary-proposals":
+            config = BoundaryProposalConfig(
+                vision_interval=args.vision_interval,
+                ocr_interval=args.ocr_interval,
+                ffmpeg_scene_threshold=args.ffmpeg_scene_threshold,
+                motion_interval=args.motion_interval,
+                cluster_tolerance=args.cluster_tolerance,
+                neighbor_context=args.neighbor_context,
+                feature_distance_floor=args.feature_distance_floor,
+                feature_distance_quantile=args.feature_distance_quantile,
+                motion_delta_quantile=args.motion_delta_quantile,
+                visual_moment_window=args.visual_moment_window,
+                visual_moment_nms=args.visual_moment_nms,
+                visual_moments_per_minute=args.visual_moments_per_minute,
+                visual_moment_thumbnail_width=args.visual_moment_thumbnail_width,
+            )
+            print(
+                build_boundary_proposals(
+                    args.processing_input,
+                    args.timeline,
+                    args.apple_transcript,
+                    args.output_dir,
+                    lineage_path=args.lineage,
+                    config=config,
+                )
+            )
         elif args.command == "build-no-candidate-scene-dialogue-review":
             print(
                 build_no_candidate_scene_dialogue_review(
