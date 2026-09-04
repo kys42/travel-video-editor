@@ -38,8 +38,27 @@ def test_proxy_command_uses_higher_bitrate_for_high_frame_rate() -> None:
     )
     assert "h264_videotoolbox" in command
     assert "8000k" in command
-    assert "scale='min(1920,iw)':-2:flags=lanczos" in command
+    assert (
+        "scale=w='min(1920,iw)':h='min(1920,ih)'"
+        ":force_original_aspect_ratio=decrease"
+        ":force_divisible_by=2:flags=lanczos"
+    ) in command
     assert "+faststart+use_metadata_tags" in command
+
+
+def test_proxy_command_constrains_both_dimensions_for_portrait_video() -> None:
+    command = build_ffmpeg_proxy_command(
+        Path("portrait.mp4"),
+        Path("portrait-proxy.mp4"),
+        ProxyConfig(),
+        media_probe(),
+    )
+
+    scale_filter = command[command.index("-vf") + 1]
+    assert "min(1920,iw)" in scale_filter
+    assert "min(1920,ih)" in scale_filter
+    assert "force_original_aspect_ratio=decrease" in scale_filter
+    assert "force_divisible_by=2" in scale_filter
 
 
 def test_proxy_validation_accepts_matching_1080p_h264() -> None:

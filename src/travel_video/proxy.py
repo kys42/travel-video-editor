@@ -77,7 +77,12 @@ def build_ffmpeg_proxy_command(
         "0",
         "-sn",
         "-vf",
-        f"scale='min({config.max_dimension},iw)':-2:flags=lanczos",
+        (
+            f"scale=w='min({config.max_dimension},iw)'"
+            f":h='min({config.max_dimension},ih)'"
+            ":force_original_aspect_ratio=decrease"
+            ":force_divisible_by=2:flags=lanczos"
+        ),
         "-c:v",
         config.encoder,
         "-profile:v",
