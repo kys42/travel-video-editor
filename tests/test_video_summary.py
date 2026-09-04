@@ -203,17 +203,23 @@ def test_library_sorts_videos_by_capture_time(tmp_path: Path) -> None:
     assert "무엇을 먹을까" in document
     assert 'data-media-url="media/earlier.mp4"' in document
     assert "data-preview-video" in document
-    assert document.count('data-review-workspace') == 1
+    assert document.count("data-review-workspace") == 1
     assert 'data-workspace-mode="review"' in document
     assert 'data-workspace-mode="rough-cut"' in document
-    assert 'data-revision-panel' in document
-    assert 'data-rough-clips' in document
-    assert 'data-rough-preview-video' in document
+    assert "data-revision-panel" in document
+    assert "data-rough-clips" in document
+    assert "data-rough-preview-video" in document
     assert 'data-library-id="' in document
-    assert 'tve-active-revision:${document.body.dataset.libraryId}' in document
-    assert 'workspace.is-rough-cut { grid-template-columns: minmax(500px, 1fr) 290px 270px; }' in document
-    assert '.workspace.is-rough-cut .scene-summary { grid-template-columns: 40px 55px 82px minmax(0, 1fr); }' in document
-    assert 'roughPreviewVideo.currentTime >= roughEnd' in document
+    assert "tve-active-revision:${document.body.dataset.libraryId}" in document
+    assert (
+        "workspace.is-rough-cut { grid-template-columns: minmax(500px, 1fr) 290px 270px; }"
+        in document
+    )
+    assert (
+        ".workspace.is-rough-cut .scene-summary { grid-template-columns: 40px 55px 82px minmax(0, 1fr); }"
+        in document
+    )
+    assert "roughPreviewVideo.currentTime >= roughEnd" in document
     assert "!item.scene_id || !sceneById(item.scene_id)" in document
     assert "restoreActiveRevision();" in document
     assert "workspace.classList.toggle('is-rough-cut'" in document
@@ -249,3 +255,71 @@ def test_library_sorts_videos_by_capture_time(tmp_path: Path) -> None:
     )
     assert reanalyzed_manifest["video_count"] == manifest["video_count"]
     assert reanalyzed_manifest["library_id"] != manifest["library_id"]
+
+
+def test_library_shows_corrected_captions_and_collapses_source_transcript(
+    tmp_path: Path,
+) -> None:
+    timeline_path, _ = context_timeline(
+        tmp_path,
+        asset_id="reviewed",
+        creation_time="2026-08-27T16:16:06Z",
+        source_name="reviewed.mp4",
+    )
+    packet_path = tmp_path / "summary-packet.json"
+    review_path = tmp_path / "summary.json"
+    summarized_path = tmp_path / "summarized.json"
+    build_video_summary_packet(timeline_path, packet_path)
+    review_path.write_text(
+        json.dumps(summary_review("reviewed", "보정 자막 검토"), ensure_ascii=False),
+        encoding="utf-8",
+    )
+    merge_video_summary(timeline_path, packet_path, review_path, summarized_path)
+
+    timeline = json.loads(summarized_path.read_text(encoding="utf-8"))
+    caption = {
+        "caption_id": "G001-C001",
+        "start": 2.0,
+        "end": 4.0,
+        "display_text": "연어 타코 두 개 주세요.",
+        "language": "ko",
+        "confidence": 0.94,
+        "review_status": "reviewed",
+        "edit_type": "normalized",
+    }
+    utterance = {
+        "utterance_id": "G001-U001",
+        "start": 2.0,
+        "end": 4.0,
+        "original_text": "연어 타코 둘 주세요.",
+        "language": "ko",
+        "confidence": 0.71,
+        "review_status": "reviewed",
+    }
+    timeline["context_groups"][0]["reviewed_dialogue"] = {
+        "captions": [caption],
+        "utterances": [utterance],
+    }
+    timeline["segments"][0]["caption_lines"] = [caption]
+    timeline["segments"][0]["reviewed_utterances"] = [utterance]
+    timeline["reviewed_dialogue"] = {
+        "captions": [caption],
+        "utterances": [utterance],
+    }
+    summarized_path.write_text(
+        json.dumps(timeline, ensure_ascii=False), encoding="utf-8"
+    )
+
+    output = render_video_library([summarized_path], tmp_path / "library")
+    document = output.read_text(encoding="utf-8")
+
+    assert "보정 자막" in document
+    assert "연어 타코 두 개 주세요." in document
+    assert '<details class="source-transcript">' in document
+    assert (
+        "<summary><span>원문 보기</span><small>검수 전 발화 1개</small></summary>"
+        in document
+    )
+    assert '<details class="source-transcript" open' not in document
+    assert "연어 타코 둘 주세요." in document
+    assert "What should we eat?" not in document

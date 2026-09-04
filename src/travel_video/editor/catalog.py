@@ -27,6 +27,17 @@ def _short_text(value: str, limit: int = 220) -> str:
     return value if len(value) <= limit else value[: limit - 1].rstrip() + "…"
 
 
+def _reviewed_captions(group: dict[str, Any]) -> tuple[bool, list[dict[str, Any]]]:
+    """Return authoritative reviewed captions without reviving legacy dialogue."""
+    reviewed = group.get("reviewed_dialogue")
+    if not isinstance(reviewed, dict) or "captions" not in reviewed:
+        return False, []
+    captions = reviewed.get("captions")
+    if not isinstance(captions, list):
+        return True, []
+    return True, [item for item in captions if isinstance(item, dict)]
+
+
 @dataclass(frozen=True, slots=True)
 class AssetRecord:
     asset_id: str
@@ -168,9 +179,7 @@ class TimelineCatalog:
             str(item["group_id"]): item
             for item in summary.get("chronological_events", [])
         }
-        samples = {
-            str(item["sample_id"]): item for item in timeline.get("samples", [])
-        }
+        samples = {str(item["sample_id"]): item for item in timeline.get("samples", [])}
         highlight_ids = set(summary.get("highlight_group_ids", []))
         segment_map = {
             str(item["segment_id"]): item for item in timeline.get("segments", [])
@@ -179,18 +188,28 @@ class TimelineCatalog:
             group_id = str(group["group_id"])
             context = group.get("context_review") or {}
             event = events.get(group_id, {})
-            utterances = group.get("reconciled_utterances") or []
-            dialogue_excerpt = " ".join(
-                str(item.get("original_text", "")).strip()
-                for item in utterances
-                if str(item.get("original_text", "")).strip()
-            )
+            has_reviewed_captions, captions = _reviewed_captions(group)
+            if has_reviewed_captions:
+                dialogue_excerpt = " ".join(
+                    str(item.get("display_text", "")).strip()
+                    for item in captions
+                    if str(item.get("display_text", "")).strip()
+                )
+                dialogue_summary = dialogue_excerpt
+            else:
+                utterances = group.get("reconciled_utterances") or []
+                dialogue_excerpt = " ".join(
+                    str(item.get("original_text", "")).strip()
+                    for item in utterances
+                    if str(item.get("original_text", "")).strip()
+                )
+                dialogue_summary = str(context.get("dialogue_summary") or "")
             search_parts = [
                 str(event.get("headline", "")),
                 str(event.get("description", "")),
                 str(group.get("label", "")),
                 str(context.get("narrative_summary", "")),
-                str(context.get("dialogue_summary", "")),
+                dialogue_summary,
                 dialogue_excerpt,
                 *self._assets[asset_id].tags,
             ]
@@ -205,8 +224,11 @@ class TimelineCatalog:
                 review = segment.get("review") or {}
                 search_parts.append(str(review.get("visual_summary", "")))
                 search_parts.extend(str(item) for item in review.get("actions", []))
-                for values in segment.get("transcript_candidates", {}).values():
-                    search_parts.extend(str(item.get("text", "")) for item in values)
+                if not has_reviewed_captions:
+                    for values in segment.get("transcript_candidates", {}).values():
+                        search_parts.extend(
+                            str(item.get("text", "")) for item in values
+                        )
             representative = samples.get(
                 str(context.get("representative_sample_id", "")), {}
             )
@@ -218,14 +240,18 @@ class TimelineCatalog:
                 source_out=float(group["end"]),
                 title=str(event.get("headline") or group.get("label") or group_id),
                 label=str(group.get("label") or event.get("headline") or group_id),
-                summary=str(context.get("narrative_summary") or event.get("description") or ""),
-                dialogue_summary=str(context.get("dialogue_summary") or ""),
+                summary=str(
+                    context.get("narrative_summary") or event.get("description") or ""
+                ),
+                dialogue_summary=dialogue_summary,
                 dialogue_excerpt=dialogue_excerpt,
                 notable_moments=notables,
                 confidence=float(context.get("confidence", 0.0)),
                 highlighted=group_id in highlight_ids,
                 representative_frame=(
-                    str(representative["frame"]) if representative.get("frame") else None
+                    str(representative["frame"])
+                    if representative.get("frame")
+                    else None
                 ),
                 search_text=" ".join(search_parts).casefold(),
                 timeline=timeline,
@@ -340,9 +366,13 @@ class TimelineCatalog:
                         "source_in": round(source_in, 3),
                         "source_out": round(source_out, 3),
                     }
-        if compact_range and focused and (
-            compact_range["source_in"] < focused.source_in
-            or compact_range["source_out"] > focused.source_out
+        if (
+            compact_range
+            and focused
+            and (
+                compact_range["source_in"] < focused.source_in
+                or compact_range["source_out"] > focused.source_out
+            )
         ):
             raise ValueError("selected range is outside the focused scene")
 
@@ -515,12 +545,11 @@ class TimelineCatalog:
         scene = self.scene(scene_id)
         group = scene.group
         timeline = scene.timeline
+        has_reviewed_captions, reviewed_captions = _reviewed_captions(group)
         segments = {
             str(item["segment_id"]): item for item in timeline.get("segments", [])
         }
-        samples = {
-            str(item["sample_id"]): item for item in timeline.get("samples", [])
-        }
+        samples = {str(item["sample_id"]): item for item in timeline.get("samples", [])}
         segment_rows = []
         for segment_id in group.get("segment_ids", []):
             item = segments.get(str(segment_id), {})
@@ -568,6 +597,26 @@ class TimelineCatalog:
         return {
             **scene.compact(),
             "dialogue_summary": scene.dialogue_summary,
+            "captions": [
+                {
+                    key: value
+                    for key, value in {
+                        "caption_id": caption.get("caption_id"),
+                        "source_start": caption.get(
+                            "source_start", caption.get("start")
+                        ),
+                        "source_end": caption.get("source_end", caption.get("end")),
+                        "language": caption.get("language"),
+                        "display_text": caption.get("display_text"),
+                        "edit_type": caption.get("edit_type"),
+                        "confidence": caption.get("confidence"),
+                        "review_status": caption.get("review_status"),
+                    }.items()
+                    if value is not None
+                }
+                for caption in reviewed_captions[:30]
+                if str(caption.get("display_text", "")).strip()
+            ],
             "utterances": [
                 {
                     key: utterance[key]
@@ -582,7 +631,11 @@ class TimelineCatalog:
                     )
                     if key in utterance
                 }
-                for utterance in (group.get("reconciled_utterances") or [])[:30]
+                for utterance in (
+                    []
+                    if has_reviewed_captions
+                    else (group.get("reconciled_utterances") or [])[:30]
+                )
                 if isinstance(utterance, dict)
             ],
             "notable_moments": list(scene.notable_moments),

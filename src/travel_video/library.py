@@ -133,7 +133,9 @@ def _reconciled_quality(item: dict[str, Any]) -> str:
     return "low"
 
 
-def _segment_dialogue_items(segment: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
+def _segment_dialogue_items(
+    segment: dict[str, Any],
+) -> tuple[list[dict[str, Any]], str]:
     if "caption_lines" in segment:
         return segment.get("caption_lines", []), "display_text"
     return (
@@ -155,17 +157,20 @@ def _group_dialogue_items(group: dict[str, Any]) -> tuple[list[dict[str, Any]], 
 def _render_segment_transcripts(segment: dict[str, Any]) -> str:
     reconciled, text_field = _segment_dialogue_items(segment)
     if reconciled:
-        return "".join(
-            f"""
+        return (
+            "".join(
+                f"""
             <p class="stt-line stt-line--{_reconciled_quality(item)}">
               <span class="stt-language">{_escape(str(item.get("language", "—")).upper())}</span>
               <span class="stt-time">{_escape(_short_time(float(item.get("source_start", item["start"]))))}</span>
               <span>{_escape(item.get(text_field, ""))}</span>
             </p>
             """
-            for item in reconciled
-            if str(item.get(text_field, "")).strip()
-        ) or '<p class="no-stt">종합된 발화 없음</p>'
+                for item in reconciled
+                if str(item.get(text_field, "")).strip()
+            )
+            or '<p class="no-stt">종합된 발화 없음</p>'
+        )
     if "caption_lines" in segment:
         return '<p class="no-stt">검수된 대사 없음</p>'
     candidates = segment.get("transcript_candidates", {})
@@ -220,7 +225,7 @@ def _render_segment_rows(
             f"<span>{_escape(action)}</span>" for action in review.get("actions", [])
         )
         transcript_label = (
-            "검수 자막 대본"
+            "보정 자막"
             if "caption_lines" in segment
             else "정리 대본"
             if segment.get("dialogue_lines")
@@ -300,11 +305,7 @@ def _render_notables(
 
 def _reconciled_dialogue(group: dict[str, Any], *, limit: int | None = None) -> str:
     dialogue_items, text_field = _group_dialogue_items(group)
-    items = [
-        item
-        for item in dialogue_items
-        if str(item.get(text_field, "")).strip()
-    ]
+    items = [item for item in dialogue_items if str(item.get(text_field, "")).strip()]
     if limit is not None:
         items = items[:limit]
     return " ".join(str(item[text_field]).strip() for item in items)
@@ -321,13 +322,36 @@ def _render_group_reconciled(group: dict[str, Any]) -> str:
         return ""
     reviewed = group.get("reviewed_dialogue")
     label = (
-        "검수 자막 대본"
+        "보정 자막"
         if isinstance(reviewed, dict) and "captions" in reviewed
         else "정리 대본"
         if group.get("dialogue_lines")
         else "종합 원문"
     )
     return f'<div class="scene-reconciled"><b>{label}</b>' + "".join(lines) + "</div>"
+
+
+def _render_group_source_transcript(group: dict[str, Any]) -> str:
+    reviewed = group.get("reviewed_dialogue")
+    if not isinstance(reviewed, dict) or "captions" not in reviewed:
+        return ""
+    utterances = [
+        item
+        for item in reviewed.get("utterances", [])
+        if isinstance(item, dict) and str(item.get("original_text", "")).strip()
+    ]
+    if not utterances:
+        return ""
+    lines = "".join(
+        f'<p class="stt-line stt-line--{_reconciled_quality(item)}"><span class="stt-language">{_escape(str(item.get("language", "—")).upper())}</span><span class="stt-time">{_escape(_short_time(float(item.get("source_start", item["start"]))))}</span><span>{_escape(item.get("original_text", ""))}</span></p>'
+        for item in utterances
+    )
+    return (
+        '<details class="source-transcript">'
+        f"<summary><span>원문 보기</span><small>검수 전 발화 {len(utterances)}개</small></summary>"
+        f'<div class="source-transcript__body">{lines}</div>'
+        "</details>"
+    )
 
 
 def _render_scene(
@@ -354,7 +378,7 @@ def _render_scene(
     has_reviewed_dialogue = isinstance(reviewed, dict) and "captions" in reviewed
     notable_count = len(context.get("notable_moments", []))
     transcript_comparison = (
-        "검수 자막 대본을"
+        "보정 자막을"
         if has_reviewed_dialogue
         else "정리 대본을"
         if group.get("dialogue_lines")
@@ -373,8 +397,9 @@ def _render_scene(
         review = segment.get("review") or {}
         search_parts.append(str(review.get("visual_summary", "")))
         search_parts.extend(str(item) for item in review.get("actions", []))
-        for candidates in segment.get("transcript_candidates", {}).values():
-            search_parts.extend(str(item.get("text", "")) for item in candidates)
+        if not has_reviewed_dialogue:
+            for candidates in segment.get("transcript_candidates", {}).values():
+                search_parts.extend(str(item.get("text", "")) for item in candidates)
     dialogue_items, text_field = _group_dialogue_items(group)
     for utterance in dialogue_items:
         search_parts.append(str(utterance.get(text_field, "")))
@@ -386,6 +411,20 @@ def _render_scene(
             str(notable.get(key, "")) for key in ("title", "description", "edit_hint")
         )
     preview_url = assets.url(representative["frame"])
+    dialogue_detail_label = (
+        "대화 · 보정 자막"
+        if has_reviewed_dialogue
+        else "대화 종합 · " + _escape(language_label)
+    )
+    dialogue_detail = _render_group_reconciled(group)
+    if not dialogue_detail:
+        empty_dialogue = (
+            "보정된 대사 없음"
+            if has_reviewed_dialogue
+            else context.get("dialogue_summary", "확인 가능한 대화가 없습니다.")
+        )
+        dialogue_detail = f"<p>{_escape(empty_dialogue)}</p>"
+    source_transcript = _render_group_source_transcript(group)
     return f"""
       <details class="scene" id="scene-{_escape(timeline["asset_id"])}-{_escape(group["group_id"])}"
                data-scene data-scene-id="{_escape(timeline["asset_id"])}:{_escape(group["group_id"])}" data-search="{_escape(" ".join(search_parts).lower())}"
@@ -400,13 +439,13 @@ def _render_scene(
           <span class="scene-time"><strong>{_escape(_short_time(start))}</strong><small>+{round(end - start)}s</small></span>
           <span class="scene-thumb"><img loading="lazy" src="{preview_url}" alt="{_escape(group["label"])} 대표 프레임"><i>{_escape(representative["timecode"])}</i></span>
           <span class="scene-primary"><strong>{_escape(event.get("headline", group["label"]))}</strong><p>{_escape(context["narrative_summary"])}</p></span>
-          <span class="scene-dialogue"><b>{"검수 자막 대본" if has_reviewed_dialogue else "정리 대본" if group.get("dialogue_lines") else "종합 원문" if reconciled_summary else "대화 · " + _escape(language_label)}</b><p>{_escape(reconciled_summary or ("검수된 대사 없음" if has_reviewed_dialogue else context.get("dialogue_summary", "유효한 대화 없음")))}</p></span>
+          <span class="scene-dialogue"><b>{"보정 자막" if has_reviewed_dialogue else "정리 대본" if group.get("dialogue_lines") else "종합 원문" if reconciled_summary else "대화 · " + _escape(language_label)}</b><p>{_escape(reconciled_summary or ("보정된 대사 없음" if has_reviewed_dialogue else context.get("dialogue_summary", "유효한 대화 없음")))}</p></span>
           <span class="scene-state">{'<b class="highlight-state">HIGHLIGHT</b>' if highlighted else "<b>SCENE</b>"}{f"<small>{notable_count} notable</small>" if notable_count else ""}<small>{round(confidence * 100)}%</small><i aria-hidden="true"></i></span>
         </summary>
         <div class="scene-depth">
           <div class="analysis-grid">
             <section><span class="depth-label">장면 해석</span><h3>{_escape(group["label"])}</h3><p>{_escape(context["narrative_summary"])}</p></section>
-            <section><span class="depth-label depth-label--audio">대화 종합 · {_escape(language_label)}</span><p>{_escape(reconciled_summary or ("검수된 대사 없음" if has_reviewed_dialogue else context.get("dialogue_summary", "확인 가능한 대화가 없습니다.")))}</p>{_render_group_reconciled(group)}</section>
+            <section><span class="depth-label depth-label--audio">{dialogue_detail_label}</span>{dialogue_detail}{source_transcript}</section>
             <section><span class="depth-label depth-label--edit">특이 포인트 / 편집 가치</span>{_render_notables(context, sample_map)}</section>
           </div>
           <section class="segment-section">

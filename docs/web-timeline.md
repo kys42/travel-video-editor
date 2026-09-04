@@ -52,6 +52,12 @@ uv run travel-video render-web timeline.context-reviewed.json \
 10. 화면 맥락과 STT를 종합한 대화 요약
 11. 필요할 때만 펼치는 한국어·영어 STT 원문 후보
 
+`reviewed_dialogue.captions`가 존재하면 장면 행, 상세 대화, 검색은 모두
+보정된 `display_text`를 기준으로 합니다. 검수 전 발화는 기본 화면에서 반복
+노출하지 않고 상세 대화의 `원문 보기`를 펼쳤을 때만 확인할 수 있습니다.
+명시적으로 비어 있는 검수 자막 목록은 정본이므로 구형 STT나 대화 요약을
+자동으로 되살리지 않습니다.
+
 ## Review Workspace와 Rough Cut
 
 다중 영상 라이브러리가 생성하는 `index.html`에는 영상 목록과 장면 타임라인을
