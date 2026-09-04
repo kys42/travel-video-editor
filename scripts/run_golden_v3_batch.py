@@ -284,16 +284,16 @@ def nonblocking_lock(path: Path) -> Iterator[None]:
 
 
 def implementation_record() -> dict[str, Any]:
-    candidates = [
-        Path(__file__).resolve(),
+    producer_candidates = [
         PROJECT_ROOT / "src/travel_video/cli.py",
         PROJECT_ROOT / "src/travel_video/context.py",
         PROJECT_ROOT / "src/travel_video/scene_dialogue.py",
         PROJECT_ROOT / "src/travel_video/boundary_proposals.py",
         PROJECT_ROOT / "scripts/apple_vision_boundary_signals.swift",
     ]
+    orchestrator_path = Path(__file__).resolve()
     files = []
-    for path in candidates:
+    for path in producer_candidates:
         if not path.is_file():
             continue
         record = file_record(path)
@@ -301,10 +301,15 @@ def implementation_record() -> dict[str, Any]:
         files.append(record)
     missing = [
         path.relative_to(PROJECT_ROOT).as_posix()
-        for path in candidates
+        for path in producer_candidates
         if not path.is_file()
     ]
+    orchestrator = file_record(orchestrator_path)
+    orchestrator["component"] = orchestrator_path.relative_to(PROJECT_ROOT).as_posix()
     return {
+        # Stage reuse follows the actual deterministic producers, their inputs,
+        # and stage config. CLI orchestration-only edits must not invalidate
+        # hours of Vision/FFmpeg evidence that those producers did not change.
         "digest": canonical_digest(
             {
                 "files": [
@@ -316,6 +321,8 @@ def implementation_record() -> dict[str, Any]:
         ),
         "files": files,
         "missing": missing,
+        "orchestrator": orchestrator,
+        "orchestrator_digest": orchestrator["sha256"],
     }
 
 

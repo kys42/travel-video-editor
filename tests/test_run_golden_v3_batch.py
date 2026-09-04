@@ -288,6 +288,10 @@ def test_prepare_orders_multimodal_stages_and_resumes_by_content_hash(
         "source_or_proxy_media_modified": False,
     }
     assert len(state["implementation"]["digest"]) == 64
+    assert len(state["implementation"]["orchestrator_digest"]) == 64
+    assert state["implementation"]["orchestrator"]["component"] == (
+        "scripts/run_golden_v3_batch.py"
+    )
     assert len(state["config_digest"]) == 64
     assert all(
         len(stage["signature"]) == 64 and len(stage["config_digest"]) == 64
