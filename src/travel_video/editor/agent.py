@@ -161,7 +161,7 @@ class DemoBackend:
         by_tool = {item["tool"]: item for item in observations if item.get("ok")}
         wants_edit = any(word in message for word in ("만들", "편집", "하이라이트", "초안"))
         duration_match = re.search(r"(\d{1,4})\s*초", message)
-        target_duration = float(duration_match.group(1)) if duration_match else 60.0
+        requested_duration = float(duration_match.group(1)) if duration_match else None
         if "search_scenes" not in by_tool:
             return AgentDecision(
                 tool_calls=[
@@ -176,6 +176,11 @@ class DemoBackend:
             )
         scenes = by_tool["search_scenes"]["result"].get("items", [])
         scene_ids = [item["scene_id"] for item in scenes[:6]]
+        natural_clip_durations = [
+            min(9.0, float(item["source_out"]) - float(item["source_in"]))
+            for item in scenes[:6]
+        ]
+        target_duration = requested_duration or max(5.0, sum(natural_clip_durations))
         if not wants_edit:
             return AgentDecision(
                 response=(
@@ -191,7 +196,7 @@ class DemoBackend:
                         ),
                     }
                 ] if scene_ids else [],
-                suggestions=["이 장면들로 60초 초안 만들기", "대화가 있는 장면만 보기"],
+                suggestions=["이 장면들로 하이라이트 구성 제안", "대화가 있는 장면만 보기"],
                 done=True,
             )
         if "create_edit" not in by_tool:
@@ -220,15 +225,22 @@ class DemoBackend:
         created = by_tool["create_edit"]["result"]
         if "apply_edit_operations" not in by_tool:
             operations = []
-            per_scene = max(3.0, min(9.0, target_duration / max(1, len(scenes[:6]))))
-            for item in scenes[:6]:
+            requested_clip_duration = (
+                max(3.0, min(9.0, target_duration / max(1, len(scenes[:6]))))
+                if requested_duration is not None
+                else None
+            )
+            for index, item in enumerate(scenes[:6]):
                 source_in = float(item["source_in"])
+                clip_duration = requested_clip_duration or natural_clip_durations[index]
                 operations.append(
                     {
                         "op": "add_scene",
                         "scene_id": item["scene_id"],
                         "source_in": source_in,
-                        "source_out": min(float(item["source_out"]), source_in + per_scene),
+                        "source_out": min(
+                            float(item["source_out"]), source_in + clip_duration
+                        ),
                         "label": item["title"],
                         "reason": "검토된 하이라이트와 특이 포인트를 우선한 데모 선택",
                     }

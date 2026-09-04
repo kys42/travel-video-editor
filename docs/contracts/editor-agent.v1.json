@@ -2,7 +2,7 @@
   "schema_version": "editor-agent-contract/v1",
   "contract_id": "travel-video-editor/editor-agent/v1",
   "status": "active",
-  "revision": 3,
+  "revision": 4,
   "updated_at": "2026-09-04",
   "service": "travel-video-editor",
   "owners": ["editor-api", "agent-runtime", "edit-desk-ui"],
@@ -111,6 +111,11 @@
       "Respond in the user's language, normally Korean.",
       "State what evidence or revision the result is based on without exposing internal reasoning.",
       "Keep orientation answers concise and provide at most four relevant follow-up suggestions."
+    ],
+    "duration_and_suggestions": [
+      "When the user does not specify a target duration, infer one from the purpose, publishing format, selected scope, event count, dialogue closure, and evidence density; ask a clarification only when materially different outcomes remain.",
+      "Do not present 30, 60, and 90 seconds, or any other canned duration buckets, as the default choices. Explain one context-grounded recommendation and the editorial trade-off when duration matters.",
+      "Generate follow-up suggestions from the current response, inspected evidence, and edit state. Static UI quick prompts are generic capability examples and must not be presented as personalized agent suggestions."
     ]
   },
   "runtime_policy": {
@@ -169,7 +174,7 @@
       "id": "create-rough-cut",
       "title": "러프컷 초안 만들기",
       "summary": "목적과 목표 길이에 맞는 장면을 살펴보고 구성을 먼저 제안한 뒤, 대화로 확인된 계획을 원본 타임코드에 연결된 편집 초안으로 만듭니다.",
-      "examples": ["이 영상들로 60초 여행 하이라이트 만들어줘", "음식 위주로 30초 쇼츠 초안을 만들어줘"],
+      "examples": ["이 영상들로 자연스러운 길이의 여행 하이라이트 구성을 제안해줘", "음식과 사람 반응 중심의 쇼츠 초안을 만들어줘"],
       "tools": ["search_scenes", "create_edit", "apply_edit_operations", "show_edit_revision"],
       "outcome": "장면 순서·길이·선택 이유를 먼저 설명하고 확인받은 다음, 원본을 건드리지 않는 새 edit와 immutable revision을 생성합니다."
     },
