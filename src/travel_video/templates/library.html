@@ -837,8 +837,8 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
           selectedStart = sourceIn;
           selectedEnd = sourceOut;
           previewTime.textContent = `${timeLabel(sourceIn)} — ${timeLabel(sourceOut)}`;
+          seekToSelectedStart();
           if (action.autoplay !== false && !playButton.disabled) {
-            seekToSelectedStart();
             rangePlayback = true;
             try { await previewVideo.play(); } catch { showToast('자동 재생이 차단됐습니다. 재생 버튼을 눌러주세요.'); }
           }
@@ -1183,6 +1183,9 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
         fact('후보', `${card.candidates?.length || 0} clips`);
         fact('예상 길이', timeLabel(card.estimated_duration));
         if (card.target_duration) fact('목표', timeLabel(card.target_duration));
+        if (card.base_edit_id) {
+          fact('적용 방식', card.application_mode === 'append' ? '현재 컷 뒤에 추가' : '현재 컷 전체 교체');
+        }
         summary.append(facts);
         if (card.duration_rationale) summary.append(element('p', '', card.duration_rationale));
 
@@ -1238,7 +1241,10 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
             const response = await fetch(`/api/proposals/${encodeURIComponent(card.proposal_id)}/apply`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-              body: JSON.stringify({ selected_candidate_ids })
+              body: JSON.stringify({
+                session_id: card.session_id || chatSessionId,
+                selected_candidate_ids
+              })
             });
             if (!response.ok) {
               const failure = await response.json().catch(() => ({}));

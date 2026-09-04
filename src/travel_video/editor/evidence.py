@@ -390,13 +390,31 @@ class SceneEvidenceService:
         if source == "proxy":
             assert proxy is not None
             key_source = self._proxy_key(proxy, scene_id, start, end, frame_count)
-            artifact_id, sheet, cells, cached = self._cached_sheet(
-                key_source,
-                lambda directory: self._extract_proxy_frames(
-                    proxy, directory, start, end, frame_count
-                ),
-                source="proxy",
-            )
+            try:
+                artifact_id, sheet, cells, cached = self._cached_sheet(
+                    key_source,
+                    lambda directory: self._extract_proxy_frames(
+                        proxy, directory, start, end, frame_count
+                    ),
+                    source="proxy",
+                )
+            except RuntimeError as exc:
+                if visual_mode != "auto":
+                    raise ValueError("proxy contact-sheet extraction failed") from exc
+                if not existing:
+                    return {
+                        "status": "unavailable",
+                        "source": None,
+                        "frame_count": 0,
+                        "reason": "Proxy frame extraction failed; transcript evidence remains available.",
+                    }, []
+                source = "existing"
+                key_source = self._existing_key(existing, scene_id, start, end)
+                artifact_id, sheet, cells, cached = self._cached_sheet(
+                    key_source,
+                    lambda _: existing,
+                    source="analysis_frames",
+                )
         elif existing:
             key_source = self._existing_key(existing, scene_id, start, end)
             artifact_id, sheet, cells, cached = self._cached_sheet(
@@ -475,7 +493,15 @@ class SceneEvidenceService:
         for frame in frames:
             path = Path(frame["path"])
             stat = path.stat()
-            rows.append([str(path), stat.st_size, stat.st_mtime_ns])
+            rows.append(
+                [
+                    str(path),
+                    stat.st_size,
+                    stat.st_mtime_ns,
+                    round(float(frame["source_time"]), 6),
+                    frame.get("sample_id"),
+                ]
+            )
         return json.dumps(
             [EVIDENCE_CACHE_SCHEMA, "existing", scene_id, start, end, rows],
             separators=(",", ":"),
@@ -566,35 +592,39 @@ class SceneEvidenceService:
         duration = end - start
         frame_dir = directory / "frames"
         frame_dir.mkdir(parents=True, exist_ok=True)
-        completed = subprocess.run(
-            [
-                ffmpeg,
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-ss",
-                f"{start:.6f}",
-                "-t",
-                f"{duration:.6f}",
-                "-i",
-                str(proxy),
-                "-map",
-                "0:v:0",
-                "-an",
-                "-sn",
-                "-vf",
-                f"fps={frame_count / duration:.9f},scale=480:-2:flags=lanczos",
-                "-frames:v",
-                str(frame_count),
-                "-q:v",
-                "4",
-                str(frame_dir / "frame_%03d.jpg"),
-            ],
-            check=False,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
+        try:
+            completed = subprocess.run(
+                [
+                    ffmpeg,
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-ss",
+                    f"{start:.6f}",
+                    "-t",
+                    f"{duration:.6f}",
+                    "-i",
+                    str(proxy),
+                    "-map",
+                    "0:v:0",
+                    "-an",
+                    "-sn",
+                    "-vf",
+                    f"fps={frame_count / duration:.9f},scale=480:-2:flags=lanczos",
+                    "-frames:v",
+                    str(frame_count),
+                    "-q:v",
+                    "4",
+                    str(frame_dir / "frame_%03d.jpg"),
+                ],
+                check=False,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=60,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("proxy frame extraction timed out") from exc
         paths = sorted(frame_dir.glob("frame_*.jpg"))
         if completed.returncode or not paths:
             message = completed.stderr.strip()[-500:]

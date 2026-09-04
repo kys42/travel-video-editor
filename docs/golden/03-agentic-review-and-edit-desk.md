@@ -93,7 +93,8 @@ source range에 한해 검토 자막, 앞뒤 대화, 명시적으로 요청한 �
 검증된 `video-edit-proposal/v1`로 먼저 설명한다. 사용자는 후보별로 검토하거나
 일부만 선택할 수 있고, 동의하거나 수정한 다음 revision을 만든다. 사용자가
 명시적으로 즉시 실행을 요청했거나 현재 edit의 작은 변경만 정확히 지정한 경우만
-예외로 한다.
+예외로 한다. 기존 edit을 대상으로 한 proposal은 후보가 기존 컷 전체를 교체하는
+최종 순서인지(`replace_all`), 기존 컷 뒤에 추가할 순서인지(`append`)를 명시한다.
 
 ### 제안은 현재 맥락에서 에이전트가 만든다
 
@@ -230,7 +231,9 @@ revision을 만든다. Display와 UI action은 사용자가 볼 화면을 바꾸
 계획 턴에서는 `create_edit_proposal`까지만 호출하고 `create_edit`,
 `apply_edit_proposal`, `apply_edit_operations`는 호출하지 않는다. 다음 턴의 명확한
 동의는 ID로 연결된 방금 proposal만 승인한다. 사용자가 후보를 해제하면 선택 후보만
-적용하고, 구성 수정 의견을 주면 새 proposal에 먼저 반영한다.
+적용하고, 구성 수정 의견을 주면 새 proposal에 먼저 반영한다. proposal 조회와
+적용은 이를 만든 같은 채팅 세션에서만 허용하며, 명시적 부정·보류 표현은 승인으로
+취급하지 않는다.
 
 proposal 자체와 후보 범위·상태 전이는 서버가 검증하지만, “좋아”라는 문장이 실제
 사용자 확인인지 판단하는 절차는 Codex backend가 실행 계약을 따르는 대화 정책이다.
@@ -312,6 +315,9 @@ revision은 보존하되, UI는 성공을 추측하지 않고 다시 조회한�
 ## 10. Revision과 동시성
 
 - proposal은 후보 ID, 장면·원본 범위, 순서, 역할, 이유, 가정과 불확실성을 보존한다.
+- 기존 edit proposal은 `replace_all` 또는 `append` 적용 의미를 보존하고,
+  선택 후보 ID의 요청 순서와 무관하게 저장된 proposal 순서로 컷을 만든다.
+- proposal 조회·적용은 소유 채팅 세션이 일치해야 한다.
 - draft proposal만 한 번 적용할 수 있으며 일부 후보만 적용한 사실도 기록한다.
 - `create_edit`는 빈 첫 revision을 만든다.
 - 모든 편집 operation 묶음은 하나의 새 immutable snapshot을 만든다.

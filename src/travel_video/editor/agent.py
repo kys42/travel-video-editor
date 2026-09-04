@@ -149,6 +149,7 @@ class CodexBackend:
                 self.store.update_session(session_id, codex_thread_id=thread.id)
             delivered = self._delivered_image_artifacts.setdefault(session_id, set())
             pending_images: list[tuple[str, str]] = []
+            pending_artifacts: set[str] = set()
             for observation in observations:
                 for attachment in observation.get("attachments", []):
                     if attachment.get("type") != "local_image":
@@ -157,8 +158,14 @@ class CodexBackend:
                         attachment.get("artifact_id") or attachment.get("path") or ""
                     )
                     path = str(attachment.get("path") or "")
-                    if artifact_id and path and artifact_id not in delivered:
+                    if (
+                        artifact_id
+                        and path
+                        and artifact_id not in delivered
+                        and artifact_id not in pending_artifacts
+                    ):
                         pending_images.append((artifact_id, path))
+                        pending_artifacts.add(artifact_id)
             run_input = [TextInput(prompt)]
             run_input.extend(LocalImageInput(path) for _, path in pending_images)
             result = await thread.run(
@@ -220,8 +227,15 @@ class DemoBackend:
                 suggestions=["첫 컷을 검토", "선택 근거와 대화 다시 보기"],
                 done=True,
             )
-        approval = any(
-            word in message for word in ("적용", "진행", "좋아", "그대로", "승인")
+        normalized_message = re.sub(r"\s+", " ", message.strip()).strip(".!?~ ")
+        approval = bool(
+            re.fullmatch(
+                r"(?:좋아,?\s*)?"
+                r"(?:(?:이\s+)?제안\s+)?"
+                r"(?:전체\s+적용|그대로\s+(?:적용|진행)|적용|승인(?:해|할게)?)"
+                r"(?:\s*(?:해줘|하자|할게))?",
+                normalized_message,
+            )
         )
         if active_proposal_id and approval:
             if "get_edit_proposal" not in by_tool:
@@ -472,7 +486,12 @@ class AgentOrchestrator:
                     observations.append(observation)
                     if result.kind in {"card", "action"}:
                         yield AgentEvent(result.kind, result.payload)
-                except (KeyError, ValueError, RevisionConflictError) as exc:
+                except (
+                    KeyError,
+                    PermissionError,
+                    ValueError,
+                    RevisionConflictError,
+                ) as exc:
                     observations.append(
                         {
                             "tool": name,

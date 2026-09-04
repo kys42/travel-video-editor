@@ -185,16 +185,19 @@ class ToolGateway:
             base_revision_id=(
                 str(args["base_revision_id"]) if args.get("base_revision_id") else None
             ),
+            application_mode=str(args.get("application_mode", "replace_all")),
             created_by=f"agent:{session_id}",
         )
         return ToolResult(
             "card",
-            self.proposal_card(proposal),
+            self.proposal_card(proposal, session_id=session_id),
             model_payload=self._proposal_model_view(proposal),
         )
 
-    def _get_edit_proposal(self, args: dict[str, Any], _: str) -> ToolResult:
-        proposal = self.store.get_proposal(str(args["proposal_id"]))
+    def _get_edit_proposal(self, args: dict[str, Any], session_id: str) -> ToolResult:
+        proposal = self.store.get_proposal(
+            str(args["proposal_id"]), expected_session_id=session_id
+        )
         return ToolResult("data", self._proposal_model_view(proposal))
 
     def _apply_edit_proposal(self, args: dict[str, Any], session_id: str) -> ToolResult:
@@ -205,6 +208,7 @@ class ToolGateway:
                 str(item) for item in args.get("selected_candidate_ids", [])
             ]
             or None,
+            expected_session_id=session_id,
             created_by=f"agent:{session_id}",
         )
         return ToolResult("data", result)
@@ -224,6 +228,7 @@ class ToolGateway:
                 "estimated_duration",
                 "base_edit_id",
                 "base_revision_id",
+                "application_mode",
                 "candidates",
                 "assumptions",
                 "uncertainties",
@@ -233,8 +238,10 @@ class ToolGateway:
         }
 
     @staticmethod
-    def proposal_card(proposal: dict[str, Any]) -> dict[str, Any]:
-        return {
+    def proposal_card(
+        proposal: dict[str, Any], *, session_id: str | None = None
+    ) -> dict[str, Any]:
+        card = {
             "type": "edit_proposal_ref",
             "proposal_id": proposal["proposal_id"],
             "status": proposal["status"],
@@ -245,10 +252,14 @@ class ToolGateway:
             "estimated_duration": proposal["estimated_duration"],
             "base_edit_id": proposal.get("base_edit_id"),
             "base_revision_id": proposal.get("base_revision_id"),
+            "application_mode": proposal.get("application_mode", "replace_all"),
             "assumptions": proposal.get("assumptions", []),
             "uncertainties": proposal.get("uncertainties", []),
             "candidates": proposal["candidates"],
         }
+        if session_id is not None:
+            card["session_id"] = session_id
+        return card
 
     def _create_edit(self, args: dict[str, Any], session_id: str) -> ToolResult:
         edit = self.store.create_edit(

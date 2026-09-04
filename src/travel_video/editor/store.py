@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -26,6 +27,16 @@ def _now() -> str:
 
 def _id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:16]}"
+
+
+def _finite_float(value: Any, field: str) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field} must be a finite number") from exc
+    if not math.isfinite(number):
+        raise ValueError(f"{field} must be a finite number")
+    return number
 
 
 class EditStore:
@@ -149,8 +160,10 @@ class EditStore:
             raise ValueError("title must contain 1 to 120 characters")
         if not brief or len(brief) > 2000:
             raise ValueError("brief must contain 1 to 2000 characters")
-        if target_duration is not None and not 5 <= target_duration <= 7200:
-            raise ValueError("target_duration must be between 5 and 7200 seconds")
+        if target_duration is not None:
+            target_duration = _finite_float(target_duration, "target_duration")
+            if not 5 <= target_duration <= 7200:
+                raise ValueError("target_duration must be between 5 and 7200 seconds")
         edit_id = _id("edit")
         revision_id = _id("rev")
         created_at = _now()
@@ -202,7 +215,7 @@ class EditStore:
                 edit_id,
                 None,
                 1,
-                json.dumps(snapshot, ensure_ascii=False),
+                json.dumps(snapshot, ensure_ascii=False, allow_nan=False),
                 created_at,
                 created_by,
             ),
@@ -288,11 +301,17 @@ class EditStore:
         summary: str,
         operations: list[dict[str, Any]],
         created_by: str,
+        replacement_operations: list[dict[str, Any]] | None = None,
     ) -> str:
         if not summary.strip() or len(summary) > 240:
             raise ValueError("summary must contain 1 to 240 characters")
-        if not operations or len(operations) > 100:
+        if replacement_operations is None and (not operations or len(operations) > 100):
             raise ValueError("operations must contain 1 to 100 items")
+        if (
+            replacement_operations is not None
+            and not 1 <= len(replacement_operations) <= 24
+        ):
+            raise ValueError("replacement operations must contain 1 to 24 items")
         edit = connection.execute(
             "SELECT * FROM edits WHERE edit_id = ?", (edit_id,)
         ).fetchone()
@@ -309,7 +328,21 @@ class EditStore:
         if previous is None:
             raise KeyError(f"revision not found: {expected_revision_id}")
         snapshot = json.loads(previous["snapshot_json"])
-        change_summary = self._mutate_snapshot(snapshot, operations, catalog)
+        change_summary: list[dict[str, Any]] = []
+        if replacement_operations is not None:
+            removed_count = len(snapshot["plan"].get("clips", []))
+            snapshot["plan"]["clips"] = []
+            change_summary.append(
+                {
+                    "type": "clips_replaced",
+                    "removed_count": removed_count,
+                    "candidate_count": len(replacement_operations),
+                }
+            )
+            change_summary.extend(
+                self._mutate_snapshot(snapshot, replacement_operations, catalog)
+            )
+        change_summary.extend(self._mutate_snapshot(snapshot, operations, catalog))
         sequence = int(previous["sequence"]) + 1
         revision_id = _id("rev")
         created_at = _now()
@@ -335,7 +368,7 @@ class EditStore:
                 edit_id,
                 expected_revision_id,
                 sequence,
-                json.dumps(snapshot, ensure_ascii=False),
+                json.dumps(snapshot, ensure_ascii=False, allow_nan=False),
                 created_at,
                 created_by,
             ),
@@ -376,8 +409,12 @@ class EditStore:
             if op == "add_scene":
                 scene = catalog.scene(str(operation.get("scene_id") or ""))
                 asset = catalog.asset(scene.asset_id)
-                source_in = float(operation.get("source_in", scene.source_in))
-                source_out = float(operation.get("source_out", scene.source_out))
+                source_in = _finite_float(
+                    operation.get("source_in", scene.source_in), "source_in"
+                )
+                source_out = _finite_float(
+                    operation.get("source_out", scene.source_out), "source_out"
+                )
                 if (
                     source_in < scene.source_in - 0.001
                     or source_out > scene.source_out + 0.001
@@ -418,8 +455,12 @@ class EditStore:
             elif op == "trim_clip":
                 clip = self._find_clip(clips, operation.get("clip_id"))
                 scene = catalog.scene(clip["metadata"]["scene_id"])
-                source_in = float(operation.get("source_in", clip["source_in"]))
-                source_out = float(operation.get("source_out", clip["source_out"]))
+                source_in = _finite_float(
+                    operation.get("source_in", clip["source_in"]), "source_in"
+                )
+                source_out = _finite_float(
+                    operation.get("source_out", clip["source_out"]), "source_out"
+                )
                 if (
                     source_in < scene.source_in - 0.001
                     or source_out > scene.source_out + 0.001
@@ -456,7 +497,9 @@ class EditStore:
                 snapshot["plan"]["title"] = title
                 changes.append({"type": "title_changed", "title": title})
             elif op == "set_target_duration":
-                duration = float(operation.get("target_duration", 0))
+                duration = _finite_float(
+                    operation.get("target_duration", 0), "target_duration"
+                )
                 if not 5 <= duration <= 7200:
                     raise ValueError(
                         "target_duration must be between 5 and 7200 seconds"
@@ -494,6 +537,7 @@ class EditStore:
         uncertainties: list[str] | None = None,
         base_edit_id: str | None = None,
         base_revision_id: str | None = None,
+        application_mode: str = "replace_all",
         created_by: str,
     ) -> dict[str, Any]:
         title = title.strip()
@@ -504,8 +548,12 @@ class EditStore:
             raise ValueError("proposal objective must contain 1 to 2000 characters")
         if not 1 <= len(candidates) <= 24:
             raise ValueError("proposal candidates must contain 1 to 24 items")
-        if target_duration is not None and not 5 <= target_duration <= 7200:
-            raise ValueError("target_duration must be between 5 and 7200 seconds")
+        if target_duration is not None:
+            target_duration = _finite_float(target_duration, "target_duration")
+            if not 5 <= target_duration <= 7200:
+                raise ValueError("target_duration must be between 5 and 7200 seconds")
+        if application_mode not in {"replace_all", "append"}:
+            raise ValueError("application_mode must be replace_all or append")
         if bool(base_edit_id) != bool(base_revision_id):
             raise ValueError(
                 "base_edit_id and base_revision_id must be supplied together"
@@ -520,8 +568,12 @@ class EditStore:
         normalized_candidates = []
         for item in candidates:
             scene = catalog.scene(str(item.get("scene_id") or ""))
-            source_in = float(item.get("source_in", scene.source_in))
-            source_out = float(item.get("source_out", scene.source_out))
+            source_in = _finite_float(
+                item.get("source_in", scene.source_in), "source_in"
+            )
+            source_out = _finite_float(
+                item.get("source_out", scene.source_out), "source_out"
+            )
             if (
                 source_in < scene.source_in - 0.001
                 or source_out > scene.source_out + 0.001
@@ -583,6 +635,7 @@ class EditStore:
             ),
             "base_edit_id": base_edit_id,
             "base_revision_id": base_revision_id,
+            "application_mode": application_mode,
             "candidates": normalized_candidates,
             "assumptions": normalized_assumptions,
             "uncertainties": normalized_uncertainties,
@@ -602,22 +655,37 @@ class EditStore:
                 (
                     proposal_id,
                     session_id,
-                    json.dumps(payload, ensure_ascii=False),
+                    json.dumps(payload, ensure_ascii=False, allow_nan=False),
                     now,
                     now,
                 ),
             )
+            connection.execute(
+                """
+                INSERT INTO chat_sessions (
+                    session_id, codex_thread_id, active_edit_id,
+                    active_proposal_id, created_at, updated_at
+                ) VALUES (?, NULL, NULL, ?, ?, ?)
+                ON CONFLICT(session_id) DO UPDATE SET
+                    active_proposal_id = excluded.active_proposal_id,
+                    updated_at = excluded.updated_at
+                """,
+                (session_id, proposal_id, now, now),
+            )
             connection.commit()
-        self.update_session(session_id, active_proposal_id=proposal_id)
-        return self.get_proposal(proposal_id)
+        return self.get_proposal(proposal_id, expected_session_id=session_id)
 
-    def get_proposal(self, proposal_id: str) -> dict[str, Any]:
+    def get_proposal(
+        self, proposal_id: str, *, expected_session_id: str | None = None
+    ) -> dict[str, Any]:
         with self._connection() as connection:
             row = connection.execute(
                 "SELECT * FROM edit_proposals WHERE proposal_id = ?", (proposal_id,)
             ).fetchone()
         if row is None:
             raise KeyError(f"proposal not found: {proposal_id}")
+        if expected_session_id is not None and row["session_id"] != expected_session_id:
+            raise PermissionError("proposal belongs to a different chat session")
         result = json.loads(row["proposal_json"])
         result.update(
             {
@@ -640,6 +708,7 @@ class EditStore:
         catalog: TimelineCatalog,
         proposal_id: str,
         selected_candidate_ids: list[str] | None,
+        expected_session_id: str,
         created_by: str,
     ) -> dict[str, Any]:
         with self._connection() as connection:
@@ -651,6 +720,8 @@ class EditStore:
             ).fetchone()
             if current is None:
                 raise KeyError(f"proposal not found: {proposal_id}")
+            if current["session_id"] != expected_session_id:
+                raise PermissionError("proposal belongs to a different chat session")
             if current["status"] != "draft":
                 raise ValueError(
                     "proposal must be draft before applying; "
@@ -660,18 +731,32 @@ class EditStore:
             available = {
                 str(item["candidate_id"]): item for item in proposal["candidates"]
             }
-            selected_ids = list(
-                dict.fromkeys(selected_candidate_ids or list(available.keys()))
-            )
-            if not selected_ids:
+            requested_ids = set(selected_candidate_ids or available.keys())
+            if not requested_ids:
                 raise ValueError("at least one proposal candidate must be selected")
-            unknown = set(selected_ids) - available.keys()
+            unknown = requested_ids - available.keys()
             if unknown:
                 raise KeyError(
                     f"unknown proposal candidates: {', '.join(sorted(unknown))}"
                 )
+            selected_ids = [
+                str(item["candidate_id"])
+                for item in proposal["candidates"]
+                if str(item["candidate_id"]) in requested_ids
+            ]
             proposal_session_id = str(current["session_id"])
-            operations = [
+            operations: list[dict[str, Any]] = []
+            if (
+                proposal.get("base_edit_id")
+                and proposal.get("target_duration") is not None
+            ):
+                operations.append(
+                    {
+                        "op": "set_target_duration",
+                        "target_duration": proposal["target_duration"],
+                    }
+                )
+            candidate_operations = [
                 {
                     "op": "add_scene",
                     "scene_id": available[candidate_id]["scene_id"],
@@ -682,6 +767,14 @@ class EditStore:
                 }
                 for candidate_id in selected_ids
             ]
+            replacement_operations = None
+            if (
+                proposal.get("base_edit_id")
+                and proposal.get("application_mode", "replace_all") == "replace_all"
+            ):
+                replacement_operations = candidate_operations
+            else:
+                operations.extend(candidate_operations)
             if proposal.get("base_edit_id"):
                 edit_id = str(proposal["base_edit_id"])
                 expected_revision_id = str(proposal["base_revision_id"])
@@ -693,6 +786,7 @@ class EditStore:
                     summary=f"편집 제안 적용: {proposal['title']}",
                     operations=operations,
                     created_by=created_by,
+                    replacement_operations=replacement_operations,
                 )
             else:
                 edit_id, expected_revision_id = self._insert_edit(
@@ -740,7 +834,12 @@ class EditStore:
             )
             connection.commit()
         edit = self.get_edit(edit_id)
-        return {"proposal": self.get_proposal(proposal_id), "edit": edit}
+        return {
+            "proposal": self.get_proposal(
+                proposal_id, expected_session_id=proposal_session_id
+            ),
+            "edit": edit,
+        }
 
     def session(self, session_id: str) -> dict[str, Any]:
         with self._connection() as connection:

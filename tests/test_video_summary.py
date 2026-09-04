@@ -228,8 +228,14 @@ def test_library_sorts_videos_by_capture_time(tmp_path: Path) -> None:
     assert "const renderProposalCard" in document
     assert "const renderDeepEvidenceCard" in document
     assert "selected_candidate_ids" in document
+    assert "session_id: card.session_id || chatSessionId" in document
+    assert "현재 컷 전체 교체" in document
     assert "원시 STT는 미검증 보조 근거" in document
     assert "재생 구간이 검토된 장면 범위를 벗어났습니다." in document
+    assert (
+        "previewTime.textContent = `${timeLabel(sourceIn)} — ${timeLabel(sourceOut)}`;\n          seekToSelectedStart();"
+        in document
+    )
     assert (output.parent / "media" / "earlier.mp4").is_symlink()
     assert (output.parent / "media" / "earlier.mp4").resolve() == earlier_proxy
     assert manifest["video_count"] == 2

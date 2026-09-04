@@ -2,7 +2,7 @@
   "schema_version": "editor-agent-contract/v1",
   "contract_id": "travel-video-editor/editor-agent/v1",
   "status": "active",
-  "revision": 5,
+  "revision": 6,
   "updated_at": "2026-09-04",
   "service": "travel-video-editor",
   "owners": ["editor-api", "agent-runtime", "edit-desk-ui"],
@@ -317,7 +317,7 @@
     {
       "name": "create_edit_proposal",
       "category": "proposal_action",
-      "intent": "Create a validated, inspectable edit proposal after reviewing a compact shortlist. This is the normal planning-turn output and does not create an edit revision. Every candidate needs a reviewed scene, source range, editorial role, and selection reason.",
+      "intent": "Create a validated, inspectable edit proposal after reviewing a compact shortlist. This is the normal planning-turn output and does not create an edit revision. Every candidate needs a reviewed scene, source range, editorial role, and selection reason. For an existing edit, declare whether the proposed final sequence replaces all current clips or appends to them.",
       "side_effect": "creates_proposal",
       "approval": "never",
       "status_message": "검토 가능한 편집 제안을 구성하는 중",
@@ -330,6 +330,7 @@
           "duration_rationale": {"type": "string", "maxLength": 800},
           "base_edit_id": {"type": "string"},
           "base_revision_id": {"type": "string"},
+          "application_mode": {"type": "string", "enum": ["replace_all", "append"], "default": "replace_all"},
           "assumptions": {"type": "array", "maxItems": 12, "items": {"type": "string", "maxLength": 400}},
           "uncertainties": {"type": "array", "maxItems": 12, "items": {"type": "string", "maxLength": 400}},
           "candidates": {
@@ -360,7 +361,7 @@
     {
       "name": "get_edit_proposal",
       "category": "data_query",
-      "intent": "Read the active or specified proposal before applying it or explaining its candidate choices.",
+      "intent": "Read the active or specified proposal from the same chat session before applying it or explaining its candidate choices.",
       "side_effect": "none",
       "approval": "never",
       "status_message": "편집 제안의 후보와 적용 상태를 확인하는 중",
@@ -375,7 +376,7 @@
     {
       "name": "apply_edit_proposal",
       "category": "durable_action",
-      "intent": "Apply all or an explicitly selected subset of a draft proposal only after conversational confirmation, an explicit proposal-card apply action, or an explicit immediate-execution request. Creates a new edit when the proposal has no base edit, otherwise requires the proposal base revision to remain current.",
+      "intent": "Apply all or an explicitly selected subset of a draft proposal from the same chat session only after conversational confirmation, an explicit proposal-card apply action, or an explicit immediate-execution request. Creates a new edit when the proposal has no base edit; for an existing edit it requires the base revision to remain current and follows the proposal's replace_all or append mode.",
       "side_effect": "creates_revision",
       "approval": "chat_confirmation_of_proposal",
       "status_message": "확인된 편집 제안을 새 리비전으로 적용하는 중",

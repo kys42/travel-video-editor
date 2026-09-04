@@ -43,7 +43,7 @@ Edit Desk browser
                  └─ EditStore (SQLite, proposals + immutable revisions)
 ```
 
-The Codex backend uses `openai-codex` on the server. It creates or resumes a Codex thread, supplies the compact tool catalog and current page/edit context, and requires a JSON response matching the agent decision schema. Codex proposes typed tool calls. The `ToolGateway` validates and executes them; results are returned to the same thread until it produces a final response or the turn limit is reached. Contract revision 5 represents the plan as a server-validated proposal before revision mutation. The proposal and candidate ranges are durable, inspectable state; interpreting a later conversational confirmation remains model policy rather than a high-risk server approval token. Explicit immediate execution and precise small active-edit changes remain documented exceptions.
+The Codex backend uses `openai-codex` on the server. It creates or resumes a Codex thread, supplies the compact tool catalog and current page/edit context, and requires a JSON response matching the agent decision schema. Codex proposes typed tool calls. The `ToolGateway` validates and executes them; results are returned to the same thread until it produces a final response or the turn limit is reached. Contract revision 6 represents the plan as a server-validated, session-owned proposal before revision mutation and makes existing-edit replacement versus append semantics explicit. The proposal and candidate ranges are durable, inspectable state; interpreting a later conversational confirmation remains model policy rather than a high-risk server approval token. Explicit immediate execution and precise small active-edit changes remain documented exceptions.
 
 Codex is intentionally started with:
 
@@ -92,9 +92,9 @@ The raw browser envelope is limited to 16 KB, explicit selection to 24 scenes, a
 
 ## Write path and concurrency
 
-`create_edit_proposal` validates one to 24 candidate ranges against reviewed scenes and stores an immutable proposal payload with a draft/application status. It does not create an edit revision. The UI can apply all or a selected subset; a proposal cannot be applied twice.
+`create_edit_proposal` validates one to 24 finite candidate ranges against reviewed scenes and stores an immutable proposal payload with a draft/application status. It does not create an edit revision. The UI can apply all or a selected subset; a proposal cannot be applied twice or read/applied from a different chat session. Proposal persistence and the session's active-proposal pointer are committed atomically.
 
-`apply_edit_proposal` converts the selected candidates into source-linked clip operations. `create_edit` creates revision 1. `apply_edit_operations` requires `expected_revision_id`; a stale caller receives `revision_conflict` rather than silently overwriting a newer edit. A successful operation batch creates one new snapshot.
+`apply_edit_proposal` converts the selected candidates into source-linked clips in the proposal's stored order. For an existing edit, `replace_all` atomically replaces the clip sequence without expanding the old timeline into one remove operation per clip; `append` adds candidates after the current clips. `create_edit` creates revision 1. `apply_edit_operations` requires `expected_revision_id`; a stale caller receives `revision_conflict` rather than silently overwriting a newer edit. A successful operation batch creates one new snapshot.
 
 Supported operations are `add_scene`, `trim_clip`, `move_clip`, `remove_clip`, `set_title`, and `set_target_duration`. Ranges are checked against the reviewed scene and source duration. Each clip stores:
 
@@ -115,8 +115,8 @@ Supported operations are `add_scene`, `trim_clip`, `move_clip`, `remove_clip`, `
 - `GET /api/scenes/{scene_id}` — one evidence packet.
 - `GET /api/evidence/contact-sheets/{artifact_id}.jpg` — immutable cached sheet produced by a successful bounded inspection.
 - `POST /api/proposals` — validate and persist a reviewable edit proposal.
-- `GET /api/proposals/{proposal_id}` — read proposal state and candidate ranges.
-- `POST /api/proposals/{proposal_id}/apply` — apply all or selected candidates as a revision.
+- `GET /api/proposals/{proposal_id}?session_id=…` — read same-session proposal state and candidate ranges.
+- `POST /api/proposals/{proposal_id}/apply` — apply all or selected candidates as a revision, with the owning `session_id` in the body.
 - `POST /api/edits` — create an empty draft.
 - `GET /api/edits/{edit_id}` — read edit and revision history.
 - `POST /api/edits/{edit_id}/operations` — optimistic-concurrency mutation.
