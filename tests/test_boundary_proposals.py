@@ -9,6 +9,7 @@ from travel_video.boundary_proposals import (
     _parse_ffmpeg_metadata,
     _validate_inputs,
     cluster_boundary_events,
+    derive_visual_moments,
     extract_apple_stt_signals,
     extract_vision_signals,
 )
@@ -169,6 +170,80 @@ def test_vision_adapter_emits_feature_people_quality_and_ocr_changes() -> None:
         "quality_change",
         "ocr_change",
     } <= kinds
+
+
+def test_visual_moments_discover_speech_free_visual_and_action_intervals() -> None:
+    vision_raw = {
+        "visualSamples": [
+            {
+                "timestamp": 5.0,
+                "featureDistanceFromPrevious": 0.02,
+                "aestheticsScore": 0.8,
+                "isUtility": False,
+                "faceCount": 0,
+                "personCount": 0,
+            },
+            {
+                "timestamp": 15.0,
+                "featureDistanceFromPrevious": 0.6,
+                "aestheticsScore": 0.2,
+                "isUtility": False,
+                "faceCount": 0,
+                "personCount": 0,
+            },
+            {
+                "timestamp": 30.0,
+                "featureDistanceFromPrevious": 0.05,
+                "aestheticsScore": 0.5,
+                "isUtility": False,
+                "faceCount": 1,
+                "personCount": 1,
+            },
+            {
+                "timestamp": 45.0,
+                "featureDistanceFromPrevious": 0.03,
+                "aestheticsScore": 0.1,
+                "isUtility": False,
+                "faceCount": 0,
+                "personCount": 0,
+            },
+        ]
+    }
+    ffmpeg_signals = {
+        "raw": {
+            "motion_samples": [
+                {"timestamp": 5.0, "yavg": 3.0},
+                {"timestamp": 15.0, "yavg": 10.0},
+                {"timestamp": 30.0, "yavg": 12.0},
+                {"timestamp": 45.0, "yavg": 60.0},
+            ]
+        }
+    }
+    transcript = {
+        "activity_intervals": [
+            {"activity_id": "A1", "start": 28.0, "end": 32.0}
+        ]
+    }
+
+    result = derive_visual_moments(
+        vision_raw,
+        ffmpeg_signals,
+        transcript,
+        source=_source(),
+        asset_id="clip--abc123",
+        duration=60.0,
+        config=BoundaryProposalConfig(),
+    )
+
+    assert result["schema_version"] == "visual-moment/v1"
+    assert result["policy"]["speech_is_selection_filter"] is False
+    assert result["summary"]["moment_count"] >= 2
+    assert result["summary"]["speech_free_moment_count"] >= 1
+    assert {moment["primary_role"] for moment in result["moments"]} & {
+        "visual",
+        "action",
+    }
+    assert all(moment["evidence"] for moment in result["moments"])
 
 
 def test_clustering_uses_exact_primary_timestamp_and_keeps_short_speech_pair() -> None:

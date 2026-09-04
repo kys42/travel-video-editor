@@ -164,11 +164,16 @@ uv run travel-video validate-boundary-proposals \
   work/phase1/sample/boundaries/proposals.json \
   work/phase1/sample/timeline.reviewed.json
 
+uv run travel-video validate-visual-moments \
+  work/phase1/sample/boundaries/visual-moments.json \
+  work/phase1/sample/timeline.reviewed.json
+
 uv run travel-video build-scene-dialogue-review-packet \
   work/stt-apple/sample/transcript.apple.json \
   work/phase1/sample/timeline.reviewed.json \
   --visual-packet work/phase1/sample/context/context-review-packet.json \
   --boundary-proposals work/phase1/sample/boundaries/proposals.json \
+  --visual-moments work/phase1/sample/boundaries/visual-moments.json \
   --max-window 8 \
   --output work/phase1/sample/scene-dialogue/review-packet.json
 

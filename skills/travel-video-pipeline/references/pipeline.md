@@ -128,11 +128,15 @@ uv run travel-video build-boundary-proposals \
 uv run travel-video validate-boundary-proposals \
   boundaries/proposals.json timeline.reviewed.json
 
+uv run travel-video validate-visual-moments \
+  boundaries/visual-moments.json timeline.reviewed.json
+
 uv run travel-video build-scene-dialogue-review-packet \
   work/apple-speech/clip-id/transcript.apple.json \
   timeline.reviewed.json \
   --visual-packet context/context-review-packet.json \
   --boundary-proposals boundaries/proposals.json \
+  --visual-moments boundaries/visual-moments.json \
   --max-window 8 \
   --output scene-dialogue/review-packet.json
 
@@ -152,8 +156,11 @@ for compatibility jobs that explicitly need a standalone transcript.
 
 `build-boundary-proposals` is the production producer, not only a contract check. It
 keeps Apple STT, FFmpeg, Apple Vision raw, normalized Vision, fused proposals, and a
-run manifest as separate files. The default Vision cadence is about 3fps, while OCR
-is 1fps and FFmpeg/STT timestamps retain their native source-relative precision.
+run manifest as separate files. It also emits `visual-moment/v1` intervals and 960px
+representative frames without filtering by speech, so silent visual/action/candid
+evidence reaches the integrated review. The default Vision cadence is about 3fps,
+while OCR is 1fps and FFmpeg/STT timestamps retain their native source-relative
+precision.
 
 This is the production `dialogue-preservation/v1` path. Before continuing, verify
 that the merged artifact reports `reviewed_dialogue.policy_audit.status=pass`,

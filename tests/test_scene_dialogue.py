@@ -427,6 +427,65 @@ def _boundary_proposals(tmp_path: Path) -> Path:
     return path
 
 
+def _visual_moments(tmp_path: Path) -> Path:
+    frame_dir = tmp_path / "visual-moment-frames"
+    frame_dir.mkdir(exist_ok=True)
+    moments = []
+    for index, (start, end, timestamp, role, speech_free) in enumerate(
+        (
+            (1.0, 5.0, 4.0, "visual", True),
+            (6.0, 10.0, 8.0, "action", False),
+        ),
+        start=1,
+    ):
+        moment_id = f"VM{index:04d}"
+        frame = frame_dir / f"{moment_id}.jpg"
+        frame.write_bytes(b"frame")
+        moments.append(
+            {
+                "moment_id": moment_id,
+                "start": start,
+                "end": end,
+                "timecode": f"00:0{int(start)}.000-00:{int(end):02d}.000",
+                "representative_timestamp": timestamp,
+                "representative_timecode": f"00:0{int(timestamp)}.000",
+                "representative_sample_id": f"{moment_id}-FRAME",
+                "representative_frame": str(frame.resolve()),
+                "primary_role": role,
+                "roles": [role],
+                "score": 0.85,
+                "confidence": 0.9,
+                "speech_overlap_seconds": 0.0 if speech_free else 1.0,
+                "speech_free": speech_free,
+                "evidence": [
+                    {
+                        "source_id": f"VISION-SAMPLE-{index:06d}",
+                        "kind": "apple_vision_sample",
+                        "timestamp": timestamp,
+                        "details": {},
+                    }
+                ],
+                "attributes": {},
+            }
+        )
+    payload = {
+        "schema_version": "visual-moment/v1",
+        "asset_id": "clip--abc123",
+        "source": {
+            "name": "clip.mp4",
+            "path": "/Volumes/T7/clip.mp4",
+            "quick_fingerprint": "abc123",
+        },
+        "media": {"duration": 12.0},
+        "policy": {"speech_is_selection_filter": False},
+        "summary": {"moment_count": 2, "speech_free_moment_count": 1},
+        "moments": moments,
+    }
+    path = tmp_path / "visual-moments.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
 def _integrated_review(packet: dict) -> dict:
     review = _review(packet)
     for scene in review["scenes"]:
@@ -759,14 +818,118 @@ def test_boundary_proposal_validator_and_scene_slice(tmp_path: Path) -> None:
     )
     slice_scene_dialogue_packet(packet_path, ["G001"], slice_path)
     sliced = json.loads(slice_path.read_text(encoding="utf-8"))
-    assert sliced["summary"]["boundary_proposal_count"] == 1
-    assert sliced["boundary_evidence"]["proposal_count"] == 1
+    assert sliced["summary"]["boundary_proposal_count"] == 2
+    assert sliced["boundary_evidence"]["proposal_count"] == 2
 
     payload = json.loads(proposals_path.read_text(encoding="utf-8"))
     payload["proposals"][0]["timecode"] = "00:00:05.000"
     proposals_path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(ValueError, match="timecode does not match"):
         validate_boundary_proposals(proposals_path, timeline_path)
+
+
+def test_scene_slice_with_only_neighbor_boundary_proposal_is_valid(
+    tmp_path: Path,
+) -> None:
+    timeline_path = tmp_path / "timeline.json"
+    apple_path = tmp_path / "transcript.apple.json"
+    packet_path = tmp_path / "packet.json"
+    slice_path = tmp_path / "packet.part.json"
+    timeline_path.write_text(json.dumps(_quick_timeline(tmp_path)), encoding="utf-8")
+    apple_path.write_text(json.dumps(_apple_transcript()), encoding="utf-8")
+    proposals_path = _boundary_proposals(tmp_path)
+    payload = json.loads(proposals_path.read_text(encoding="utf-8"))
+    payload["proposals"] = payload["proposals"][:1]
+    payload["summary"]["proposal_count"] = 1
+    proposals_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    build_scene_dialogue_packet(
+        apple_path,
+        timeline_path,
+        packet_path,
+        visual_packet_path=_visual_packet(tmp_path),
+        boundary_proposals_path=proposals_path,
+    )
+    slice_scene_dialogue_packet(packet_path, ["G002"], slice_path)
+    sliced = json.loads(slice_path.read_text(encoding="utf-8"))
+
+    assert sliced["scenes"][0]["boundary_context"]["candidate_proposals"] == []
+    assert (
+        sliced["scenes"][0]["boundary_context"]["previous_proposal"]["proposal_id"]
+        == "BP0001"
+    )
+    assert sliced["policy"]["boundary_proposals_available"] is True
+    assert sliced["summary"]["boundary_proposal_count"] == 1
+    assert sliced["boundary_evidence"]["proposal_count"] == 1
+
+
+def test_visual_moments_are_added_to_group_evidence_and_require_beat_coverage(
+    tmp_path: Path,
+) -> None:
+    timeline_path = tmp_path / "timeline.json"
+    apple_path = tmp_path / "transcript.apple.json"
+    packet_path = tmp_path / "packet.json"
+    timeline_path.write_text(json.dumps(_quick_timeline(tmp_path)), encoding="utf-8")
+    apple_path.write_text(json.dumps(_apple_transcript()), encoding="utf-8")
+
+    build_scene_dialogue_packet(
+        apple_path,
+        timeline_path,
+        packet_path,
+        visual_packet_path=_visual_packet(tmp_path),
+        visual_moments_path=_visual_moments(tmp_path),
+    )
+    packet = json.loads(packet_path.read_text(encoding="utf-8"))
+    assert packet["summary"]["visual_moment_count"] == 2
+    assert packet["summary"]["speech_free_visual_moment_count"] == 1
+    assert packet["scenes"][0]["visual_context"]["visual_moments"][0][
+        "moment_id"
+    ] == "VM0001"
+    assert packet["scenes"][0]["visual_context"]["candidate_frames"][-1][
+        "sample_id"
+    ] == "VM0001-FRAME"
+
+    review = _integrated_review(packet)
+    for scene, moment_id in zip(review["scenes"], ("VM0001", "VM0002"), strict=True):
+        beat = scene["editorial_beats"][0]
+        beat["source_visual_moment_ids"] = [moment_id]
+        beat["representative_sample_ids"].append(f"{moment_id}-FRAME")
+    validate_scene_dialogue_review(packet, review)
+
+    review["scenes"][0]["editorial_beats"][0]["source_visual_moment_ids"] = []
+    with pytest.raises(ValueError, match="exactly cover visual moments"):
+        validate_scene_dialogue_review(packet, review)
+
+
+def test_scene_slice_recomputes_visual_moment_availability(tmp_path: Path) -> None:
+    timeline_path = tmp_path / "timeline.json"
+    apple_path = tmp_path / "transcript.apple.json"
+    packet_path = tmp_path / "packet.json"
+    slice_path = tmp_path / "packet.part.json"
+    timeline_path.write_text(json.dumps(_quick_timeline(tmp_path)), encoding="utf-8")
+    apple_path.write_text(json.dumps(_apple_transcript()), encoding="utf-8")
+    moments_path = _visual_moments(tmp_path)
+    moments = json.loads(moments_path.read_text(encoding="utf-8"))
+    moments["moments"] = moments["moments"][:1]
+    moments["summary"] = {"moment_count": 1, "speech_free_moment_count": 1}
+    moments_path.write_text(json.dumps(moments), encoding="utf-8")
+
+    build_scene_dialogue_packet(
+        apple_path,
+        timeline_path,
+        packet_path,
+        visual_packet_path=_visual_packet(tmp_path),
+        visual_moments_path=moments_path,
+    )
+    slice_scene_dialogue_packet(packet_path, ["G002"], slice_path)
+    sliced = json.loads(slice_path.read_text(encoding="utf-8"))
+
+    assert sliced["policy"]["visual_moments_supplied"] is True
+    assert sliced["policy"]["visual_moments_available"] is False
+    assert sliced["summary"]["visual_moment_count"] == 0
+    assert "source_visual_moment_ids" not in sliced["review_contract"][
+        "editorial_beat"
+    ]["required"]
 
 
 def test_empty_boundary_proposal_input_keeps_integrated_review_compatible(
@@ -922,11 +1085,23 @@ def test_scene_dialogue_cli_commands_are_exposed() -> None:
                 "context-packet.json",
                 "--boundary-proposals",
                 "boundary-proposals.json",
+                "--visual-moments",
+                "visual-moments.json",
                 "--output",
                 "packet.json",
             ]
         ).boundary_proposals
         == Path("boundary-proposals.json")
+    )
+    assert (
+        parser.parse_args(
+            [
+                "validate-visual-moments",
+                "visual-moments.json",
+                "timeline.json",
+            ]
+        ).command
+        == "validate-visual-moments"
     )
     assert (
         parser.parse_args(

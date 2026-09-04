@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import unicodedata
+from bisect import bisect_left, bisect_right
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -14,13 +15,18 @@ from typing import Any
 
 from .phase1 import atomic_json, format_time, probe_media, quick_fingerprint
 from .review import load_json
-from .scene_dialogue import SUPPORTED_TIMELINE_SCHEMAS, validate_boundary_proposals
+from .scene_dialogue import (
+    SUPPORTED_TIMELINE_SCHEMAS,
+    validate_boundary_proposals,
+    validate_visual_moments,
+)
 
 SIGNAL_SCHEMA = "local-boundary-signals/v1"
 RUN_SCHEMA = "boundary-proposal-run/v1"
 VISION_RAW_SCHEMA = "apple-vision-boundary-signals/v1"
 BOUNDARY_SCHEMA = "boundary-proposal/v1"
-PRODUCER_REVISION = "multimodal-boundary-producer/v1"
+VISUAL_MOMENT_SCHEMA = "visual-moment/v1"
+PRODUCER_REVISION = "multimodal-boundary-producer/v2"
 EPSILON = 0.001
 
 
@@ -35,6 +41,10 @@ class BoundaryProposalConfig:
     feature_distance_floor: float = 0.12
     feature_distance_quantile: float = 0.90
     motion_delta_quantile: float = 0.92
+    visual_moment_window: float = 6.0
+    visual_moment_nms: float = 3.0
+    visual_moments_per_minute: float = 6.0
+    visual_moment_thumbnail_width: int = 960
 
     def validate(self) -> None:
         positive = {
@@ -42,6 +52,9 @@ class BoundaryProposalConfig:
             "ocr_interval": self.ocr_interval,
             "motion_interval": self.motion_interval,
             "cluster_tolerance": self.cluster_tolerance,
+            "visual_moment_window": self.visual_moment_window,
+            "visual_moment_nms": self.visual_moment_nms,
+            "visual_moments_per_minute": self.visual_moments_per_minute,
         }
         for name, value in positive.items():
             if not math.isfinite(value) or value <= 0:
@@ -52,6 +65,8 @@ class BoundaryProposalConfig:
             raise ValueError("neighbor_context must be non-negative")
         if self.feature_distance_floor < 0:
             raise ValueError("feature_distance_floor must be non-negative")
+        if self.visual_moment_thumbnail_width < 160:
+            raise ValueError("visual_moment_thumbnail_width must be at least 160")
         for name, value in {
             "feature_distance_quantile": self.feature_distance_quantile,
             "motion_delta_quantile": self.motion_delta_quantile,
@@ -635,6 +650,382 @@ def extract_vision_signals(
     }
 
 
+def _percentile_rank(ordered: list[float], value: float) -> float:
+    if not ordered:
+        return 0.0
+    if len(ordered) == 1 or ordered[-1] - ordered[0] <= EPSILON:
+        return 0.5
+    return max(0.0, min(1.0, bisect_right(ordered, value) / len(ordered)))
+
+
+def _nearest_sample(
+    samples: list[dict[str, Any]], timestamps: list[float], timestamp: float
+) -> tuple[int, dict[str, Any]] | None:
+    if not samples:
+        return None
+    insertion = bisect_left(timestamps, timestamp)
+    candidates = {
+        max(0, min(len(samples) - 1, insertion - 1)),
+        max(0, min(len(samples) - 1, insertion)),
+    }
+    index = min(
+        candidates, key=lambda item: abs(float(samples[item]["timestamp"]) - timestamp)
+    )
+    return index, samples[index]
+
+
+def _speech_overlap(
+    start: float, end: float, activity_intervals: list[dict[str, Any]]
+) -> float:
+    return min(
+        end - start,
+        sum(
+            max(
+                0.0,
+                min(end, float(interval["end"]))
+                - max(start, float(interval["start"])),
+            )
+            for interval in activity_intervals
+        ),
+    )
+
+
+def derive_visual_moments(
+    vision_raw: dict[str, Any],
+    ffmpeg_signals: dict[str, Any],
+    apple_transcript: dict[str, Any],
+    *,
+    source: dict[str, Any],
+    asset_id: str,
+    duration: float,
+    config: BoundaryProposalConfig,
+) -> dict[str, Any]:
+    """Create visual/action discovery intervals without using speech as a filter."""
+    samples = sorted(
+        vision_raw.get("visualSamples", []), key=lambda item: float(item["timestamp"])
+    )
+    motion_samples = sorted(
+        ffmpeg_signals.get("raw", {}).get("motion_samples", []),
+        key=lambda item: float(item["timestamp"]),
+    )
+    motion_timestamps = [float(item["timestamp"]) for item in motion_samples]
+    if not samples:
+        return {
+            "schema_version": VISUAL_MOMENT_SCHEMA,
+            "asset_id": asset_id,
+            "source": source,
+            "media": {"duration": duration},
+            "policy": {
+                "speech_is_selection_filter": False,
+                "window_seconds": config.visual_moment_window,
+                "nms_seconds": config.visual_moment_nms,
+                "max_moments_per_minute": config.visual_moments_per_minute,
+            },
+            "summary": {"moment_count": 0, "speech_free_moment_count": 0},
+            "moments": [],
+        }
+
+    aesthetic_values = sorted(
+        float(item["aestheticsScore"])
+        for item in samples
+        if item.get("aestheticsScore") is not None
+    )
+    feature_values = sorted(
+        float(item["featureDistanceFromPrevious"])
+        for item in samples
+        if item.get("featureDistanceFromPrevious") is not None
+    )
+    motion_values = sorted(float(item["yavg"]) for item in motion_samples)
+    aesthetic_threshold = max(0.12, _quantile(aesthetic_values, 0.82))
+    feature_threshold = max(0.08, _quantile(feature_values, 0.88))
+    motion_threshold = max(8.0, _quantile(motion_values, 0.88))
+
+    seeds: list[dict[str, Any]] = []
+    for index, sample in enumerate(samples, start=1):
+        timestamp = float(sample["timestamp"])
+        if not _within_media(timestamp, duration):
+            continue
+        aesthetic = (
+            float(sample["aestheticsScore"])
+            if sample.get("aestheticsScore") is not None
+            else None
+        )
+        feature = (
+            float(sample["featureDistanceFromPrevious"])
+            if sample.get("featureDistanceFromPrevious") is not None
+            else None
+        )
+        nearest_motion = _nearest_sample(motion_samples, motion_timestamps, timestamp)
+        motion_sample = nearest_motion[1] if nearest_motion is not None else None
+        motion = float(motion_sample["yavg"]) if motion_sample is not None else None
+        aesthetic_rank = (
+            _percentile_rank(aesthetic_values, aesthetic)
+            if aesthetic is not None
+            else 0.0
+        )
+        feature_rank = (
+            _percentile_rank(feature_values, feature) if feature is not None else 0.0
+        )
+        motion_rank = (
+            _percentile_rank(motion_values, motion) if motion is not None else 0.0
+        )
+        aesthetic_peak = aesthetic is not None and aesthetic >= aesthetic_threshold
+        feature_peak = feature is not None and feature >= feature_threshold
+        motion_peak = motion is not None and motion >= motion_threshold
+        utility = bool(sample.get("isUtility"))
+        person_count = int(sample.get("personCount", 0))
+        face_count = int(sample.get("faceCount", 0))
+        candid_candidate = bool(person_count or face_count) and aesthetic_rank >= 0.62
+        if not any(
+            (aesthetic_peak, feature_peak, motion_peak, utility, candid_candidate)
+        ):
+            continue
+
+        action_score = 0.52 * motion_rank + 0.28 * feature_rank + 0.20 * aesthetic_rank
+        candid_score = (
+            0.42 * aesthetic_rank
+            + 0.23 * motion_rank
+            + 0.15 * feature_rank
+            + (0.20 if person_count or face_count else 0.0)
+        )
+        visual_score = (
+            0.58 * aesthetic_rank
+            + 0.27 * feature_rank
+            + 0.15 * (1.0 - motion_rank)
+        )
+        role_scores = {
+            "action": action_score if motion_peak else 0.0,
+            "candid": candid_score if candid_candidate else 0.0,
+            "visual": visual_score,
+        }
+        roles = [
+            role
+            for role, qualifies in (
+                ("visual", aesthetic_peak or feature_peak or utility),
+                ("action", motion_peak),
+                ("candid", candid_candidate),
+            )
+            if qualifies
+        ]
+        primary_role = max(roles, key=lambda role: role_scores[role])
+        score = max(role_scores.values())
+        if utility:
+            score = max(score, 0.72)
+        evidence = [
+            {
+                "source_id": f"VISION-SAMPLE-{index:06d}",
+                "kind": "apple_vision_sample",
+                "timestamp": round(timestamp, 6),
+                "details": {
+                    "aesthetics_score": aesthetic,
+                    "aesthetics_percentile": round(aesthetic_rank, 4),
+                    "feature_distance": feature,
+                    "feature_distance_percentile": round(feature_rank, 4),
+                    "is_utility": utility,
+                    "face_count": face_count,
+                    "person_count": person_count,
+                },
+            }
+        ]
+        if nearest_motion is not None:
+            motion_index, motion_sample = nearest_motion
+            evidence.append(
+                {
+                    "source_id": f"FFMPEG-MOTION-SAMPLE-{motion_index + 1:06d}",
+                    "kind": "ffmpeg_difference_motion",
+                    "timestamp": round(float(motion_sample["timestamp"]), 6),
+                    "details": {
+                        "yavg": motion,
+                        "motion_percentile": round(motion_rank, 4),
+                    },
+                }
+            )
+        seeds.append(
+            {
+                "timestamp": timestamp,
+                "score": max(0.0, min(1.0, score)),
+                "primary_role": primary_role,
+                "roles": roles,
+                "evidence": evidence,
+                "attributes": {
+                    "aesthetics_score": aesthetic,
+                    "aesthetics_percentile": round(aesthetic_rank, 4),
+                    "feature_distance": feature,
+                    "feature_distance_percentile": round(feature_rank, 4),
+                    "motion_yavg": motion,
+                    "motion_percentile": round(motion_rank, 4),
+                    "is_utility": utility,
+                    "face_count": face_count,
+                    "person_count": person_count,
+                },
+            }
+        )
+
+    # Always retain at least one visual index point for a decodable clip. This keeps
+    # quiet, slowly changing landscapes discoverable even if all absolute thresholds
+    # are below the genre-wide defaults.
+    if not seeds:
+        fallback = max(
+            enumerate(samples, start=1),
+            key=lambda item: (
+                float(
+                    item[1]["aestheticsScore"]
+                    if item[1].get("aestheticsScore") is not None
+                    else -1.0
+                ),
+                -float(item[1]["timestamp"]),
+            ),
+        )
+        index, sample = fallback
+        timestamp = min(duration - EPSILON, max(EPSILON, float(sample["timestamp"])))
+        seeds.append(
+            {
+                "timestamp": timestamp,
+                "score": 0.5,
+                "primary_role": "visual",
+                "roles": ["visual"],
+                "evidence": [
+                    {
+                        "source_id": f"VISION-SAMPLE-{index:06d}",
+                        "kind": "apple_vision_fallback_sample",
+                        "timestamp": round(timestamp, 6),
+                        "details": {
+                            "aesthetics_score": sample.get("aestheticsScore"),
+                            "reason": "no_sample_crossed_absolute_candidate_thresholds",
+                        },
+                    }
+                ],
+                "attributes": {
+                    "aesthetics_score": sample.get("aestheticsScore"),
+                    "aesthetics_percentile": 0.5,
+                    "feature_distance": sample.get("featureDistanceFromPrevious"),
+                    "feature_distance_percentile": 0.5,
+                    "motion_yavg": None,
+                    "motion_percentile": 0.0,
+                    "is_utility": bool(sample.get("isUtility")),
+                    "face_count": int(sample.get("faceCount", 0)),
+                    "person_count": int(sample.get("personCount", 0)),
+                },
+            }
+        )
+
+    max_moments = max(
+        1, math.ceil(duration / 60.0 * config.visual_moments_per_minute)
+    )
+    selected: list[dict[str, Any]] = []
+    for seed in sorted(seeds, key=lambda item: (-item["score"], item["timestamp"])):
+        if any(
+            abs(float(seed["timestamp"]) - float(other["timestamp"]))
+            < config.visual_moment_nms
+            for other in selected
+        ):
+            continue
+        selected.append(seed)
+        if len(selected) >= max_moments:
+            break
+
+    half_window = config.visual_moment_window / 2.0
+    activities = apple_transcript.get("activity_intervals", [])
+    moments: list[dict[str, Any]] = []
+    for index, seed in enumerate(
+        sorted(selected, key=lambda item: item["timestamp"]), start=1
+    ):
+        timestamp = float(seed["timestamp"])
+        start = max(0.0, timestamp - half_window)
+        end = min(duration, timestamp + half_window)
+        overlap = _speech_overlap(start, end, activities)
+        moment_id = f"VM{index:04d}"
+        moments.append(
+            {
+                "moment_id": moment_id,
+                "start": round(start, 6),
+                "end": round(end, 6),
+                "timecode": f"{format_time(start)}-{format_time(end)}",
+                "representative_timestamp": round(timestamp, 6),
+                "representative_timecode": format_time(timestamp),
+                "representative_sample_id": f"{moment_id}-FRAME",
+                "representative_frame": None,
+                "primary_role": seed["primary_role"],
+                "roles": seed["roles"],
+                "score": round(float(seed["score"]), 4),
+                "confidence": round(0.55 + 0.4 * float(seed["score"]), 4),
+                "speech_overlap_seconds": round(overlap, 6),
+                "speech_free": overlap <= 0.25,
+                "evidence": seed["evidence"],
+                "attributes": seed["attributes"],
+            }
+        )
+    return {
+        "schema_version": VISUAL_MOMENT_SCHEMA,
+        "asset_id": asset_id,
+        "source": source,
+        "media": {"duration": duration},
+        "policy": {
+            "speech_is_selection_filter": False,
+            "speech_free_max_overlap_seconds": 0.25,
+            "window_seconds": config.visual_moment_window,
+            "nms_seconds": config.visual_moment_nms,
+            "max_moments_per_minute": config.visual_moments_per_minute,
+            "candidate_thresholds": {
+                "aesthetics_score": round(aesthetic_threshold, 6),
+                "feature_distance": round(feature_threshold, 6),
+                "motion_yavg": round(motion_threshold, 6),
+            },
+            "roles": ["visual", "action", "candid"],
+        },
+        "summary": {
+            "moment_count": len(moments),
+            "speech_free_moment_count": sum(
+                1 for moment in moments if moment["speech_free"]
+            ),
+            "role_counts": {
+                role: sum(
+                    1 for moment in moments if moment["primary_role"] == role
+                )
+                for role in ("visual", "action", "candid")
+            },
+        },
+        "moments": moments,
+    }
+
+
+def _extract_visual_moment_frames(
+    source_path: Path,
+    moments: dict[str, Any],
+    frame_dir: Path,
+    *,
+    width: int,
+) -> None:
+    frame_dir.mkdir(parents=True, exist_ok=True)
+    for moment in moments["moments"]:
+        destination = (frame_dir / f"{moment['moment_id']}.jpg").resolve()
+        _run_capture(
+            [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-ss",
+                str(moment["representative_timestamp"]),
+                "-i",
+                str(source_path),
+                "-frames:v",
+                "1",
+                "-vf",
+                f"scale='min({width},iw)':-2",
+                "-q:v",
+                "3",
+                "-y",
+                str(destination),
+            ]
+        )
+        if not destination.is_file() or destination.stat().st_size == 0:
+            raise RuntimeError(
+                f"FFmpeg did not create visual moment frame: {destination}"
+            )
+        moment["representative_frame"] = str(destination)
+
+
 def _nms(
     events: list[dict[str, Any]], *, tolerance: float, by_kind: bool
 ) -> list[dict[str, Any]]:
@@ -789,6 +1180,14 @@ def _implementation_digest() -> str:
     return digest.hexdigest()[:16]
 
 
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _run_vision(
     source_path: Path,
     output_path: Path,
@@ -847,9 +1246,19 @@ def build_boundary_proposals(
         "producer_revision": PRODUCER_REVISION,
         "implementation_digest": _implementation_digest(),
         "processing_input": source,
-        "timeline": str(timeline_path),
-        "apple_transcript": str(apple_transcript_path),
-        "lineage": str(lineage_path) if lineage_path else None,
+        "timeline": {
+            "path": str(timeline_path),
+            "sha256": _file_sha256(timeline_path),
+        },
+        "apple_transcript": {
+            "path": str(apple_transcript_path),
+            "sha256": _file_sha256(apple_transcript_path),
+        },
+        "lineage": (
+            {"path": str(lineage_path), "sha256": _file_sha256(lineage_path)}
+            if lineage_path
+            else None
+        ),
         "config": asdict(config),
     }
     intent_path = output_dir / "run-intent.json"
@@ -859,8 +1268,14 @@ def build_boundary_proposals(
 
     proposal_path = output_dir / "proposals.json"
     run_path = output_dir / "run.json"
+    visual_moment_path = output_dir / "visual-moments.json"
     if proposal_path.exists() and run_path.exists():
         validate_boundary_proposals(proposal_path, timeline_path)
+        if not visual_moment_path.is_file():
+            raise ValueError(
+                "Boundary run is incomplete: visual-moments.json is missing"
+            )
+        validate_visual_moments(visual_moment_path, timeline_path)
         return proposal_path
     if proposal_path.exists() and not run_path.exists():
         raise ValueError("Boundary run is incomplete: proposals.json exists without run.json")
@@ -870,6 +1285,7 @@ def build_boundary_proposals(
     ffmpeg_signal_path = signals_dir / "ffmpeg.json"
     vision_raw_path = signals_dir / "apple-vision.raw.json"
     vision_signal_path = signals_dir / "apple-vision.json"
+    visual_moment_frame_dir = output_dir / "visual-moment-frames"
 
     apple_signals = extract_apple_stt_signals(
         apple_transcript, source=source, duration=duration
@@ -898,6 +1314,23 @@ def build_boundary_proposals(
         feature_distance_quantile=config.feature_distance_quantile,
     )
     atomic_json(vision_signal_path, vision_signals)
+    visual_moments = derive_visual_moments(
+        vision_raw,
+        ffmpeg_signals,
+        apple_transcript,
+        source=source,
+        asset_id=str(timeline["asset_id"]),
+        duration=duration,
+        config=config,
+    )
+    _extract_visual_moment_frames(
+        processing_input,
+        visual_moments,
+        visual_moment_frame_dir,
+        width=config.visual_moment_thumbnail_width,
+    )
+    atomic_json(visual_moment_path, visual_moments)
+    validate_visual_moments(visual_moment_path, timeline_path)
 
     local_visual_events = _weighted_nms(
         [*ffmpeg_signals["events"], *vision_signals["events"]],
@@ -917,6 +1350,7 @@ def build_boundary_proposals(
             "timeline": str(timeline_path),
             "apple_transcript": str(apple_transcript_path),
             "lineage": str(lineage_path) if lineage_path else None,
+            "visual_moments": str(visual_moment_path),
             "signals": [
                 str(apple_signal_path),
                 str(ffmpeg_signal_path),
@@ -948,6 +1382,10 @@ def build_boundary_proposals(
                 "apple_vision": len(vision_signals["events"]),
             },
             "visual_events_after_cross_signal_nms": len(local_visual_events),
+            "visual_moment_count": len(visual_moments["moments"]),
+            "speech_free_visual_moment_count": visual_moments["summary"][
+                "speech_free_moment_count"
+            ],
         },
         "proposals": proposals,
     }
@@ -971,6 +1409,7 @@ def build_boundary_proposals(
             "ffmpeg_signals": str(ffmpeg_signal_path),
             "apple_vision_raw": str(vision_raw_path),
             "apple_vision_signals": str(vision_signal_path),
+            "visual_moments": str(visual_moment_path),
             "proposals": str(proposal_path),
         },
         "summary": payload["summary"],

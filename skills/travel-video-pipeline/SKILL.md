@@ -56,6 +56,10 @@ Use subagents only for bounded packet review, not media discovery or destructive
 - For visual review, shard by complete scene groups. Never split a group between agents, and require all frame/sample IDs to come from the packet.
 - Treat coarse groups as cheap review units, not edit clips. Use sparse sheets plus speech-boundary hints to group quickly; do the detailed visual/action/dialogue interpretation once in the dense group review. Preserve and resolve any speech window that crosses a coarse boundary.
 - When `boundary-proposal/v1` evidence exists, validate its asset/path/fingerprint/duration before passing it to the same dense scene-dialogue review. Treat proposals as advisory anchors: cite accepted IDs on `editorial_beats`, ignore false positives, and never force every signal into a cut.
+- For editing-oriented runs, also preserve `visual-moment/v1` intervals and their
+  representative frames. Speech may annotate these moments but must never filter
+  them out. Require every group-local visual moment to belong to exactly one
+  editorial beat through `source_visual_moment_ids` before highlight selection.
 - Use about 3fps as the default target for an Apple Vision semantic/quality index; keep FFmpeg and STT timestamps at their native precision. Do not run a full-frame or candidate-neighborhood fine pass by default.
 - Optimize dialogue review for recall of plausible speech. Low ASR confidence does
   not justify dropping a turn: recover useful ko/en/mixed wording, use partial or

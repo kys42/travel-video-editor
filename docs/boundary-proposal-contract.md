@@ -108,6 +108,9 @@ boundaries/
 │   ├── ffmpeg.json
 │   ├── apple-vision.raw.json
 │   └── apple-vision.json
+├── visual-moment-frames/
+│   └── VM####.jpg
+├── visual-moments.json
 └── proposals.json
 ```
 
@@ -125,6 +128,27 @@ boundaries/
 - `run-intent.json`은 입력 fingerprint, 설정과 producer implementation digest를
   캐시 키로 기록하며 다른 조건의 output directory 재사용을 fail-closed한다.
 
+## 독립 시각 순간 계약
+
+경계 timestamp만으로는 대사가 없는 풍경, 짧은 행동과 표정을 하이라이트 후보로
+보존할 수 없다. 따라서 같은 producer가 `visual-moment/v1` 구간과 960px 대표
+프레임을 별도로 만든다. 후보 생성에서 speech 유무는 필터로 사용하지 않고,
+Apple activity와의 겹침은 `speech_overlap_seconds`, `speech_free`로만 기록한다.
+
+각 moment는 `moment_id`, source-relative `start/end`, 대표 timestamp/sample ID,
+`visual`·`action`·`candid` 역할, score/confidence, Vision 미학·FeaturePrint·
+인물/얼굴과 FFmpeg difference-motion 원시 sample ID, 대표 JPEG를 보존한다.
+
+```bash
+uv run travel-video validate-visual-moments \
+  boundaries/visual-moments.json timeline.reviewed.json
+```
+
+validator는 asset/source fingerprint/duration, 시간 범위와 순서, 역할, 점수,
+evidence ID, 대표 프레임 존재 여부와 summary count를 fail-closed로 검사한다.
+정적인 영상에서도 최소 한 개의 fallback index를 남기되, 이는 의미상
+하이라이트 확정이 아니라 통합 리뷰가 확인할 시각 evidence다.
+
 ## Golden 통합 리뷰 연결
 
 ```bash
@@ -132,6 +156,7 @@ uv run travel-video build-scene-dialogue-review-packet \
   transcript.apple.json timeline.reviewed.json \
   --visual-packet context/context-review-packet.json \
   --boundary-proposals boundaries/proposals.json \
+  --visual-moments boundaries/visual-moments.json \
   --output scene-dialogue/review-packet.json
 ```
 
@@ -145,6 +170,12 @@ packet은 각 coarse group 내부 후보와 바로 앞·뒤 후보만 넣는다.
 - proposal 시각을 쓰면서 ID를 누락할 수 없음
 - 모든 proposal을 컷으로 채택할 필요는 없음
 - 기존 utterance/caption coverage와 대화 완결성 검사는 그대로 유지됨
+
+`visual-moment/v1`은 각 group의 `visual_context.visual_moments`와
+`candidate_frames`에 함께 들어간다. 통합 리뷰는 대사가 없는 후보도 모두
+검토하고 각 moment를 정확히 하나의 editorial beat에
+`source_visual_moment_ids`로 귀속한다. 후속 하이라이트 단계는 이 ID로 시각·행동
+lane을 대화 lane과 독립적으로 재랭킹한다.
 
 병렬 리뷰는 이전과 같이 완전한 coarse group 단위로만 나눈다. proposal은 그룹을
 더 많이 만드는 입력이 아니라, 한 번의 dense review가 더 정확한 beat를 만들기
@@ -179,8 +210,8 @@ packet은 각 coarse group 내부 후보와 바로 앞·뒤 후보만 넣는다.
 ## 구현 범위와 남은 보정
 
 현재 P0는 Apple STT/FFmpeg/Apple Vision signal producer, timestamp
-clustering/NMS, lineage validator, packet 전달과 beat citation 검증까지
-연결한다. 남은 작업은 계약 구현이 아니라 calibration이다.
+clustering/NMS, 독립 visual moment/대표 프레임, lineage validator, packet 전달과
+beat citation 검증까지 연결한다. 남은 작업은 계약 구현이 아니라 calibration이다.
 
 1. 음식 주문·빠른 인물 반응·정적 자연 풍경 3종 benchmark 확대
 2. hard-cut, motion, FeaturePrint threshold의 장르별 precision/recall 기록

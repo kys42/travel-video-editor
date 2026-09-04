@@ -111,6 +111,8 @@ visual shot / dialogue beat / action beat / transition
     "summary": "두 사람이 온수풀에서 카메라를 향해 이야기한다.",
     "actions": ["휴대전화를 보여 줌", "서로 반응하며 웃음"],
     "representative_frames": ["F…"],
+    "visual_moment_ids": ["VM…"],
+    "speech_free": false,
     "notable_moments": []
   },
   "dialogue": {
@@ -146,6 +148,9 @@ visual shot / dialogue beat / action beat / transition
   `talking_face_without_caption` 위험을 기록한다.
 - 모든 문장과 프레임은 source ID를 가져야 한다.
 - Golden 01의 proposal 시각을 유지했다면 boundary proposal ID도 전달한다.
+- Golden 01의 visual moment는 대사 유무와 무관하게 시각·행동 lane 후보로 만든다.
+- high-score visual moment를 제외하면 시각 중복, 품질 결함, 서사상 반복 같은
+  명시적 제외 이유를 남긴다.
 - 모델은 packet에 없는 타임코드를 새로 만들 수 없다.
 
 ## 5. 편집 단위
@@ -309,6 +314,7 @@ boundary reason을 보존한다.
 - proxy와 original의 시간 mapping이 identity
 - 사용한 frame/segment/group/utterance/caption ID가 packet에 존재
 - proposal 기반 source_in/source_out이면 인용한 boundary proposal ID와 시각이 일치
+- 사용한 visual moment ID와 대표 sample ID가 evidence에 존재하고 source range와 겹침
 
 ### 8.2 대화 경계 lint
 

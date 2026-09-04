@@ -20,6 +20,7 @@ from .scene_dialogue import (
     slice_scene_dialogue_packet,
     validate_boundary_proposals,
     validate_scene_dialogue_review,
+    validate_visual_moments,
 )
 from .speech import AdaptiveSTTConfig, process_adaptive_stt
 from .transcript_reconcile import (
@@ -157,6 +158,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     scene_dialogue_packet.add_argument(
+        "--visual-moments",
+        type=Path,
+        help=(
+            "Add lineage-checked visual-moment/v1 intervals and representative "
+            "frames to the integrated visual/dialogue review"
+        ),
+    )
+    scene_dialogue_packet.add_argument(
         "--boundary-proposals",
         type=Path,
         help=(
@@ -171,6 +180,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     validate_boundaries.add_argument("proposals", type=Path)
     validate_boundaries.add_argument("timeline", type=Path)
+
+    validate_moments = subparsers.add_parser(
+        "validate-visual-moments",
+        help="Validate visual-moment/v1 lineage, timing, roles, and frames",
+    )
+    validate_moments.add_argument("visual_moments", type=Path)
+    validate_moments.add_argument("timeline", type=Path)
 
     build_boundaries = subparsers.add_parser(
         "build-boundary-proposals",
@@ -190,6 +206,14 @@ def build_parser() -> argparse.ArgumentParser:
     build_boundaries.add_argument("--feature-distance-floor", type=float, default=0.12)
     build_boundaries.add_argument("--feature-distance-quantile", type=float, default=0.90)
     build_boundaries.add_argument("--motion-delta-quantile", type=float, default=0.92)
+    build_boundaries.add_argument("--visual-moment-window", type=float, default=6.0)
+    build_boundaries.add_argument("--visual-moment-nms", type=float, default=3.0)
+    build_boundaries.add_argument(
+        "--visual-moments-per-minute", type=float, default=6.0
+    )
+    build_boundaries.add_argument(
+        "--visual-moment-thumbnail-width", type=int, default=960
+    )
 
     validate_scene_dialogue = subparsers.add_parser(
         "validate-scene-dialogue-review",
@@ -448,6 +472,7 @@ def main(argv: list[str] | None = None) -> int:
                     max_window=args.max_window,
                     visual_packet_path=args.visual_packet,
                     boundary_proposals_path=args.boundary_proposals,
+                    visual_moments_path=args.visual_moments,
                 )
             )
         elif args.command == "validate-scene-dialogue-review":
@@ -459,6 +484,9 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "validate-boundary-proposals":
             validate_boundary_proposals(args.proposals, args.timeline)
             print("boundary proposals valid")
+        elif args.command == "validate-visual-moments":
+            validate_visual_moments(args.visual_moments, args.timeline)
+            print("visual moments valid")
         elif args.command == "build-boundary-proposals":
             config = BoundaryProposalConfig(
                 vision_interval=args.vision_interval,
@@ -470,6 +498,10 @@ def main(argv: list[str] | None = None) -> int:
                 feature_distance_floor=args.feature_distance_floor,
                 feature_distance_quantile=args.feature_distance_quantile,
                 motion_delta_quantile=args.motion_delta_quantile,
+                visual_moment_window=args.visual_moment_window,
+                visual_moment_nms=args.visual_moment_nms,
+                visual_moments_per_minute=args.visual_moments_per_minute,
+                visual_moment_thumbnail_width=args.visual_moment_thumbnail_width,
             )
             print(
                 build_boundary_proposals(

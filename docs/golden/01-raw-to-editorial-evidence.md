@@ -85,8 +85,12 @@ Phase 1, STT, 시각 리뷰 문서는 배경 설명과 운영 명령을 제공�
 [멀티모달 경계 후보]
 FFmpeg·Vision·음성·STT timestamp clustering
 제안 ID와 근거만 보존, 자동 컷은 하지 않음
-              │
-              ▼
+      │
+      ├─ [독립 시각 순간]
+      │  미학·FeaturePrint·motion 기반 visual/action/candid 구간
+      │  대사 유무로 필터하지 않고 대표 프레임 보존
+      │
+      ▼
 [빠른 공동 그룹화]
 희소 연락판 + 음성 활동/STT·경계 힌트
 작업 단위와 경계 위험만 확정
@@ -260,8 +264,10 @@ uv run travel-video validate-boundary-proposals \
 
 `signals/apple-stt.json`, `signals/ffmpeg.json`,
 `signals/apple-vision.raw.json`, `signals/apple-vision.json`을 각각 보존하고
-fusion 결과만 `proposals.json`에 쓴다. 같은 output directory를 다른 입력이나
-설정에 재사용하면 안 된다.
+fusion 결과만 `proposals.json`에 쓴다. 같은 실행에서
+`visual-moments.json`과 `visual-moment-frames/`도 만들며, 이는 경계 점과 별개인
+무음 시각·행동 후보 구간이다. 같은 output directory를 다른 입력이나 설정에
+재사용하면 안 된다.
 
 Apple Vision 운영 목표는 약 3fps다. Vision은 의미·품질 변화 후보를 만들며
 정밀 cutter 역할을 맡지 않는다. 컷 시각은 FFmpeg, 음성 시각은 Apple span의
@@ -274,6 +280,12 @@ raw STT의 주제 힌트는 실제 발화·언어의 정답이 아니다. 실제
 좋은 대본, 의미상 주제 전환과 beat 경계는 다음 통합 리뷰의 한 모델 패스에서
 함께 확정한다. 이렇게 해야 전사 종합을 위한 별도 모델 패스를 추가하지 않는다.
 
+`visual-moment/v1` 후보 생성은 speech activity를 선택 필터로 쓰지 않는다.
+Vision 미학/FeaturePrint, FFmpeg difference-motion, 얼굴·인물 정보를 이용해
+`visual`, `action`, `candid` 구간과 대표 프레임을 만들고, speech 겹침은
+후속 판단용 속성으로만 기록한다. 따라서 말이 없는 풍경·reveal·반응도 대화
+후보와 같은 통합 리뷰에 들어간다.
+
 ### 4.7 그룹별 통합 장면-대화 리뷰
 
 편집과 자막에 사용할 기본 경로다. 입력 packet은 반드시 다음을 한 장면
@@ -284,6 +296,7 @@ raw STT의 주제 힌트는 실제 발화·언어의 정답이 아니다. 실제
 - 시간순 evidence span과 source candidate ID
 - 이전·다음 장면 경계와 crossing window
 - 그룹 안과 바로 앞·뒤의 `boundary-proposal/v1` 후보
+- 그룹에 배정된 `visual-moment/v1` 구간과 대표 프레임
 
 review window 경계는 Apple evidence span 내부를 자르지 않는다. 긴 span이면
 설정된 max window보다 window를 늘려 하나의 atomic evidence로 유지한다. 경계
@@ -316,6 +329,7 @@ fallback으로 명시해 atomic하게 보존한다. 경계를 횡단해 확정�
 - 대화의 `closed/open/not_applicable`
 - 거친 그룹 밖으로 확장하거나 이웃과 합쳐야 하는 `boundary_adjustment`
 - beat 경계로 채택한 `source_boundary_proposal_ids`
+- beat에 귀속한 `source_visual_moment_ids`
 
 모든 window, utterance와 caption은 정확히 하나의 beat에 연결돼야 한다.
 beat 경계는 기존 segment, frame, window, utterance, caption 또는 검증된
@@ -386,7 +400,9 @@ ID를 반드시 인용한다. 여러 utterance를 묶은 caption은
 ```text
 <asset>/
 ├── boundaries/
-│   └── proposals.json                          # 선택적 로컬 경계 근거
+│   ├── proposals.json                          # 선택적 로컬 경계 근거
+│   ├── visual-moments.json                     # 독립 visual/action/candid 후보
+│   └── visual-moment-frames/                   # 후보 대표 프레임
 └── scene-dialogue/
     ├── review-packet.json
     ├── review.json
@@ -477,6 +493,7 @@ asset 하나가 1단계를 완료하려면 다음을 모두 만족해야 한다.
 - context group에 화면·행동·대화가 함께 연결됨
 - 모든 window/utterance/caption이 정확히 하나의 editorial beat에 연결됨
 - proposal 시각을 사용한 beat가 정확한 source boundary proposal ID를 인용함
+- 모든 visual moment가 정확히 하나의 beat에 귀속되고 대표 sample ID를 인용함
 - 열린 대화와 crossing group boundary에 명시적인 조정 결정이 존재
 - 대화 반영 후 video summary가 존재
 - JSON 정본과 HTML 검토 화면이 재생성 가능
