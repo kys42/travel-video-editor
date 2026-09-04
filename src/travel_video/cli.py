@@ -17,6 +17,7 @@ from .scene_dialogue import (
     merge_scene_dialogue_review,
     merge_scene_dialogue_review_shards,
     slice_scene_dialogue_packet,
+    validate_boundary_proposals,
     validate_scene_dialogue_review,
 )
 from .speech import AdaptiveSTTConfig, process_adaptive_stt
@@ -154,6 +155,21 @@ def build_parser() -> argparse.ArgumentParser:
             "caption, and editorial-beat review"
         ),
     )
+    scene_dialogue_packet.add_argument(
+        "--boundary-proposals",
+        type=Path,
+        help=(
+            "Add lineage-checked boundary-proposal/v1 evidence to the integrated "
+            "visual/dialogue review"
+        ),
+    )
+
+    validate_boundaries = subparsers.add_parser(
+        "validate-boundary-proposals",
+        help="Validate boundary-proposal/v1 lineage, timing, and evidence",
+    )
+    validate_boundaries.add_argument("proposals", type=Path)
+    validate_boundaries.add_argument("timeline", type=Path)
 
     validate_scene_dialogue = subparsers.add_parser(
         "validate-scene-dialogue-review",
@@ -411,6 +427,7 @@ def main(argv: list[str] | None = None) -> int:
                     mlx_normalized_path=args.mlx_normalized,
                     max_window=args.max_window,
                     visual_packet_path=args.visual_packet,
+                    boundary_proposals_path=args.boundary_proposals,
                 )
             )
         elif args.command == "validate-scene-dialogue-review":
@@ -419,6 +436,9 @@ def main(argv: list[str] | None = None) -> int:
                 load_json(args.review),
             )
             print("scene dialogue review valid")
+        elif args.command == "validate-boundary-proposals":
+            validate_boundary_proposals(args.proposals, args.timeline)
+            print("boundary proposals valid")
         elif args.command == "build-no-candidate-scene-dialogue-review":
             print(
                 build_no_candidate_scene_dialogue_review(

@@ -8,8 +8,9 @@ Do not start by streaming or sampling every frame into Codex. Use this ladder:
 2. One contact sheet per provisional scene group.
 3. Quick scene grouping from those sheets plus compact speech-boundary hints.
 4. Denser multi-frame storyboard only for each coarse group.
-5. One integrated group review of visual context, dialogue, captions, and editorial beats.
-6. Exception inspection of individual frames or short proxy ranges.
+5. Optional local multimodal boundary proposals, reduced to the current group and its neighbors.
+6. One integrated group review of visual context, dialogue, captions, and editorial beats.
+7. Exception inspection of individual frames or short proxy ranges.
 
 This keeps the expensive semantic pass compact while still allowing more images where actions or transitions matter.
 
@@ -47,7 +48,8 @@ uv run travel-video build-context-packet timeline.reviewed.json \
 
 For the Golden path, do not author a separate detailed visual answer here. Pass the
 fresh `context-review-packet.json` to `build-scene-dialogue-review-packet
---visual-packet`; one group-level model pass then adds:
+--visual-packet`; when available, also pass a validated `boundary-proposal/v1` file
+with `--boundary-proposals`. One group-level model pass then adds:
 
 - a chronological `narrative_summary` describing what actually happens;
 - a representative sample ID from the candidate list;
@@ -55,6 +57,12 @@ fresh `context-review-packet.json` to `build-scene-dialogue-review-packet
 - confidence and explicit uncertainty;
 - actual utterances, readable original-language captions, and all-window decisions;
 - finer `editorial_beats` linked to visual and dialogue evidence.
+
+Boundary proposals remain suggestions. Keep the approximately 3fps Vision score
+index and other raw signal streams local; send only group-local proposals plus the
+nearest previous/next proposal. If a beat accepts a proposed timestamp, record its
+ID in `source_boundary_proposal_ids`. Do not run dense full-frame refinement by
+default.
 
 This pass follows `dialogue-preservation/v1`: visual context may support a careful
 normalization, but low ASR confidence alone may not remove plausible speech. Keep

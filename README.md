@@ -151,10 +151,16 @@ uv run travel-video build-context-packet \
   work/phase1/sample/timeline.reviewed.json \
   --output-dir work/phase1/sample/context --max-frames 8
 
+# 멀티모달 경계 후보가 있으면 먼저 lineage·timestamp·evidence를 검증
+uv run travel-video validate-boundary-proposals \
+  work/phase1/sample/boundaries/proposals.json \
+  work/phase1/sample/timeline.reviewed.json
+
 uv run travel-video build-scene-dialogue-review-packet \
   work/stt-apple/sample/transcript.apple.json \
   work/phase1/sample/timeline.reviewed.json \
   --visual-packet work/phase1/sample/context/context-review-packet.json \
+  --boundary-proposals work/phase1/sample/boundaries/proposals.json \
   --max-window 8 \
   --output work/phase1/sample/scene-dialogue/review-packet.json
 
@@ -176,6 +182,13 @@ uv run travel-video merge-scene-dialogue-review \
 병합 결과의 `reviewed_dialogue.policy_audit`가 보존율과 제외 결과를 기록합니다.
 독립 transcript-only reconciliation은 기존 실행을 이어 가는 호환 경로로만
 유지합니다.
+
+`--boundary-proposals`는 선택 입력입니다. 제공하면 STT·FFmpeg·Vision에서
+로컬로 압축한 비격자 후보를 같은 group-level 리뷰에 넣고, 채택한 경계 ID를
+`editorial_beats.source_boundary_proposal_ids`에 남깁니다. 약 5초 Phase 1
+세그먼트는 coverage·overview용이며 최종 컷 격자가 아닙니다. 계약과 약 3fps
+Vision 운영 정책은
+[멀티모달 편집 경계 제안 계약](docs/boundary-proposal-contract.md)을 참조합니다.
 
 검토가 끝난 타임라인은 영상 인코딩 없이 인터랙티브 웹으로 만들 수 있습니다.
 

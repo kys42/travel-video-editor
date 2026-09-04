@@ -19,6 +19,7 @@ SCENE_DIALOGUE_REVIEW_SCHEMA = "scene-dialogue-review/v1"
 REVIEWED_DIALOGUE_SCHEMA = "reviewed-dialogue/v1"
 REVIEWED_DIALOGUE_ATTACHMENT_SCHEMA = "timeline-reviewed-dialogue-attachment/v1"
 DIALOGUE_PRESERVATION_POLICY = "dialogue-preservation/v1"
+BOUNDARY_PROPOSAL_SCHEMA = "boundary-proposal/v1"
 
 SUPPORTED_TIMELINE_SCHEMAS = {
     "phase1-reviewed-timeline/v1",
@@ -193,6 +194,181 @@ def _validate_reconciliation_windows(
                         f"Evidence span in {window_id}/{locale} does not overlap its window"
                     )
     return windows
+
+
+def _validate_boundary_proposal_item(
+    proposal: dict[str, Any],
+    *,
+    duration: float,
+    cluster_tolerance: float,
+) -> tuple[str, float]:
+    proposal_id = str(proposal.get("proposal_id", "")).strip()
+    if not proposal_id:
+        raise ValueError("Boundary proposals require proposal_id")
+    timestamp = float(proposal.get("timestamp", -1.0))
+    if timestamp < 0 or timestamp > duration + EPSILON:
+        raise ValueError(f"Boundary proposal {proposal_id} is outside media")
+    timecode = str(proposal.get("timecode", "")).strip()
+    expected_timecode = format_time(timestamp)
+    accepted_timecodes = {expected_timecode}
+    if expected_timecode.count(":") == 1:
+        accepted_timecodes.add(f"00:{expected_timecode}")
+    if timecode not in accepted_timecodes:
+        raise ValueError(
+            f"Boundary proposal {proposal_id} timecode does not match timestamp"
+        )
+    _validate_confidence(proposal, f"Boundary proposal {proposal_id}")
+    primary_kind = str(proposal.get("primary_kind", "")).strip()
+    if not primary_kind:
+        raise ValueError(f"Boundary proposal {proposal_id} requires primary_kind")
+    evidence = proposal.get("evidence")
+    if not isinstance(evidence, list) or not evidence:
+        raise ValueError(f"Boundary proposal {proposal_id} requires evidence")
+    kinds: set[str] = set()
+    source_ids: set[str] = set()
+    for item in evidence:
+        kind = str(item.get("kind", "")).strip()
+        source_id = str(item.get("source_id", "")).strip()
+        if not kind or not source_id:
+            raise ValueError(
+                f"Boundary proposal {proposal_id} evidence requires kind and source_id"
+            )
+        if source_id in source_ids:
+            raise ValueError(
+                f"Boundary proposal {proposal_id} has duplicate evidence source IDs"
+            )
+        source_ids.add(source_id)
+        kinds.add(kind)
+        evidence_timestamp = float(item.get("timestamp", -1.0))
+        if evidence_timestamp < 0 or evidence_timestamp > duration + EPSILON:
+            raise ValueError(
+                f"Boundary proposal {proposal_id} evidence is outside media"
+            )
+        if abs(evidence_timestamp - timestamp) > cluster_tolerance + EPSILON:
+            raise ValueError(
+                f"Boundary proposal {proposal_id} evidence exceeds cluster tolerance"
+            )
+        _validate_confidence(
+            item,
+            f"Boundary proposal {proposal_id} evidence {source_id}",
+        )
+        if not isinstance(item.get("details", {}), dict):
+            raise ValueError(
+                f"Boundary proposal {proposal_id} evidence details must be an object"
+            )
+    if primary_kind not in kinds:
+        raise ValueError(
+            f"Boundary proposal {proposal_id} primary_kind is absent from evidence"
+        )
+    return proposal_id, timestamp
+
+
+def _load_boundary_proposals(
+    path: Path,
+    *,
+    timeline: dict[str, Any],
+    duration: float,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    payload = load_json(path)
+    if payload.get("schema_version") != BOUNDARY_PROPOSAL_SCHEMA:
+        raise ValueError("Expected boundary-proposal/v1")
+    if payload.get("asset_id") != timeline.get("asset_id"):
+        raise ValueError("Boundary proposal asset_id does not match timeline")
+    _validate_source_identity(timeline, {"source": payload.get("source", {})})
+    proposal_duration = float(payload.get("media", {}).get("duration", 0.0))
+    if abs(proposal_duration - duration) > EPSILON:
+        raise ValueError("Boundary proposal duration does not match timeline")
+    policy = payload.get("policy")
+    if not isinstance(policy, dict):
+        raise ValueError("Boundary proposal policy must be an object")
+    cluster_tolerance = float(policy.get("cluster_tolerance_seconds", -1.0))
+    if cluster_tolerance < 0:
+        raise ValueError("Boundary proposal cluster tolerance must be non-negative")
+    neighbor_context = float(policy.get("neighbor_context_seconds", 5.0))
+    if neighbor_context < 0:
+        raise ValueError("Boundary proposal neighbor context must be non-negative")
+    proposals = payload.get("proposals")
+    if not isinstance(proposals, list):
+        raise ValueError("Boundary proposals must be a list")
+    seen_ids: set[str] = set()
+    previous_timestamp = -1.0
+    normalized: list[dict[str, Any]] = []
+    for proposal in proposals:
+        proposal_id, timestamp = _validate_boundary_proposal_item(
+            proposal,
+            duration=duration,
+            cluster_tolerance=cluster_tolerance,
+        )
+        if proposal_id in seen_ids:
+            raise ValueError("Boundary proposal IDs must be unique")
+        if timestamp <= previous_timestamp + EPSILON:
+            raise ValueError(
+                "Boundary proposals must be chronological with unique timestamps"
+            )
+        seen_ids.add(proposal_id)
+        previous_timestamp = timestamp
+        normalized.append(copy.deepcopy(proposal))
+    summary = payload.get("summary")
+    if summary is not None:
+        if not isinstance(summary, dict):
+            raise ValueError("Boundary proposal summary must be an object")
+        if int(summary.get("proposal_count", -1)) != len(normalized):
+            raise ValueError("Boundary proposal summary count is inconsistent")
+    return normalized, copy.deepcopy(policy)
+
+
+def _scene_boundary_proposals(
+    proposals: list[dict[str, Any]],
+    *,
+    start: float,
+    end: float,
+    neighbor_context: float,
+) -> dict[str, Any]:
+    candidates = [
+        copy.deepcopy(proposal)
+        for proposal in proposals
+        if start - EPSILON <= float(proposal["timestamp"]) <= end + EPSILON
+    ]
+    previous = next(
+        (
+            copy.deepcopy(proposal)
+            for proposal in reversed(proposals)
+            if start - neighbor_context - EPSILON
+            <= float(proposal["timestamp"])
+            < start - EPSILON
+        ),
+        None,
+    )
+    following = next(
+        (
+            copy.deepcopy(proposal)
+            for proposal in proposals
+            if end + EPSILON
+            < float(proposal["timestamp"])
+            <= end + neighbor_context + EPSILON
+        ),
+        None,
+    )
+    return {
+        "candidate_proposals": candidates,
+        "previous_proposal": previous,
+        "next_proposal": following,
+    }
+
+
+def validate_boundary_proposals(
+    boundary_proposals_path: Path,
+    timeline_path: Path,
+) -> None:
+    boundary_proposals_path = boundary_proposals_path.expanduser().resolve()
+    timeline_path = timeline_path.expanduser().resolve()
+    timeline = load_json(timeline_path)
+    duration = _validate_timeline(timeline)
+    _load_boundary_proposals(
+        boundary_proposals_path,
+        timeline=timeline,
+        duration=duration,
+    )
 
 
 def _evidence_id(window_id: str, locale: str, index: int) -> str:
@@ -395,7 +571,11 @@ def _integrated_visual_contexts(
     return contexts
 
 
-def _review_contract(*, integrated_visual_review: bool = False) -> dict[str, Any]:
+def _review_contract(
+    *,
+    integrated_visual_review: bool = False,
+    boundary_proposals_available: bool = False,
+) -> dict[str, Any]:
     scene_required = [
         "group_id",
         "window_decisions",
@@ -550,6 +730,11 @@ def _review_contract(*, integrated_visual_review: bool = False) -> dict[str, Any
                 "boundary_adjustment",
                 "boundary_reason",
                 "confidence",
+                *(
+                    ["source_boundary_proposal_ids"]
+                    if boundary_proposals_available
+                    else []
+                ),
             ],
             "beat_type": sorted(EDITORIAL_BEAT_TYPES),
             "dialogue_closure": sorted(DIALOGUE_CLOSURES),
@@ -560,6 +745,10 @@ def _review_contract(*, integrated_visual_review: bool = False) -> dict[str, Any
             "timing": (
                 "ordered non-overlapping evidence-anchored ranges; a beat may cross the "
                 "coarse group boundary only when cited evidence crosses it"
+            ),
+            "boundary_proposal_rule": (
+                "when boundary proposals are available, cite the proposal IDs used for "
+                "start or end; an uncited proposal is only a suggestion"
             ),
         }
         example_scene = contract["compact_example"]["scenes"][0]
@@ -589,6 +778,11 @@ def _review_contract(*, integrated_visual_review: bool = False) -> dict[str, Any
                 "boundary_adjustment": "none",
                 "boundary_reason": "한 문장과 표 확인 행동이 함께 끝난다.",
                 "confidence": 0.9,
+                **(
+                    {"source_boundary_proposal_ids": ["BP0001"]}
+                    if boundary_proposals_available
+                    else {}
+                ),
             }
         ]
     return contract
@@ -602,16 +796,28 @@ def build_scene_dialogue_packet(
     mlx_normalized_path: Path | None = None,
     max_window: float = 8.0,
     visual_packet_path: Path | None = None,
+    boundary_proposals_path: Path | None = None,
 ) -> Path:
     apple_transcript_path = apple_transcript_path.expanduser().resolve()
     timeline_path = timeline_path.expanduser().resolve()
     output_path = output_path.expanduser().resolve()
     if visual_packet_path is not None:
         visual_packet_path = visual_packet_path.expanduser().resolve()
+    if boundary_proposals_path is not None:
+        boundary_proposals_path = boundary_proposals_path.expanduser().resolve()
+        if visual_packet_path is None:
+            raise ValueError(
+                "Boundary proposals require --visual-packet integrated review"
+            )
     if output_path in {
         apple_transcript_path,
         timeline_path,
         *([visual_packet_path] if visual_packet_path is not None else []),
+        *(
+            [boundary_proposals_path]
+            if boundary_proposals_path is not None
+            else []
+        ),
     }:
         raise ValueError("Scene dialogue packet output must be a new file")
     timeline = load_json(timeline_path)
@@ -632,6 +838,15 @@ def build_scene_dialogue_packet(
     _validate_source_identity(timeline, reconciliation_packet)
     windows = _validate_reconciliation_windows(reconciliation_packet, duration)
     groups = _timeline_groups(timeline)
+    boundary_proposals: list[dict[str, Any]] | None = None
+    boundary_policy: dict[str, Any] | None = None
+    if boundary_proposals_path is not None:
+        boundary_proposals, boundary_policy = _load_boundary_proposals(
+            boundary_proposals_path,
+            timeline=timeline,
+            duration=duration,
+        )
+    boundary_proposals_available = bool(boundary_proposals)
     integrated_contexts = (
         _integrated_visual_contexts(visual_packet_path, timeline, groups)
         if visual_packet_path is not None
@@ -734,6 +949,17 @@ def build_scene_dialogue_packet(
                 None,
             ),
         }
+        if boundary_proposals_available:
+            scene["boundary_context"].update(
+                _scene_boundary_proposals(
+                    boundary_proposals,
+                    start=scene_start,
+                    end=scene_end,
+                    neighbor_context=float(
+                        (boundary_policy or {}).get("neighbor_context_seconds", 5.0)
+                    ),
+                )
+            )
 
     packet = {
         "schema_version": SCENE_DIALOGUE_PACKET_SCHEMA,
@@ -751,6 +977,11 @@ def build_scene_dialogue_packet(
             "timeline": str(timeline_path),
             "visual_packet": (
                 str(visual_packet_path) if visual_packet_path is not None else None
+            ),
+            "boundary_proposals": (
+                str(boundary_proposals_path)
+                if boundary_proposals_path is not None
+                else None
             ),
         },
         "fresh_reconciliation": {
@@ -774,6 +1005,9 @@ def build_scene_dialogue_packet(
             "drop_only": "non_speech_or_no_caption_usable_lexical_content",
             "integrated_visual_review": visual_packet_path is not None,
             "editorial_beats_required": visual_packet_path is not None,
+            "boundary_proposals_supplied": boundary_proposals_path is not None,
+            "boundary_proposals_available": boundary_proposals_available,
+            "boundary_proposals_are_advisory": True,
         },
         "instructions": [
             "Review every scene once using timed Apple evidence and adjacent visual context.",
@@ -788,7 +1022,8 @@ def build_scene_dialogue_packet(
             "Drop only non-speech or meaningless fragments, never a turn merely because one word is uncertain.",
         ],
         "review_contract": _review_contract(
-            integrated_visual_review=visual_packet_path is not None
+            integrated_visual_review=visual_packet_path is not None,
+            boundary_proposals_available=boundary_proposals_available,
         ),
         "summary": {
             "scene_count": len(scenes),
@@ -798,7 +1033,19 @@ def build_scene_dialogue_packet(
                 for window in windows
                 for candidate in window.get("apple_candidates", {}).values()
             ),
+            "boundary_proposal_count": len(boundary_proposals or []),
         },
+        **(
+            {
+                "boundary_evidence": {
+                    "schema_version": BOUNDARY_PROPOSAL_SCHEMA,
+                    "policy": boundary_policy,
+                    "proposal_count": len(boundary_proposals or []),
+                }
+            }
+            if boundary_proposals is not None
+            else {}
+        ),
         "scenes": scenes,
     }
     if visual_packet_path is not None:
@@ -808,6 +1055,14 @@ def build_scene_dialogue_packet(
                 "Split each coarse group into evidence-anchored editorial_beats for visual, action, and dialogue flow.",
                 "Assign every window, utterance, and caption to exactly one editorial beat.",
                 "Do not cut a complete utterance; flag coarse boundaries crossed by speech.",
+            ]
+        )
+    if boundary_proposals_available:
+        packet["instructions"].extend(
+            [
+                "Treat boundary proposals as advisory local evidence, never as mandatory cuts.",
+                "Use visual/action/dialogue closure to accept, reject, merge, or ignore proposals.",
+                "Cite every boundary proposal used to anchor an editorial beat boundary.",
             ]
         )
     validate_scene_dialogue_packet(packet, timeline)
@@ -840,6 +1095,33 @@ def validate_scene_dialogue_packet(
         raise ValueError("Scene dialogue packet group IDs must be present and unique")
     window_ids: list[str] = []
     evidence_ids: list[str] = []
+    boundary_evidence = packet.get("boundary_evidence")
+    boundary_proposals_available = packet.get("policy", {}).get(
+        "boundary_proposals_available", False
+    )
+    if boundary_evidence is not None:
+        if not isinstance(boundary_evidence, dict):
+            raise ValueError("Boundary packet evidence must be an object")
+        if boundary_evidence.get("schema_version") != BOUNDARY_PROPOSAL_SCHEMA:
+            raise ValueError("Boundary-aware packet has an invalid schema")
+        proposal_policy = boundary_evidence.get("policy")
+        if not isinstance(proposal_policy, dict):
+            raise ValueError("Boundary-aware packet requires proposal policy")
+        cluster_tolerance = float(
+            proposal_policy.get("cluster_tolerance_seconds", -1.0)
+        )
+        if cluster_tolerance < 0:
+            raise ValueError("Boundary proposal cluster tolerance must be non-negative")
+        neighbor_context = float(proposal_policy.get("neighbor_context_seconds", 5.0))
+        if neighbor_context < 0:
+            raise ValueError("Boundary proposal neighbor context must be non-negative")
+    else:
+        if boundary_proposals_available:
+            raise ValueError("Boundary-aware packet requires boundary_evidence")
+        cluster_tolerance = 0.0
+        neighbor_context = 0.0
+    all_boundary_proposals: dict[str, dict[str, Any]] = {}
+    candidate_boundary_ids: set[str] = set()
     for scene in scenes:
         declared = scene.get("window_ids")
         windows = scene.get("windows")
@@ -865,6 +1147,78 @@ def validate_scene_dialogue_packet(
                     if usable_start < 0 or usable_end <= usable_start:
                         raise ValueError(f"Invalid usable evidence {evidence_id}")
                     evidence_ids.append(evidence_id)
+        if boundary_proposals_available:
+            context = scene.get("boundary_context", {})
+            candidates = context.get("candidate_proposals")
+            if not isinstance(candidates, list):
+                raise ValueError(
+                    f"Scene {scene['group_id']} requires candidate boundary proposals"
+                )
+            previous_boundary_time = -1.0
+            for proposal in candidates:
+                proposal_id, timestamp = _validate_boundary_proposal_item(
+                    proposal,
+                    duration=duration,
+                    cluster_tolerance=cluster_tolerance,
+                )
+                if timestamp < float(scene["start"]) - EPSILON or timestamp > float(
+                    scene["end"]
+                ) + EPSILON:
+                    raise ValueError(
+                        f"Scene {scene['group_id']} contains an out-of-range boundary proposal"
+                    )
+                if timestamp <= previous_boundary_time + EPSILON:
+                    raise ValueError(
+                        f"Scene {scene['group_id']} boundary proposals must be chronological"
+                    )
+                previous_boundary_time = timestamp
+                if proposal_id in candidate_boundary_ids:
+                    existing = all_boundary_proposals.get(proposal_id)
+                    if existing != proposal:
+                        raise ValueError(
+                            f"Boundary proposal {proposal_id} changed between scenes"
+                        )
+                candidate_boundary_ids.add(proposal_id)
+                all_boundary_proposals.setdefault(proposal_id, proposal)
+            for relation, comparator in (
+                ("previous_proposal", "previous"),
+                ("next_proposal", "next"),
+            ):
+                proposal = context.get(relation)
+                if proposal is None:
+                    continue
+                proposal_id, timestamp = _validate_boundary_proposal_item(
+                    proposal,
+                    duration=duration,
+                    cluster_tolerance=cluster_tolerance,
+                )
+                if comparator == "previous" and timestamp >= float(
+                    scene["start"]
+                ) - EPSILON:
+                    raise ValueError(
+                        f"Scene {scene['group_id']} previous proposal is not previous"
+                    )
+                if comparator == "next" and timestamp <= float(
+                    scene["end"]
+                ) + EPSILON:
+                    raise ValueError(
+                        f"Scene {scene['group_id']} next proposal is not next"
+                    )
+                boundary_distance = (
+                    float(scene["start"]) - timestamp
+                    if comparator == "previous"
+                    else timestamp - float(scene["end"])
+                )
+                if boundary_distance > neighbor_context + EPSILON:
+                    raise ValueError(
+                        f"Scene {scene['group_id']} {comparator} proposal is too distant"
+                    )
+                existing = all_boundary_proposals.get(proposal_id)
+                if existing is not None and existing != proposal:
+                    raise ValueError(
+                        f"Boundary proposal {proposal_id} changed between scenes"
+                    )
+                all_boundary_proposals.setdefault(proposal_id, proposal)
     if len(window_ids) != len(set(window_ids)):
         raise ValueError("Each reconciliation window must occur in exactly one scene")
     if len(evidence_ids) != len(set(evidence_ids)):
@@ -877,6 +1231,16 @@ def validate_scene_dialogue_packet(
         evidence_ids
     ):
         raise ValueError("Scene dialogue packet evidence summary is inconsistent")
+    if boundary_evidence is not None:
+        expected_proposals = int(boundary_evidence.get("proposal_count", -1))
+        if bool(expected_proposals) != bool(boundary_proposals_available):
+            raise ValueError("Boundary proposal availability policy is inconsistent")
+        if expected_proposals != len(candidate_boundary_ids):
+            raise ValueError("Boundary packet proposal coverage is inconsistent")
+        if int(packet.get("summary", {}).get("boundary_proposal_count", -1)) != (
+            expected_proposals
+        ):
+            raise ValueError("Boundary proposal summary is inconsistent")
     if timeline is not None:
         _validate_timeline(timeline)
         packet_source = {"source": packet.get("source", {})}
@@ -936,12 +1300,22 @@ def _near_anchor(value: float, anchors: set[float]) -> bool:
     return any(abs(value - anchor) <= EPSILON for anchor in anchors)
 
 
+def _scene_proposal_map(scene: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    context = scene.get("boundary_context", {})
+    proposals = list(context.get("candidate_proposals", []))
+    for key in ("previous_proposal", "next_proposal"):
+        if context.get(key) is not None:
+            proposals.append(context[key])
+    return {str(item["proposal_id"]): item for item in proposals}
+
+
 def _validate_integrated_scene_review(
     packet_scene: dict[str, Any],
     reviewed_scene: dict[str, Any],
     utterance_map: dict[str, dict[str, Any]],
     captions: list[dict[str, Any]],
     duration: float,
+    boundary_proposals_available: bool,
 ) -> None:
     group_id = str(packet_scene["group_id"])
     understanding = reviewed_scene.get("scene_understanding")
@@ -993,22 +1367,27 @@ def _validate_integrated_scene_review(
     allowed_window_ids = [str(item) for item in packet_scene["window_ids"]]
     allowed_segment_ids = [str(item) for item in packet_scene.get("segment_ids", [])]
     caption_map = {str(item["caption_id"]): item for item in captions}
-    anchors = {
+    legacy_anchors = {
         float(packet_scene["start"]),
         float(packet_scene["end"]),
         0.0,
         duration,
     }
     for item in visual_context.get("segment_summaries", []):
-        anchors.update((float(item["start"]), float(item["end"])))
+        legacy_anchors.update((float(item["start"]), float(item["end"])))
     for item in candidate_frames:
-        anchors.add(float(item["time"]))
+        legacy_anchors.add(float(item["time"]))
     for window in packet_scene["windows"]:
-        anchors.update((float(window["start"]), float(window["end"])))
+        legacy_anchors.update((float(window["start"]), float(window["end"])))
     for item in utterance_map.values():
-        anchors.update((float(item["start"]), float(item["end"])))
+        legacy_anchors.update((float(item["start"]), float(item["end"])))
     for item in captions:
-        anchors.update((float(item["start"]), float(item["end"])))
+        legacy_anchors.update((float(item["start"]), float(item["end"])))
+    proposal_map = _scene_proposal_map(packet_scene)
+    proposal_anchors = {
+        float(proposal["timestamp"]) for proposal in proposal_map.values()
+    }
+    anchors = legacy_anchors | proposal_anchors
 
     beat_ids: set[str] = set()
     seen_window_ids: list[str] = []
@@ -1089,6 +1468,31 @@ def _validate_integrated_scene_review(
             raise ValueError(f"Beat {beat_id} requires valid representative samples")
         if not window_ids and not sample_ids:
             raise ValueError(f"Beat {beat_id} has no visual or dialogue evidence")
+        if boundary_proposals_available:
+            proposal_ids = _optional_unique_strings(
+                beat.get("source_boundary_proposal_ids"),
+                f"Beat {beat_id} source_boundary_proposal_ids",
+            )
+            if set(proposal_ids) - set(proposal_map):
+                raise ValueError(f"Beat {beat_id} cites invalid boundary proposals")
+            for proposal_id in proposal_ids:
+                proposal_time = float(proposal_map[proposal_id]["timestamp"])
+                if not _near_anchor(proposal_time, {start, end}):
+                    raise ValueError(
+                        f"Beat {beat_id} cites a proposal that does not anchor its boundary"
+                    )
+            for boundary in (start, end):
+                if _near_anchor(boundary, legacy_anchors):
+                    continue
+                matching_ids = {
+                    proposal_id
+                    for proposal_id, proposal in proposal_map.items()
+                    if abs(float(proposal["timestamp"]) - boundary) <= EPSILON
+                }
+                if matching_ids and not matching_ids.intersection(proposal_ids):
+                    raise ValueError(
+                        f"Beat {beat_id} must cite the proposal anchoring its boundary"
+                    )
         for utterance_id in utterance_ids:
             utterance = utterance_map[utterance_id]
             if not set(utterance["source_window_ids"]).issubset(window_ids):
@@ -1419,6 +1823,11 @@ def validate_scene_dialogue_review(
                 utterance_map,
                 captions,
                 duration,
+                bool(
+                    packet.get("policy", {}).get(
+                        "boundary_proposals_available", False
+                    )
+                ),
             )
             scene_beat_ids = {
                 str(beat["beat_id"]) for beat in reviewed_scene["editorial_beats"]
@@ -1485,6 +1894,13 @@ def _slice_packet(packet: dict[str, Any], group_ids: list[str]) -> dict[str, Any
     ]
     sliced = copy.deepcopy(packet)
     sliced["scenes"] = scenes
+    sliced_boundary_ids = {
+        str(proposal["proposal_id"])
+        for scene in scenes
+        for proposal in scene.get("boundary_context", {}).get(
+            "candidate_proposals", []
+        )
+    }
     sliced["summary"] = {
         "scene_count": len(scenes),
         "window_count": sum(len(scene["window_ids"]) for scene in scenes),
@@ -1494,7 +1910,10 @@ def _slice_packet(packet: dict[str, Any], group_ids: list[str]) -> dict[str, Any
             for window in scene["windows"]
             for candidate in window.get("apple_candidates", {}).values()
         ),
+        "boundary_proposal_count": len(sliced_boundary_ids),
     }
+    if isinstance(sliced.get("boundary_evidence"), dict):
+        sliced["boundary_evidence"]["proposal_count"] = len(sliced_boundary_ids)
     sliced["packet_slice"] = {
         "parent_asset_id": packet.get("asset_id"),
         "parent_scene_count": len(packet["scenes"]),
@@ -1836,6 +2255,11 @@ def merge_scene_dialogue_review(
             "timeline": str(timeline_path),
             "packet": str(packet_path),
             "review": str(review_path),
+            **(
+                {"boundary_proposals": packet["inputs"]["boundary_proposals"]}
+                if packet.get("inputs", {}).get("boundary_proposals")
+                else {}
+            ),
         },
         "policy": copy.deepcopy(packet.get("policy", {})),
         "policy_audit": _dialogue_preservation_audit(

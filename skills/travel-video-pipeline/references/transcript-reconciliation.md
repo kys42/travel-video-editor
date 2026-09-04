@@ -55,6 +55,7 @@ uv run travel-video build-scene-dialogue-review-packet \
   work/apple-speech/clip-id/transcript.apple.json \
   /absolute/path/to/timeline.reviewed.json \
   --visual-packet /absolute/path/to/context/context-review-packet.json \
+  --boundary-proposals /absolute/path/to/boundaries/proposals.json \
   --max-window 8 \
   --output work/dialogue/clip-id/scene-dialogue/review-packet.json
 ```
@@ -83,7 +84,8 @@ agent. In the same review JSON, require:
   for every packet window.
 - `editorial_beats`: finer visual/action/dialogue units inside the coarse group, each
   linked to its segment/window/utterance/caption/sample IDs, dialogue closure, and
-  any boundary adjustment.
+  any boundary adjustment. If an optional proposal timestamp becomes a beat boundary,
+  retain it in `source_boundary_proposal_ids`.
 
 Every window, utterance, and caption must belong to exactly one editorial beat. Beat
 ranges must be ordered, non-overlapping, and anchored to packet evidence. A beat may
@@ -91,6 +93,11 @@ cross a coarse group boundary only when its cited evidence crosses it and the re
 records `extend_before`, `extend_after`, `merge_previous`, or `merge_next`. Coarse
 groups remain model-call and parallelization units; editorial beats become the
 downstream highlight candidates.
+
+Validate `boundary-proposal/v1` before packet creation. The packet includes only
+proposals inside the scene plus its nearest neighbors, so raw Vision/FFmpeg score
+streams do not consume model context. Proposals are advisory and need not all be
+accepted.
 
 When a long asset does not fit comfortably in one agent context, split only at
 complete context-group boundaries, review slices in parallel, and merge them back

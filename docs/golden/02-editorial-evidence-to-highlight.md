@@ -122,6 +122,11 @@ visual shot / dialogue beat / action beat / transition
     "closure": "closed",
     "uncertain_windows": []
   },
+  "boundary": {
+    "source_proposal_ids": ["BP0041", "BP0044"],
+    "start_reason": "대화 setup 시작",
+    "end_reason": "응답과 웃음 반응 종료"
+  },
   "quality": {
     "sharpness": 0.0,
     "motion": 0.0,
@@ -140,6 +145,7 @@ visual shot / dialogue beat / action beat / transition
 - 말하는 얼굴이 보이는데 caption-ready 문장이 없다면
   `talking_face_without_caption` 위험을 기록한다.
 - 모든 문장과 프레임은 source ID를 가져야 한다.
+- Golden 01의 proposal 시각을 유지했다면 boundary proposal ID도 전달한다.
 - 모델은 packet에 없는 타임코드를 새로 만들 수 없다.
 
 ## 5. 편집 단위
@@ -282,7 +288,7 @@ Stage 1 beat는 후보이지 최종 컷이 아니므로, 하루 전체 서사와
     {"start": 348.2, "end": 357.6},
     {"start": 362.0, "end": 376.5}
   ],
-  "evidence_ids": ["F…", "SRU…", "SRC…"],
+  "evidence_ids": ["F…", "SRU…", "SRC…", "BP…"],
   "story_role": "comic_payoff",
   "selection_reason": "…",
   "boundary_reason": "setup과 사과 반응까지 보존",
@@ -302,6 +308,7 @@ boundary reason을 보존한다.
 - source range가 media duration 내부
 - proxy와 original의 시간 mapping이 identity
 - 사용한 frame/segment/group/utterance/caption ID가 packet에 존재
+- proposal 기반 source_in/source_out이면 인용한 boundary proposal ID와 시각이 일치
 
 ### 8.2 대화 경계 lint
 

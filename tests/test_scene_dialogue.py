@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 
@@ -7,6 +8,7 @@ import pytest
 
 from travel_video.cli import build_parser
 from travel_video.scene_dialogue import (
+    BOUNDARY_PROPOSAL_SCHEMA,
     DIALOGUE_PRESERVATION_POLICY,
     REVIEWED_DIALOGUE_SCHEMA,
     SCENE_DIALOGUE_PACKET_SCHEMA,
@@ -15,6 +17,7 @@ from travel_video.scene_dialogue import (
     merge_scene_dialogue_review,
     merge_scene_dialogue_review_shards,
     slice_scene_dialogue_packet,
+    validate_boundary_proposals,
     validate_scene_dialogue_review,
 )
 from travel_video.transcript_reconcile import _locale_fragment
@@ -367,6 +370,63 @@ def _visual_packet(tmp_path: Path) -> Path:
     return path
 
 
+def _boundary_proposals(tmp_path: Path) -> Path:
+    payload = {
+        "schema_version": BOUNDARY_PROPOSAL_SCHEMA,
+        "asset_id": "clip--abc123",
+        "source": {
+            "name": "clip.mp4",
+            "path": "/Volumes/T7/clip.mp4",
+            "quick_fingerprint": "abc123",
+        },
+        "media": {"duration": 12.0},
+        "policy": {
+            "cluster_tolerance_seconds": 0.55,
+            "neighbor_context_seconds": 5.0,
+            "default_fine_pass": False,
+            "vision_sample_interval_seconds": 0.333333,
+        },
+        "summary": {"proposal_count": 2},
+        "proposals": [
+            {
+                "proposal_id": "BP0001",
+                "timestamp": 4.25,
+                "timecode": "00:00:04.250",
+                "confidence": 0.82,
+                "primary_kind": "visual_change",
+                "evidence": [
+                    {
+                        "timestamp": 4.2,
+                        "kind": "visual_change",
+                        "confidence": 0.82,
+                        "source_id": "FFMPEG-SCENE-0001",
+                        "details": {"score": 0.41},
+                    }
+                ],
+            },
+            {
+                "proposal_id": "BP0002",
+                "timestamp": 6.75,
+                "timecode": "00:00:06.750",
+                "confidence": 0.9,
+                "primary_kind": "speech_end",
+                "evidence": [
+                    {
+                        "timestamp": 6.8,
+                        "kind": "speech_end",
+                        "confidence": 0.9,
+                        "source_id": "RW0002:end",
+                        "details": {"source": "apple_stt"},
+                    }
+                ],
+            },
+        ],
+    }
+    path = tmp_path / "boundary-proposals.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
 def _integrated_review(packet: dict) -> dict:
     review = _review(packet)
     for scene in review["scenes"]:
@@ -583,6 +643,159 @@ def test_integrated_visual_dialogue_review_emits_valid_editorial_beats(
         validate_scene_dialogue_review(packet, invalid)
 
 
+def test_boundary_proposals_anchor_non_grid_editorial_beats(tmp_path: Path) -> None:
+    timeline_path = tmp_path / "timeline.summarized.json"
+    apple_path = tmp_path / "transcript.apple.json"
+    packet_path = tmp_path / "scene-dialogue.integrated.packet.json"
+    review_path = tmp_path / "scene-dialogue.integrated.review.json"
+    output_path = tmp_path / "timeline.integrated-reviewed.json"
+    timeline_path.write_text(json.dumps(_quick_timeline(tmp_path)), encoding="utf-8")
+    apple_path.write_text(json.dumps(_apple_transcript()), encoding="utf-8")
+
+    build_scene_dialogue_packet(
+        apple_path,
+        timeline_path,
+        packet_path,
+        visual_packet_path=_visual_packet(tmp_path),
+        boundary_proposals_path=_boundary_proposals(tmp_path),
+    )
+    packet = json.loads(packet_path.read_text(encoding="utf-8"))
+    assert packet["policy"]["boundary_proposals_available"] is True
+    assert packet["summary"]["boundary_proposal_count"] == 2
+    assert [
+        item["proposal_id"]
+        for item in packet["scenes"][0]["boundary_context"][
+            "candidate_proposals"
+        ]
+    ] == ["BP0001"]
+    assert (
+        packet["scenes"][0]["boundary_context"]["next_proposal"]["proposal_id"]
+        == "BP0002"
+    )
+
+    review = _integrated_review(packet)
+    for scene in review["scenes"]:
+        for beat in scene["editorial_beats"]:
+            beat["source_boundary_proposal_ids"] = []
+    first_beat = review["scenes"][0]["editorial_beats"][0]
+    first_beat["end"] = 4.25
+    first_beat["source_boundary_proposal_ids"] = ["BP0001"]
+    review["scenes"][0]["editorial_beats"].append(
+        {
+            "beat_id": "G001-B002",
+            "beat_type": "visual",
+            "start": 4.25,
+            "end": 6.0,
+            "title": "이동 준비",
+            "summary": "표 확인을 마치고 이동을 준비한다.",
+            "source_segment_ids": ["S001"],
+            "source_window_ids": [],
+            "source_utterance_ids": [],
+            "source_caption_ids": [],
+            "representative_sample_ids": ["F0001"],
+            "dialogue_closure": "not_applicable",
+            "boundary_adjustment": "none",
+            "boundary_reason": "화면 변화 후보에서 행동이 전환된다.",
+            "confidence": 0.82,
+            "source_boundary_proposal_ids": ["BP0001"],
+        }
+    )
+    validate_scene_dialogue_review(packet, review)
+
+    review_path.write_text(json.dumps(review), encoding="utf-8")
+    merge_scene_dialogue_review(timeline_path, packet_path, review_path, output_path)
+    merged = json.loads(output_path.read_text(encoding="utf-8"))
+    merged_beat = merged["reviewed_dialogue"]["editorial_beats"][0]
+    assert merged_beat["end"] == 4.25
+    assert merged_beat["source_boundary_proposal_ids"] == ["BP0001"]
+    assert merged["reviewed_dialogue"]["inputs"]["boundary_proposals"].endswith(
+        "boundary-proposals.json"
+    )
+
+    missing_citation = copy.deepcopy(review)
+    missing_citation["scenes"][0]["editorial_beats"][0][
+        "source_boundary_proposal_ids"
+    ] = []
+    with pytest.raises(ValueError, match="must cite the proposal"):
+        validate_scene_dialogue_review(packet, missing_citation)
+
+
+def test_boundary_proposals_must_match_timeline_lineage(tmp_path: Path) -> None:
+    timeline_path = tmp_path / "timeline.summarized.json"
+    apple_path = tmp_path / "transcript.apple.json"
+    proposals_path = _boundary_proposals(tmp_path)
+    timeline_path.write_text(json.dumps(_quick_timeline(tmp_path)), encoding="utf-8")
+    apple_path.write_text(json.dumps(_apple_transcript()), encoding="utf-8")
+    payload = json.loads(proposals_path.read_text(encoding="utf-8"))
+    payload["source"]["quick_fingerprint"] = "wrong"
+    proposals_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="fingerprint does not match"):
+        build_scene_dialogue_packet(
+            apple_path,
+            timeline_path,
+            tmp_path / "packet.json",
+            visual_packet_path=_visual_packet(tmp_path),
+            boundary_proposals_path=proposals_path,
+        )
+
+
+def test_boundary_proposal_validator_and_scene_slice(tmp_path: Path) -> None:
+    timeline_path = tmp_path / "timeline.summarized.json"
+    apple_path = tmp_path / "transcript.apple.json"
+    packet_path = tmp_path / "packet.json"
+    slice_path = tmp_path / "packet.part.json"
+    timeline_path.write_text(json.dumps(_quick_timeline(tmp_path)), encoding="utf-8")
+    apple_path.write_text(json.dumps(_apple_transcript()), encoding="utf-8")
+    proposals_path = _boundary_proposals(tmp_path)
+
+    validate_boundary_proposals(proposals_path, timeline_path)
+    build_scene_dialogue_packet(
+        apple_path,
+        timeline_path,
+        packet_path,
+        visual_packet_path=_visual_packet(tmp_path),
+        boundary_proposals_path=proposals_path,
+    )
+    slice_scene_dialogue_packet(packet_path, ["G001"], slice_path)
+    sliced = json.loads(slice_path.read_text(encoding="utf-8"))
+    assert sliced["summary"]["boundary_proposal_count"] == 1
+    assert sliced["boundary_evidence"]["proposal_count"] == 1
+
+    payload = json.loads(proposals_path.read_text(encoding="utf-8"))
+    payload["proposals"][0]["timecode"] = "00:00:05.000"
+    proposals_path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="timecode does not match"):
+        validate_boundary_proposals(proposals_path, timeline_path)
+
+
+def test_empty_boundary_proposal_input_keeps_integrated_review_compatible(
+    tmp_path: Path,
+) -> None:
+    timeline_path = tmp_path / "timeline.summarized.json"
+    apple_path = tmp_path / "transcript.apple.json"
+    packet_path = tmp_path / "packet.json"
+    timeline_path.write_text(json.dumps(_quick_timeline(tmp_path)), encoding="utf-8")
+    apple_path.write_text(json.dumps(_apple_transcript()), encoding="utf-8")
+    proposals_path = _boundary_proposals(tmp_path)
+    payload = json.loads(proposals_path.read_text(encoding="utf-8"))
+    payload["proposals"] = []
+    payload["summary"]["proposal_count"] = 0
+    proposals_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    build_scene_dialogue_packet(
+        apple_path,
+        timeline_path,
+        packet_path,
+        visual_packet_path=_visual_packet(tmp_path),
+        boundary_proposals_path=proposals_path,
+    )
+    packet = json.loads(packet_path.read_text(encoding="utf-8"))
+    assert packet["policy"]["boundary_proposals_supplied"] is True
+    assert packet["policy"]["boundary_proposals_available"] is False
+    validate_scene_dialogue_review(packet, _integrated_review(packet))
+
+
 def test_integrated_visual_packet_must_preserve_sample_coordinates(
     tmp_path: Path,
 ) -> None:
@@ -705,11 +918,37 @@ def test_scene_dialogue_cli_commands_are_exposed() -> None:
                 "build-scene-dialogue-review-packet",
                 "transcript.apple.json",
                 "timeline.json",
+                "--visual-packet",
+                "context-packet.json",
+                "--boundary-proposals",
+                "boundary-proposals.json",
+                "--output",
+                "packet.json",
+            ]
+        ).boundary_proposals
+        == Path("boundary-proposals.json")
+    )
+    assert (
+        parser.parse_args(
+            [
+                "build-scene-dialogue-review-packet",
+                "transcript.apple.json",
+                "timeline.json",
                 "--output",
                 "packet.json",
             ]
         ).command
         == "build-scene-dialogue-review-packet"
+    )
+    assert (
+        parser.parse_args(
+            [
+                "validate-boundary-proposals",
+                "boundary-proposals.json",
+                "timeline.json",
+            ]
+        ).command
+        == "validate-boundary-proposals"
     )
     assert (
         parser.parse_args(

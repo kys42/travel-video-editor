@@ -118,10 +118,14 @@ For the Golden edit-evidence path, build and review the integrated packet direct
 from the quick grouped timeline plus the fresh dense storyboard packet:
 
 ```bash
+uv run travel-video validate-boundary-proposals \
+  boundaries/proposals.json timeline.reviewed.json
+
 uv run travel-video build-scene-dialogue-review-packet \
   work/apple-speech/clip-id/transcript.apple.json \
   timeline.reviewed.json \
   --visual-packet context/context-review-packet.json \
+  --boundary-proposals boundaries/proposals.json \
   --max-window 8 \
   --output scene-dialogue/review-packet.json
 
@@ -134,8 +138,9 @@ uv run travel-video merge-scene-dialogue-review \
 
 The merge promotes the quick timeline to a context-reviewed artifact and preserves
 the coarse groups while attaching detailed visual review, actual utterances,
-caption-ready lines, and editorial beats. A beat may refine a boundary but may not
-cut a spoken utterance. Keep the separate transcript-only reconciliation route only
+caption-ready lines, and editorial beats. Boundary proposals are optional advisory
+evidence; a beat that uses one must retain its source proposal ID. A beat may refine
+a boundary but may not cut a spoken utterance. Keep the separate transcript-only reconciliation route only
 for compatibility jobs that explicitly need a standalone transcript.
 
 This is the production `dialogue-preservation/v1` path. Before continuing, verify

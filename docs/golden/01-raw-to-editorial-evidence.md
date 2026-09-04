@@ -82,8 +82,13 @@ Phase 1, STT, 시각 리뷰 문서는 배경 설명과 운영 명령을 제공�
 품질·변화 신호       span별 시각·신뢰도
       └───────┬───────┘
               ▼
+[멀티모달 경계 후보]
+FFmpeg·Vision·음성·STT timestamp clustering
+제안 ID와 근거만 보존, 자동 컷은 하지 않음
+              │
+              ▼
 [빠른 공동 그룹화]
-희소 연락판 + 음성 활동/STT 힌트
+희소 연락판 + 음성 활동/STT·경계 힌트
 작업 단위와 경계 위험만 확정
               │
               ▼
@@ -157,7 +162,8 @@ JSON 정본 + HTML 검토 화면 + 검색 인덱스
 - `contact_sheets/`
 
 이 단계는 “무슨 일이 벌어지는가”를 확정하지 않는다. 전체 시간축과 검토
-근거를 빠짐없이 만드는 역할만 한다.
+근거를 빠짐없이 만드는 역할만 한다. 약 5초 시각 샘플과 5~30초 세그먼트는
+overview·coverage용이며 최종 편집 경계의 시간 격자로 사용하지 않는다.
 
 ### 4.3 빠른 공동 의미 그룹화
 
@@ -226,7 +232,33 @@ packet에는 다음을 넣는다.
 - locale별 raw/normalized 결과
 - detector를 통과한 활동 범위와 생성 설정
 
-### 4.6 그룹별 통합 장면-대화 리뷰
+### 4.6 멀티모달 경계 후보
+
+시각 Phase 1과 Apple STT가 모두 준비되면 모델 호출 전에 로컬 timestamp
+신호를 합친다.
+
+- FFmpeg hard cut, fade, motion 변화
+- Apple Vision FeaturePrint, 미학, 인물·얼굴, OCR 변화
+- speech 시작·끝, silence gap, 화자·언어 전환
+- raw ko/en STT에서 얻은 보수적인 주제 전환 힌트
+
+인접 신호를 clustering/NMS로 합쳐 `boundary-proposal/v1`을 만든다. 각
+proposal은 source-relative timestamp, 종류, confidence와 개별 evidence ID를
+보존한다. `asset_id`, source path/fingerprint와 duration은 timeline과 정확히
+일치해야 한다.
+
+Apple Vision 운영 목표는 약 3fps다. Vision은 의미·품질 변화 후보를 만들며
+정밀 cutter 역할을 맡지 않는다. 컷 시각은 FFmpeg, 음성 시각은 Apple span의
+정밀도를 그대로 쓴다. 후보 주변을 원본 FPS로 다시 훑는 fine pass는 기본
+경로에서 실행하지 않고, 신호가 충돌하고 기존 근거로 판정할 수 없는 소수
+예외에만 허용한다. 자세한 계약은
+[멀티모달 편집 경계 제안 계약](../boundary-proposal-contract.md)에 정의한다.
+
+raw STT의 주제 힌트는 실제 발화·언어의 정답이 아니다. 실제 발화 선택, 읽기
+좋은 대본, 의미상 주제 전환과 beat 경계는 다음 통합 리뷰의 한 모델 패스에서
+함께 확정한다. 이렇게 해야 전사 종합을 위한 별도 모델 패스를 추가하지 않는다.
+
+### 4.7 그룹별 통합 장면-대화 리뷰
 
 편집과 자막에 사용할 기본 경로다. 입력 packet은 반드시 다음을 한 장면
 단위로 함께 제공한다.
@@ -235,6 +267,7 @@ packet에는 다음을 넣는다.
 - 해당 그룹과 겹치는 ko/en 원시 후보
 - 시간순 evidence span과 source candidate ID
 - 이전·다음 장면 경계와 crossing window
+- 그룹 안과 바로 앞·뒤의 `boundary-proposal/v1` 후보
 
 review window 경계는 Apple evidence span 내부를 자르지 않는다. 긴 span이면
 설정된 max window보다 window를 늘려 하나의 atomic evidence로 유지한다. 경계
@@ -266,10 +299,13 @@ fallback으로 명시해 atomic하게 보존한다. 경계를 횡단해 확정�
 - 제목, 요약, 대표 프레임과 신뢰도
 - 대화의 `closed/open/not_applicable`
 - 거친 그룹 밖으로 확장하거나 이웃과 합쳐야 하는 `boundary_adjustment`
+- beat 경계로 채택한 `source_boundary_proposal_ids`
 
 모든 window, utterance와 caption은 정확히 하나의 beat에 연결돼야 한다.
-beat 경계는 기존 segment, frame, window, utterance 또는 caption 시각에
-고정하며 실제 발화 중간을 자를 수 없다. 여러 utterance를 묶은 caption은
+beat 경계는 기존 segment, frame, window, utterance, caption 또는 검증된
+boundary proposal 시각에 고정하며 실제 발화 중간을 자를 수 없다. proposal은
+권고이므로 모두 채택할 필요가 없지만, 제안 시각을 경계로 썼다면 source proposal
+ID를 반드시 인용한다. 여러 utterance를 묶은 caption은
 인용한 각 utterance와 실제로 겹쳐야 하며, 첫 발화와 마지막 발화 사이의 빈
 구간에만 놓인 caption은 source envelope 안에 있더라도 거부한다.
 
@@ -284,7 +320,7 @@ beat 경계는 기존 segment, frame, window, utterance 또는 caption 시각에
 거친 그룹 경계를 발화가 가로지르면 `extend_before/after` 또는
 `merge_previous/next`가 없이는 통과시키지 않는다.
 
-### 4.7 영상 전체 종합
+### 4.8 영상 전체 종합
 
 통합 대화까지 병합된 그룹 정보만으로 영상 전체를 합성한다.
 
@@ -297,7 +333,7 @@ beat 경계는 기존 segment, frame, window, utterance 또는 caption 시각에
 대화 리뷰가 변경되면 전체 요약도 다시 생성하거나 최소한 대화 관련 요약을
 갱신해야 한다. 오래된 visual-only 요약을 그대로 붙이면 안 된다.
 
-### 4.8 정식 기본 정책과 교차검증
+### 4.9 정식 기본 정책과 교차검증
 
 `dialogue-preservation/v1`을 신규 편집 근거 생성의 정식 기본 정책으로 쓴다.
 이는 “확신이 낮으면 삭제”가 아니라 다음 순서로 처리한다.
@@ -332,13 +368,16 @@ beat 경계는 기존 segment, frame, window, utterance 또는 caption 시각에
 현재 구현에서 새 편집이 우선 사용해야 하는 정본은 다음 형태다.
 
 ```text
-<asset>/scene-dialogue/
-├── review-packet.json
-├── review.json
-├── timeline.dialogue-reviewed.summarized.json  # 편집 근거 JSON 정본
-└── web/
-    ├── index.html
-    └── manifest.json
+<asset>/
+├── boundaries/
+│   └── proposals.json                          # 선택적 로컬 경계 근거
+└── scene-dialogue/
+    ├── review-packet.json
+    ├── review.json
+    ├── timeline.dialogue-reviewed.summarized.json  # 편집 근거 JSON 정본
+    └── web/
+        ├── index.html
+        └── manifest.json
 ```
 
 과거의 `timeline.final.json`은 호환·이력용일 수 있으므로, unified dialogue가
@@ -363,12 +402,14 @@ beat 경계는 기존 segment, frame, window, utterance 또는 caption 시각에
         "window_decisions": [],
         "utterances": [],
         "captions": []
-      }
+      },
+      "editorial_beats": []
     }
   ],
   "reviewed_dialogue": {
     "utterances": [],
     "captions": [],
+    "editorial_beats": [],
     "summary": {}
   },
   "video_summary": {}
@@ -383,7 +424,7 @@ beat 경계는 기존 segment, frame, window, utterance 또는 caption 시각에
 - 시각: 그룹·세그먼트 설명, 행동, 대표 프레임, storyboard, notable moment
 - 음성: 발화와 자막의 원문·시간·언어·근거·불확실성
 - 편집 단위: 그룹 내부 editorial beat, 완결성, 경계 조정과 근거 ID
-- 경계: 바로 앞뒤 발화와 장면, 음성 활동과 무음 간격
+- 경계: 바로 앞뒤 발화와 장면, 음성 활동·무음 간격, 채택한 boundary proposal ID
 - 품질: 흔들림, 가림, 노출, 중복, 프레이밍
 - 서사: 영상 요약, 사건 순서, 촬영 시각, story day
 - 계보: original/proxy 경로, asset/group/segment/utterance/caption ID
@@ -394,9 +435,10 @@ beat 경계는 기존 segment, frame, window, utterance 또는 caption 시각에
 ## 7. 토큰 예산
 
 - 전 영상 공통: 메타데이터, 기계 세그먼트, 희소 프레임
-- 장면 1차: 연락판, 짧은 세그먼트 메타데이터와 STT 경계 힌트만 전달
+- 장면 1차: 연락판, 짧은 세그먼트 메타데이터와 STT·경계 힌트만 전달
 - 장면 2차: 그룹 길이·밀도에 따라 8~24장 storyboard와 span-rich 후보 전달
-- 화면 이해·대화·beat는 같은 그룹 리뷰에서 한 번에 확정
+- 전체 Vision 점수열은 로컬에 보존하고 그룹 내부·인접 proposal만 전달
+- 화면 이해·실제 발화·자막·beat는 같은 그룹 리뷰에서 한 번에 확정
 - 종합: 검토 완료 그룹 텍스트와 대표 ID만 전달
 - 예외: 불명확한 경계만 개별 프레임 또는 짧은 프록시 확인
 
@@ -418,6 +460,7 @@ asset 하나가 1단계를 완료하려면 다음을 모두 만족해야 한다.
   `caption_coverage_ratio`가 1.0임
 - context group에 화면·행동·대화가 함께 연결됨
 - 모든 window/utterance/caption이 정확히 하나의 editorial beat에 연결됨
+- proposal 시각을 사용한 beat가 정확한 source boundary proposal ID를 인용함
 - 열린 대화와 crossing group boundary에 명시적인 조정 결정이 존재
 - 대화 반영 후 video summary가 존재
 - JSON 정본과 HTML 검토 화면이 재생성 가능
@@ -430,8 +473,9 @@ asset 하나가 1단계를 완료하려면 다음을 모두 만족해야 한다.
 - 일부 과거 video summary는 unified dialogue보다 먼저 만들어졌다.
 - `timeline.final.json`과 `timeline.dialogue-reviewed.summarized.json`이 함께
   존재해 소비자가 잘못된 정본을 선택할 수 있다.
-- 기존 빠른 grouping validator는 기계 세그먼트를 통째로 배정하므로 음성
-  window에 맞춰 그룹 경계를 자동 재스냅하는 기능은 아직 없다.
+- 기존 빠른 grouping validator는 기계 세그먼트를 통째로 배정한다. coarse
+  group은 호출·병렬화 단위로 유지하고, 비격자 편집 경계는 group 내부
+  editorial beat와 boundary proposal citation으로 표현한다.
 - 기존 전체 아카이브 중 일부는 아직 `dialogue-preservation/v1`로
   backfill되지 않아 새 정본과 과거 `timeline.final.json`이 함께 존재한다.
 
