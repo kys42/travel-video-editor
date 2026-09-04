@@ -247,6 +247,22 @@ proposal은 source-relative timestamp, 종류, confidence와 개별 evidence ID�
 보존한다. `asset_id`, source path/fingerprint와 duration은 timeline과 정확히
 일치해야 한다.
 
+```bash
+uv run travel-video build-boundary-proposals \
+  /absolute/path/to/processing-proxy.mp4 \
+  timeline.reviewed.json transcript.apple.json \
+  --lineage /absolute/path/to/source-lineage.json \
+  --output-dir boundaries
+
+uv run travel-video validate-boundary-proposals \
+  boundaries/proposals.json timeline.reviewed.json
+```
+
+`signals/apple-stt.json`, `signals/ffmpeg.json`,
+`signals/apple-vision.raw.json`, `signals/apple-vision.json`을 각각 보존하고
+fusion 결과만 `proposals.json`에 쓴다. 같은 output directory를 다른 입력이나
+설정에 재사용하면 안 된다.
+
 Apple Vision 운영 목표는 약 3fps다. Vision은 의미·품질 변화 후보를 만들며
 정밀 cutter 역할을 맡지 않는다. 컷 시각은 FFmpeg, 음성 시각은 Apple span의
 정밀도를 그대로 쓴다. 후보 주변을 원본 FPS로 다시 훑는 fine pass는 기본

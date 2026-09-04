@@ -46,10 +46,11 @@ uv run travel-video build-context-packet timeline.reviewed.json \
   --output-dir context --max-frames 8
 ```
 
-For the Golden path, do not author a separate detailed visual answer here. Pass the
-fresh `context-review-packet.json` to `build-scene-dialogue-review-packet
---visual-packet`; when available, also pass a validated `boundary-proposal/v1` file
-with `--boundary-proposals`. One group-level model pass then adds:
+For the Golden path, do not author a separate detailed visual answer here. First run
+`build-boundary-proposals` on the matching processing proxy, reviewed timeline, raw
+Apple transcript, and proxy lineage. Pass the fresh `context-review-packet.json` to
+`build-scene-dialogue-review-packet --visual-packet` and the validated
+`proposals.json` with `--boundary-proposals`. One group-level model pass then adds:
 
 - a chronological `narrative_summary` describing what actually happens;
 - a representative sample ID from the candidate list;

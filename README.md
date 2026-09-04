@@ -151,7 +151,15 @@ uv run travel-video build-context-packet \
   work/phase1/sample/timeline.reviewed.json \
   --output-dir work/phase1/sample/context --max-frames 8
 
-# 멀티모달 경계 후보가 있으면 먼저 lineage·timestamp·evidence를 검증
+# STT·FFmpeg·Apple Vision 원시 신호를 추출하고 clustering/NMS로 후보 생성
+uv run travel-video build-boundary-proposals \
+  /absolute/path/to/processing-proxy.mp4 \
+  work/phase1/sample/timeline.reviewed.json \
+  work/stt-apple/sample/transcript.apple.json \
+  --lineage /absolute/path/to/source-lineage.json \
+  --output-dir work/phase1/sample/boundaries
+
+# 생성된 후보의 lineage·timestamp·evidence를 검증
 uv run travel-video validate-boundary-proposals \
   work/phase1/sample/boundaries/proposals.json \
   work/phase1/sample/timeline.reviewed.json

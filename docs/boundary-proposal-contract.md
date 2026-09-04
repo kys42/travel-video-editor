@@ -1,6 +1,6 @@
 # 멀티모달 편집 경계 제안 계약
 
-상태: **P0 입력 계약 구현됨**
+상태: **P0 producer·입력 계약·Golden 전달 구현됨**
 
 관련 규범:
 
@@ -82,6 +82,49 @@ uv run travel-video validate-boundary-proposals \
 raw signal JSON과 fusion 결과는 서로 덮어쓰지 않는다. 생성기는 사용한
 도구·버전·설정과 source ID를 `details` 또는 별도 run manifest에 남긴다.
 
+## 실제 producer
+
+시각 Phase 1과 Apple STT가 끝난 뒤 다음 명령이 로컬 신호 추출부터 proposal
+생성까지 실행한다. 프록시를 쓸 때는 identity time mapping을 검증한 lineage를
+반드시 함께 넘긴다.
+
+```bash
+uv run travel-video build-boundary-proposals \
+  /absolute/path/to/proxy.mp4 \
+  timeline.reviewed.json \
+  transcript.apple.json \
+  --lineage /absolute/path/to/source-lineage.json \
+  --output-dir boundaries
+```
+
+기본 출력은 다음처럼 단계별로 보존한다.
+
+```text
+boundaries/
+├── run-intent.json
+├── run.json
+├── signals/
+│   ├── apple-stt.json
+│   ├── ffmpeg.json
+│   ├── apple-vision.raw.json
+│   └── apple-vision.json
+└── proposals.json
+```
+
+- Apple STT adapter는 detector-gated transcriber activity 시작·끝, 무음 구간,
+  서로 다른 locale이 동의한 raw segment 경계를 보존한다. raw locale 문장은
+  여전히 정답이 아니며 실제 발화·주제는 통합 리뷰가 결정한다.
+- FFmpeg adapter는 native scene timestamp와 약 3fps difference-motion 시계열을
+  저장하고, adaptive threshold와 NMS로 hard-cut·motion-change 후보를 만든다.
+- Apple Vision helper는 기본 약 3fps에서 인접 FeaturePrint 거리, 미학,
+  얼굴·인물 존재를 수집하고 OCR은 1fps로 제한한다. OCR와 인물 신호에는
+  지속성/hysteresis를 적용하되 `apple-vision.raw.json`은 손대지 않는다.
+- fusion은 시각 신호끼리 cross-signal NMS를 한 뒤 0.55초 이내 evidence를
+  묶는다. hard cut과 STT의 정확한 timestamp를 primary anchor로 우선하고,
+  약한 단일 evidence는 proposal로 승격하지 않는다.
+- `run-intent.json`은 입력 fingerprint, 설정과 producer implementation digest를
+  캐시 키로 기록하며 다른 조건의 output directory 재사용을 fail-closed한다.
+
 ## Golden 통합 리뷰 연결
 
 ```bash
@@ -133,13 +176,12 @@ packet은 각 coarse group 내부 후보와 바로 앞·뒤 후보만 넣는다.
 `timeline.dialogue-reviewed.summarized.json` 하나를 유지하고, 하이라이트 단계가
 같은 beat/utterance/caption ID를 그대로 소비한다.
 
-## 이번 구현 범위와 후속 작업
+## 구현 범위와 남은 보정
 
-이번 P0는 JSON 계약, lineage validator, packet 전달, beat citation 검증을
-구현한다. 다음 단계는 계약을 바꾸지 않고 producer를 추가한다.
+현재 P0는 Apple STT/FFmpeg/Apple Vision signal producer, timestamp
+clustering/NMS, lineage validator, packet 전달과 beat citation 검증까지
+연결한다. 남은 작업은 계약 구현이 아니라 calibration이다.
 
-1. Apple STT activity·span과 검토된 topic hint adapter
-2. FFmpeg hard-cut·motion adapter
-3. 약 3fps Apple Vision compact index와 캐시 키
-4. timestamp clustering/NMS와 신호별 calibration
-5. 대표 영상 3개 품질·속도·토큰 benchmark
+1. 음식 주문·빠른 인물 반응·정적 자연 풍경 3종 benchmark 확대
+2. hard-cut, motion, FeaturePrint threshold의 장르별 precision/recall 기록
+3. 실제 통합 리뷰에서 채택/기각된 proposal ID를 이용한 threshold feedback

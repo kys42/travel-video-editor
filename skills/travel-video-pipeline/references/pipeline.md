@@ -118,6 +118,13 @@ For the Golden edit-evidence path, build and review the integrated packet direct
 from the quick grouped timeline plus the fresh dense storyboard packet:
 
 ```bash
+uv run travel-video build-boundary-proposals \
+  /absolute/path/to/processing-proxy.mp4 \
+  timeline.reviewed.json \
+  work/apple-speech/clip-id/transcript.apple.json \
+  --lineage /absolute/path/to/source-lineage.json \
+  --output-dir boundaries
+
 uv run travel-video validate-boundary-proposals \
   boundaries/proposals.json timeline.reviewed.json
 
@@ -142,6 +149,11 @@ caption-ready lines, and editorial beats. Boundary proposals are optional adviso
 evidence; a beat that uses one must retain its source proposal ID. A beat may refine
 a boundary but may not cut a spoken utterance. Keep the separate transcript-only reconciliation route only
 for compatibility jobs that explicitly need a standalone transcript.
+
+`build-boundary-proposals` is the production producer, not only a contract check. It
+keeps Apple STT, FFmpeg, Apple Vision raw, normalized Vision, fused proposals, and a
+run manifest as separate files. The default Vision cadence is about 3fps, while OCR
+is 1fps and FFmpeg/STT timestamps retain their native source-relative precision.
 
 This is the production `dialogue-preservation/v1` path. Before continuing, verify
 that the merged artifact reports `reviewed_dialogue.policy_audit.status=pass`,
