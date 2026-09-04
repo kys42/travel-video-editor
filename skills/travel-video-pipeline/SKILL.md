@@ -17,6 +17,10 @@ Use deterministic local processing to reduce video into traceable evidence, then
 
 ## Route by requested outcome
 
+- In this repository, treat `docs/golden/01-raw-to-editorial-evidence.md` as the
+  normative extraction contract and `docs/golden/02-editorial-evidence-to-highlight.md`
+  as the normative highlight-selection contract. The references below provide the
+  commands and compatibility routes that implement those contracts.
 - For source discovery, phase execution, caching, and exact CLI commands, read [references/pipeline.md](references/pipeline.md).
 - For Apple/MLX STT, mixed-language decisions, or subtitle scripts, read [references/transcript-reconciliation.md](references/transcript-reconciliation.md).
 - For contact sheets, scene descriptions, storyboard review, whole-video summaries, or HTML libraries, read [references/visual-review.md](references/visual-review.md).
@@ -36,11 +40,22 @@ Use deterministic local processing to reduce video into traceable evidence, then
 
 Use subagents only for bounded packet review, not media discovery or destructive operations.
 
-- For transcript reconciliation, shard non-overlapping `window_id` ranges across fast low-cost agents such as Luna when available. Give each agent only its packet slice, exact schema, and a unique output path.
+- For dialogue that will feed readable HTML or burned captions, prefer the unified scene-dialogue flow in [references/transcript-reconciliation.md](references/transcript-reconciliation.md). With a fresh visual packet, one model pass per complete coarse group emits scene understanding, evidence-grounded utterances, caption-ready lines, and finer editorial beats as separate linked outputs. Never feed it an older reconciliation/review/final timeline.
+- For every new editing-oriented run, use `dialogue-preservation/v1` as the
+  canonical policy. Require the merged timeline's `reviewed_dialogue.policy_audit`
+  to pass before summary, highlight selection, or caption rendering.
+- Parallelize across complete scene packets or assets. Give each agent only the fresh packet, its embedded exact contract, and a unique output path. Do not split a context group between agents.
+- Keep the older window-shard reconciliation flow only for transcript-only jobs or compatibility with an existing run.
 - Do not run acoustic language detection by default. A mixed window may contain several language turns. Let the review agent emit multiple utterances first; use MLX `detect_language` only for unresolved audio windows.
-- Merge shards with `python3 scripts/merge_reconciliation_shards.py ...`, then run the project validator.
+- Always run the matching project validator before merge. A syntactically valid model answer is not an accepted transcript or caption script.
 - Escalate only low-confidence, conflicting, or context-dependent windows to a stronger agent such as Terra when available. Codex reviews the remaining exceptions and the merged summary, not every clear window.
 - For visual review, shard by complete scene groups. Never split a group between agents, and require all frame/sample IDs to come from the packet.
+- Treat coarse groups as cheap review units, not edit clips. Use sparse sheets plus speech-boundary hints to group quickly; do the detailed visual/action/dialogue interpretation once in the dense group review. Preserve and resolve any speech window that crosses a coarse boundary.
+- Optimize dialogue review for recall of plausible speech. Low ASR confidence does
+  not justify dropping a turn: recover useful ko/en/mixed wording, use partial or
+  context-supported normalized captions where appropriate, and reserve
+  `language=uncertain` for residue with no usable lexical content. Drop only clear
+  non-speech or meaningless fragments.
 
 ## Completion
 

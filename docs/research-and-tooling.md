@@ -2,6 +2,8 @@
 
 조사일: 2026-09-01
 
+후속 조사: 편집 기능, 자동 QC, Apple Vision, Auto-Editor, OTIO, 오디오 정리와 모션 그래픽 후보의 상세 비교는 [비디오 편집 스킬 확장 조사](video-editing-skill-expansion-research.md)를 참조합니다.
+
 ## 결론
 
 초기 구현은 `FFmpeg/ffprobe + 로컬 STT + 대표 프레임 색인 + OpenTimelineIO` 조합을 권장합니다. 이 방식은 대용량 원본을 외부 서비스에 업로드하지 않고도 인벤토리, 검색, 러프컷, 자막, 편집기용 타임라인을 만들 수 있습니다.

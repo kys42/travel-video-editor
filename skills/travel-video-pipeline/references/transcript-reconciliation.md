@@ -36,7 +36,130 @@ uv run travel-video stt-adaptive /absolute/path/to/video.mp4 \
 
 Record the model and package revisions. Dynamic `uv --with mlx-whisper` resolution is not reproducible unless versions are recorded or pinned.
 
+## Unified scene dialogue and caption review (default for editing)
+
+The canonical policy is `dialogue-preservation/v1`. Treat this as the production
+path for every new editing-oriented asset, not an experimental prompt variant.
+
+When the result will drive the review HTML or burned video subtitles, make the
+actual-utterance decision and the readable caption script in one scene-level model
+pass. The two outputs remain separate and share evidence IDs; this avoids a second
+model pass that can silently change the selected language or invent wording.
+
+Build the packet directly from preserved Apple output and the quick grouped timeline.
+For the Golden integrated flow, also provide the fresh dense visual packet created
+from that same timeline:
+
+```bash
+uv run travel-video build-scene-dialogue-review-packet \
+  work/apple-speech/clip-id/transcript.apple.json \
+  /absolute/path/to/timeline.reviewed.json \
+  --visual-packet /absolute/path/to/context/context-review-packet.json \
+  --max-window 8 \
+  --output work/dialogue/clip-id/scene-dialogue/review-packet.json
+```
+
+This command accepts only `apple-stt/v1`; do not substitute an old reconciliation,
+review, or final timeline. It creates fresh windows internally, checks complete
+lexical candidate/span coverage, records ignored empty Apple final events, preserves
+source span coordinates, and clips only the per-window usable range. It deliberately
+omits prior `dialogue_summary` fields so an independent rerun cannot copy an older
+language decision. The packet contains its exact `scene-dialogue-review/v1`
+`review_contract` and compact example.
+
+With `--visual-packet`, the packet discards prior detailed visual-review conclusions
+and supplies the quick group, dense storyboard candidates, raw bilingual evidence,
+and crossing-window boundary context together. Give one complete packet to a review
+agent. In the same review JSON, require:
+
+- `scene_understanding`: detailed chronological action, context, representative
+  samples, notable moments, and coarse-boundary notes;
+
+- `utterances`: what was actually spoken, in the original language, with source
+  evidence/window/candidate IDs and grounded timing;
+- `captions`: readable display lines with `display_text`, `edit_type`, and source
+  utterance IDs;
+- `window_decisions`: exactly one `resolved`, `uncertain`, or `non_speech` decision
+  for every packet window.
+- `editorial_beats`: finer visual/action/dialogue units inside the coarse group, each
+  linked to its segment/window/utterance/caption/sample IDs, dialogue closure, and
+  any boundary adjustment.
+
+Every window, utterance, and caption must belong to exactly one editorial beat. Beat
+ranges must be ordered, non-overlapping, and anchored to packet evidence. A beat may
+cross a coarse group boundary only when its cited evidence crosses it and the review
+records `extend_before`, `extend_after`, `merge_previous`, or `merge_next`. Coarse
+groups remain model-call and parallelization units; editorial beats become the
+downstream highlight candidates.
+
+When a long asset does not fit comfortably in one agent context, split only at
+complete context-group boundaries, review slices in parallel, and merge them back
+through the full packet validator:
+
+```bash
+uv run travel-video slice-scene-dialogue-review-packet review-packet.json \
+  --groups G001,G002 --output packet.part-01.json
+uv run travel-video slice-scene-dialogue-review-packet review-packet.json \
+  --groups G003,G004 --output packet.part-02.json
+
+uv run travel-video merge-scene-dialogue-review-shards review-packet.json \
+  review.part-01.json review.part-02.json --output review.json
+```
+
+Never divide a context group or let two agents review the same group. The shard
+merge rejects duplicates, gaps, invalid evidence, and changed group order.
+
+Translations never replace `original_text` or `display_text`. Review is
+preservation-first: low ASR confidence alone must not delete a real turn. Assign
+`ko`, `en`, or `mixed` whenever a useful original-language wording can be recovered,
+and feed every such utterance into at least one caption. An uncertain window may
+still contain several caption-ready turns. For clipped speech, keep the reliable
+portion with an ellipsis or use `edit_type=normalized` for a context-supported
+cleanup. Reserve `language=uncertain` for residue with no usable lexical wording;
+only that residue and clear non-speech stay out of captions. Validate and merge into
+a new artifact:
+
+```bash
+uv run travel-video validate-scene-dialogue-review \
+  review-packet.json review.json
+uv run travel-video merge-scene-dialogue-review \
+  timeline.reviewed.json review-packet.json review.json \
+  --output timeline.dialogue-reviewed.json
+```
+
+With `--visual-packet`, merge promotes the quick grouped timeline into a compatible
+context-reviewed timeline while attaching the integrated answer. Without that flag,
+the compatibility route still expects an already context-reviewed timeline.
+
+After merge, require `reviewed_dialogue.policy_audit.status=pass` and
+`caption_coverage_ratio=1.0`. Inspect its window status counts,
+`uncertain_windows_with_captioned_speech`, and
+`uncertain_residue_utterance_count`; these distinguish preserved low-confidence
+speech from genuinely unusable residue. Do not continue to summary or highlight
+selection when `uncaptioned_lexical_utterance_ids` is non-empty.
+
+For a zero-window packet, do not spend a model call:
+
+```bash
+uv run travel-video build-no-candidate-scene-dialogue-review \
+  review-packet.json --output review.json
+```
+
+For a prepared day inventory, generate fresh, resumable packets in parallel:
+
+```bash
+uv run python scripts/build_scene_dialogue_batch.py inventory.json \
+  --output-root work/dialogue/YYYY-MM-DD/assets --jobs 4
+```
+
+The Video Editor caption helper treats top-level `reviewed_dialogue.captions` as
+authoritative, including an explicitly empty list. This prevents rejected legacy STT
+from reappearing in the rendered video.
+
 ## Build the compact packet
+
+Use the following older transcript-only flow when a separate caption script is not
+needed or when continuing an existing reconciliation run.
 
 ```bash
 uv run travel-video build-transcript-reconciliation-packet \
@@ -101,7 +224,9 @@ Rules for the agent:
 - Use only source candidate IDs present in that packet window.
 - Keep timestamps inside the window and grounded in evidence spans. If a span crosses a boundary, clip and note it.
 - Scene context may disambiguate a known item but must not create unheard words.
-- Prefer `uncertain` over silently repairing low-confidence recognition.
+- Preserve a useful low-confidence turn rather than discarding it. Use `uncertain`
+  only for words that cannot be responsibly recovered; record context-supported
+  normalization in notes instead of silently changing the evidence.
 - Use `non_speech` only when evidence supports no lexical utterance.
 
 Suggested task text:
@@ -168,6 +293,32 @@ timestamps, original text, translations, confidence, and candidate IDs. It rejec
 source path/fingerprint mismatches, out-of-duration timestamps, duplicate IDs,
 nonchronological input, and timeline coverage gaps. Never bypass this validation by
 copying dialogue fields manually.
+
+For a readable review page or dialogue-led edit, derive a separate scripted
+timeline after attachment:
+
+```bash
+uv run travel-video build-dialogue-script timeline.final.json \
+  --output dialogue/timeline.scripted.json
+```
+
+This deterministic stage groups adjacent same-language fragments without rewriting
+their words. It preserves `reconciled_transcript` unchanged, records all source
+utterance/window/candidate IDs, and attaches `dialogue_lines` to overlapping
+segments and scene groups. Use `timeline.scripted.json` for the web/library renderer
+and as `metadata.timeline_final` in an edit plan when caption generation should
+prefer readable dialogue blocks. Treat it as machine-grouped evidence: review and
+mark any cleaned or shortened caption as a paraphrase before final rendering.
+
+For a date or story-day batch in the project repository:
+
+```bash
+uv run python scripts/build_dialogue_script_batch.py /absolute/phase1/day-root \
+  --output-root work/full-batch/dialogue-script/YYYY-MM-DD
+```
+
+The batch writes one new scripted timeline per asset plus a manifest with source
+utterance and output line counts. It never modifies final timelines in place.
 
 Keep the pre-escalation review and an explicit correction log. A polished transcript is still an evidence-based editorial transcript, not a measured ground truth unless a person verifies it against the audio.
 

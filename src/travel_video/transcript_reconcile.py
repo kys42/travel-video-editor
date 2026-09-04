@@ -66,33 +66,41 @@ def _locale_fragment(
             continue
         spans = candidate.get("spans", [])
         selected_spans = [
-            span
-            for span in spans
+            (span_index, span)
+            for span_index, span in enumerate(spans)
             if span.get("start") is not None
             and span.get("end") is not None
             and start <= (float(span["start"]) + float(span["end"])) / 2 < end
         ]
         if selected_spans:
-            parts.extend(str(span.get("text", "")) for span in selected_spans)
+            parts.extend(str(span.get("text", "")) for _, span in selected_spans)
             confidences.extend(
                 float(span["confidence"])
-                for span in selected_spans
+                for _, span in selected_spans
                 if span.get("confidence") is not None
             )
             source_ids.append(str(candidate["utterance_id"]))
             evidence_spans.extend(
                 {
                     "source_candidate_id": str(candidate["utterance_id"]),
-                    "start": round(float(span["start"]), 3),
-                    "end": round(float(span["end"]), 3),
+                    "source_span_index": span_index,
+                    "source_start": round(float(span["start"]), 3),
+                    "source_end": round(float(span["end"]), 3),
+                    "start": round(max(start, float(span["start"])), 3),
+                    "end": round(min(end, float(span["end"])), 3),
                     "text": str(span.get("text", "")),
                     "confidence": float(span["confidence"])
                     if span.get("confidence") is not None
                     else None,
                 }
-                for span in selected_spans
+                for span_index, span in selected_spans
             )
-        elif not spans:
+        elif (
+            not spans
+            and start
+            <= (float(candidate["start"]) + float(candidate["end"])) / 2
+            < end
+        ):
             parts.append(str(candidate.get("text", "")))
             if candidate.get("mean_confidence") is not None:
                 confidences.append(float(candidate["mean_confidence"]))
@@ -100,14 +108,17 @@ def _locale_fragment(
             evidence_spans.append(
                 {
                     "source_candidate_id": str(candidate["utterance_id"]),
-                    "start": round(float(candidate["start"]), 3),
-                    "end": round(float(candidate["end"]), 3),
+                    "source_span_index": None,
+                    "source_start": round(float(candidate["start"]), 3),
+                    "source_end": round(float(candidate["end"]), 3),
+                    "start": round(max(start, float(candidate["start"])), 3),
+                    "end": round(min(end, float(candidate["end"])), 3),
                     "text": str(candidate.get("text", "")),
                     "confidence": candidate.get("mean_confidence"),
                 }
             )
     text = _compact_text(parts)
-    if not text:
+    if not text and not source_ids:
         return None
     return {
         "locale": locale,
@@ -203,34 +214,102 @@ def _machine_language_hint(
     }
 
 
-def build_reconciliation_packet(
+def _candidate_activity_intervals(
+    apple: dict[str, Any], candidates: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Rebuild activity coverage from raw candidates, not a stale packet."""
+    ranges: list[tuple[float, float]] = []
+    for activity in apple.get("activity_intervals", []):
+        ranges.append((float(activity["start"]), float(activity["end"])))
+    for candidate in candidates:
+        ranges.append((float(candidate["start"]), float(candidate["end"])))
+        ranges.extend(
+            (float(span["start"]), float(span["end"]))
+            for span in candidate.get("spans", [])
+            if span.get("start") is not None and span.get("end") is not None
+        )
+    valid = sorted((start, end) for start, end in ranges if start >= 0 and end > start)
+    merged: list[list[float]] = []
+    for start, end in valid:
+        if not merged or start > merged[-1][1] + 0.35:
+            merged.append([start, end])
+        else:
+            merged[-1][1] = max(merged[-1][1], end)
+    return [
+        {
+            "activity_id": f"FRESH-ACTIVITY-{index:04d}",
+            "start": round(start, 3),
+            "end": round(end, 3),
+        }
+        for index, (start, end) in enumerate(merged, start=1)
+    ]
+
+
+def create_reconciliation_packet(
     apple_transcript_path: Path,
-    output_path: Path,
     *,
     mlx_normalized_path: Path | None = None,
     timeline_path: Path | None = None,
     max_window: float = 6.0,
-) -> Path:
+) -> dict[str, Any]:
     if max_window <= 0:
         raise ValueError("max_window must be positive")
     apple_transcript_path = apple_transcript_path.expanduser().resolve()
-    output_path = output_path.expanduser().resolve()
     apple = _load(apple_transcript_path)
     mlx = _load(mlx_normalized_path)
     timeline = _load(timeline_path)
     assert apple is not None
+    if apple.get("schema_version") != "apple-stt/v1":
+        raise ValueError(
+            "Fresh reconciliation requires transcript.apple.json (apple-stt/v1); "
+            "a prior reconciliation or review artifact is not accepted"
+        )
     candidates = apple.get("candidates", [])
-    locales = list(apple.get("locales", []))
+    if not isinstance(candidates, list):
+        raise ValueError("Apple transcript candidates must be a list")
+    candidate_ids = [str(candidate.get("utterance_id", "")) for candidate in candidates]
+    if any(not item for item in candidate_ids) or len(candidate_ids) != len(
+        set(candidate_ids)
+    ):
+        raise ValueError("Apple candidate IDs must be present and unique")
+    locales = list(
+        dict.fromkeys(
+            [str(item) for item in apple.get("locales", [])]
+            + [str(candidate.get("requested_locale", "")) for candidate in candidates]
+        )
+    )
+    if any(not str(candidate.get("requested_locale", "")) for candidate in candidates):
+        raise ValueError("Apple transcript must contain candidates with requested locales")
+    lexical_candidates = [
+        candidate
+        for candidate in candidates
+        if str(candidate.get("text", "")).strip() or candidate.get("spans")
+    ]
+    ignored_empty_candidate_ids = [
+        str(candidate["utterance_id"])
+        for candidate in candidates
+        if not str(candidate.get("text", "")).strip() and not candidate.get("spans")
+    ]
+    activities = _candidate_activity_intervals(apple, lexical_candidates)
     windows: list[dict[str, Any]] = []
-    for activity in apple.get("activity_intervals", []):
+    for activity in activities:
         activity_start = float(activity["start"])
         activity_end = float(activity["end"])
         boundaries = sorted(
             {
-                float(candidate[key])
-                for candidate in candidates
-                for key in ("start", "end")
-                if activity_start < float(candidate[key]) < activity_end
+                value
+                for candidate in lexical_candidates
+                for value in (
+                    float(candidate["start"]),
+                    float(candidate["end"]),
+                    *(
+                        coordinate
+                        for span in candidate.get("spans", [])
+                        if span.get("start") is not None and span.get("end") is not None
+                        for coordinate in (float(span["start"]), float(span["end"]))
+                    ),
+                )
+                if activity_start < value < activity_end
             }
         )
         for start, end in _split_activity(
@@ -244,7 +323,7 @@ def build_reconciliation_packet(
                 for locale in locales
                 if (
                     fragment := _locale_fragment(
-                        candidates, locale, start, end
+                        lexical_candidates, locale, start, end
                     )
                 )
                 is not None
@@ -267,7 +346,44 @@ def build_reconciliation_packet(
                     ),
                 }
             )
-    packet = {
+
+    expected_evidence = {
+        (str(candidate["utterance_id"]), span_index)
+        for candidate in lexical_candidates
+        for span_index in (
+            range(len(candidate.get("spans", [])))
+            if candidate.get("spans")
+            else (None,)
+        )
+    }
+    included_evidence = {
+        (str(span["source_candidate_id"]), span.get("source_span_index"))
+        for window in windows
+        for candidate in window["apple_candidates"].values()
+        for span in candidate["evidence_spans"]
+    }
+    missing_evidence = expected_evidence - included_evidence
+    included_candidate_ids = {
+        str(candidate_id)
+        for window in windows
+        for candidate in window["apple_candidates"].values()
+        for candidate_id in candidate["source_candidate_ids"]
+    }
+    lexical_candidate_ids = {
+        str(candidate["utterance_id"]) for candidate in lexical_candidates
+    }
+    missing_candidate_ids = lexical_candidate_ids - included_candidate_ids
+    if missing_candidate_ids or missing_evidence:
+        details: list[str] = []
+        if missing_candidate_ids:
+            details.append(
+                "candidate IDs: " + ", ".join(sorted(missing_candidate_ids))
+            )
+        if missing_evidence:
+            details.append(f"evidence spans: {len(missing_evidence)}")
+        raise ValueError("Fresh reconciliation packet lost Apple evidence (" + "; ".join(details) + ")")
+
+    return {
         "schema_version": RECONCILIATION_PACKET_SCHEMA,
         "source": apple.get("source"),
         "inputs": {
@@ -283,9 +399,11 @@ def build_reconciliation_packet(
         "detector": apple.get("detector"),
         "policy": {
             "max_window_seconds": max_window,
+            "activity_source": "fresh_union_of_detector_activity_and_all_apple_candidates",
             "preserve_original_language": True,
             "translations_are_separate_fields": True,
             "machine_language_hints_are_non_authoritative": True,
+            "all_apple_candidates_and_evidence_are_preserved": True,
         },
         "instructions": [
             "Use Apple candidates as evidence, not as ground truth.",
@@ -297,10 +415,37 @@ def build_reconciliation_packet(
         "summary": {
             "window_count": len(windows),
             "apple_candidate_count": len(candidates),
+            "lexical_candidate_count": len(lexical_candidates),
+            "ignored_empty_candidate_count": len(ignored_empty_candidate_ids),
+            "ignored_empty_candidate_ids": ignored_empty_candidate_ids,
             "activity_interval_count": len(apple.get("activity_intervals", [])),
+            "source_activity_interval_count": len(apple.get("activity_intervals", [])),
+            "fresh_activity_interval_count": len(activities),
+            "apple_evidence_span_count": len(expected_evidence),
+            "included_candidate_count": len(included_candidate_ids),
+            "included_evidence_span_count": len(included_evidence),
+            "missing_candidate_ids": [],
+            "missing_evidence_span_count": 0,
         },
         "windows": windows,
     }
+
+
+def build_reconciliation_packet(
+    apple_transcript_path: Path,
+    output_path: Path,
+    *,
+    mlx_normalized_path: Path | None = None,
+    timeline_path: Path | None = None,
+    max_window: float = 6.0,
+) -> Path:
+    output_path = output_path.expanduser().resolve()
+    packet = create_reconciliation_packet(
+        apple_transcript_path,
+        mlx_normalized_path=mlx_normalized_path,
+        timeline_path=timeline_path,
+        max_window=max_window,
+    )
     atomic_json(output_path, packet)
     return output_path
 

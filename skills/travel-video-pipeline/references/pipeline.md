@@ -96,18 +96,52 @@ uv run travel-video merge-review timeline.machine.json timeline.review.json \
 
 uv run travel-video build-context-packet timeline.reviewed.json \
   --output-dir context --max-frames 8
-uv run travel-video validate-context-review \
-  context/context-review-packet.json context/context-review.json
-uv run travel-video merge-context-review \
-  timeline.reviewed.json context/context-review-packet.json \
-  context/context-review.json --output timeline.context-reviewed.json
 ```
 
-Read `visual-review.md` before authoring either review. Never reuse a context output directory for a different input because generated evidence can be overwritten.
+The first review is deliberately cheap: it creates coarse model-call units rather
+than final edit clips. The context command creates dense storyboard evidence; in the
+Golden path, do not author or merge a separate detailed visual review yet. Pass the
+fresh packet together with raw Apple STT to the integrated scene-dialogue command in
+the next section. That one group-level pass produces detailed scene understanding,
+actual utterances, captions, and finer editorial beats.
+
+Use `validate-context-review` and `merge-context-review` only for a legacy
+visual-only run. Read `visual-review.md` before authoring either kind of review.
+Never reuse a context output directory for a different input because generated
+evidence can be overwritten.
 
 ## 5. Speech and transcript
 
 Read `transcript-reconciliation.md`. Apple dual-locale STT is the preferred local path on supported macOS. Adaptive MLX is optional evidence for unresolved windows. Keep every raw locale output, normalized file, packet, shard, merged review, reconciled JSON, and reconciliation HTML.
+
+For the Golden edit-evidence path, build and review the integrated packet directly
+from the quick grouped timeline plus the fresh dense storyboard packet:
+
+```bash
+uv run travel-video build-scene-dialogue-review-packet \
+  work/apple-speech/clip-id/transcript.apple.json \
+  timeline.reviewed.json \
+  --visual-packet context/context-review-packet.json \
+  --max-window 8 \
+  --output scene-dialogue/review-packet.json
+
+uv run travel-video validate-scene-dialogue-review \
+  scene-dialogue/review-packet.json scene-dialogue/review.json
+uv run travel-video merge-scene-dialogue-review \
+  timeline.reviewed.json scene-dialogue/review-packet.json \
+  scene-dialogue/review.json --output timeline.dialogue-reviewed.json
+```
+
+The merge promotes the quick timeline to a context-reviewed artifact and preserves
+the coarse groups while attaching detailed visual review, actual utterances,
+caption-ready lines, and editorial beats. A beat may refine a boundary but may not
+cut a spoken utterance. Keep the separate transcript-only reconciliation route only
+for compatibility jobs that explicitly need a standalone transcript.
+
+This is the production `dialogue-preservation/v1` path. Before continuing, verify
+that the merged artifact reports `reviewed_dialogue.policy_audit.status=pass`,
+`caption_coverage_ratio=1.0`, and no uncaptioned lexical utterance IDs. An uncertain
+window with captioned speech is a successful recovery, not a validation failure.
 
 Keep `transcript.reconciled.json` as the canonical standalone transcript, then attach
 it losslessly to the final timeline before rendering. The join verifies the Unicode-
@@ -117,32 +151,30 @@ new file; it never modifies either input.
 
 ## 6. Whole-video summary and views
 
-Build the summary only after context review:
+Build the summary only after integrated scene-dialogue review:
 
 ```bash
-uv run travel-video build-video-summary-packet timeline.context-reviewed.json \
+uv run travel-video build-video-summary-packet timeline.dialogue-reviewed.json \
   --output summary/video-summary-packet.json
 uv run travel-video validate-video-summary \
   summary/video-summary-packet.json summary/video-summary.json
-uv run travel-video merge-video-summary timeline.context-reviewed.json \
+uv run travel-video merge-video-summary timeline.dialogue-reviewed.json \
   summary/video-summary-packet.json summary/video-summary.json \
-  --output timeline.summarized.json
+  --output timeline.dialogue-reviewed.summarized.json
 
-uv run travel-video attach-reconciled-transcript \
-  timeline.summarized.json transcript.reconciled.json \
-  --output timeline.final.json
-
-uv run travel-video render-web timeline.final.json \
+uv run travel-video render-web timeline.dialogue-reviewed.summarized.json \
   --output-dir web --assets embed
-uv run travel-video render-library work/phase1-pilot/*/*/timeline.final.json \
+uv run travel-video render-library \
+  'work/phase1-pilot/*/*/timeline.dialogue-reviewed.summarized.json' \
   --output-dir library --title "Trip library" --assets embed \
   --proxy-root "$WORKING_MEDIA_ROOT/proxies/1080p-h264"
 ```
 
-`timeline.final.json` retains the standalone reconciled transcript at the top level and
-attaches source-relative utterance copies to every overlapping segment and group.
-Renderers prefer these original-language utterances while keeping raw STT candidates
-as comparison evidence. `--assets embed` embeds preview images in the main page.
+The integrated timeline keeps authoritative `reviewed_dialogue.utterances`,
+`reviewed_dialogue.captions`, and `reviewed_dialogue.editorial_beats` at the top
+level, with group and segment attachments. Compatibility jobs may still attach a
+standalone legacy reconciliation to a summarized timeline, but new edits must prefer
+the unified reviewed dialogue whenever it is present. `--assets embed` embeds preview images in the main page.
 `--assets relative` is smaller but requires the frame tree to remain available.
 `render-library --proxy-root` discovers uniquely named MP4 proxies and symlinks them
 under the library output so the single top preview player can seek to a selected

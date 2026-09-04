@@ -6,10 +6,19 @@ from pathlib import Path
 
 from .apple_speech import AppleSTTConfig, process_apple_stt
 from .context import build_context_packet, merge_context_review, validate_context_review
+from .dialogue_script import attach_dialogue_script
 from .library import render_video_library
 from .phase1 import Phase1Config, process_assets
 from .proxy import ProxyConfig, build_proxy_batch
 from .review import load_json, merge_review, validate_review
+from .scene_dialogue import (
+    build_no_candidate_scene_dialogue_review,
+    build_scene_dialogue_packet,
+    merge_scene_dialogue_review,
+    merge_scene_dialogue_review_shards,
+    slice_scene_dialogue_packet,
+    validate_scene_dialogue_review,
+)
 from .speech import AdaptiveSTTConfig, process_adaptive_stt
 from .transcript_reconcile import (
     build_reconciliation_packet,
@@ -128,6 +137,65 @@ def build_parser() -> argparse.ArgumentParser:
     render_transcript.add_argument("--review", type=Path)
     render_transcript.add_argument("--output", type=Path, required=True)
 
+    scene_dialogue_packet = subparsers.add_parser(
+        "build-scene-dialogue-review-packet",
+        help="Build fresh Apple STT windows grouped by scene for one-pass dialogue review",
+    )
+    scene_dialogue_packet.add_argument("apple_transcript", type=Path)
+    scene_dialogue_packet.add_argument("timeline", type=Path)
+    scene_dialogue_packet.add_argument("--output", type=Path, required=True)
+    scene_dialogue_packet.add_argument("--mlx-normalized", type=Path)
+    scene_dialogue_packet.add_argument("--max-window", type=float, default=8.0)
+    scene_dialogue_packet.add_argument(
+        "--visual-packet",
+        type=Path,
+        help=(
+            "Use a fresh phase1 context packet for one-pass visual, dialogue, "
+            "caption, and editorial-beat review"
+        ),
+    )
+
+    validate_scene_dialogue = subparsers.add_parser(
+        "validate-scene-dialogue-review",
+        help="Validate one-pass original utterances and caption-ready display lines",
+    )
+    validate_scene_dialogue.add_argument("packet", type=Path)
+    validate_scene_dialogue.add_argument("review", type=Path)
+
+    no_candidate_scene_dialogue = subparsers.add_parser(
+        "build-no-candidate-scene-dialogue-review",
+        help="Create a deterministic empty review for a packet with zero Apple windows",
+    )
+    no_candidate_scene_dialogue.add_argument("packet", type=Path)
+    no_candidate_scene_dialogue.add_argument("--output", type=Path, required=True)
+
+    slice_scene_dialogue = subparsers.add_parser(
+        "slice-scene-dialogue-review-packet",
+        help="Create a complete-scene packet slice for parallel review",
+    )
+    slice_scene_dialogue.add_argument("packet", type=Path)
+    slice_scene_dialogue.add_argument(
+        "--groups", required=True, help="Comma-separated context group IDs"
+    )
+    slice_scene_dialogue.add_argument("--output", type=Path, required=True)
+
+    merge_scene_dialogue_shards = subparsers.add_parser(
+        "merge-scene-dialogue-review-shards",
+        help="Merge validated complete-scene review shards",
+    )
+    merge_scene_dialogue_shards.add_argument("packet", type=Path)
+    merge_scene_dialogue_shards.add_argument("reviews", nargs="+", type=Path)
+    merge_scene_dialogue_shards.add_argument("--output", type=Path, required=True)
+
+    merge_scene_dialogue = subparsers.add_parser(
+        "merge-scene-dialogue-review",
+        help="Attach validated one-pass dialogue review to a new timeline artifact",
+    )
+    merge_scene_dialogue.add_argument("timeline", type=Path)
+    merge_scene_dialogue.add_argument("packet", type=Path)
+    merge_scene_dialogue.add_argument("review", type=Path)
+    merge_scene_dialogue.add_argument("--output", type=Path, required=True)
+
     attach_transcript = subparsers.add_parser(
         "attach-reconciled-transcript",
         help="Attach a validated reconciled transcript to timeline scenes",
@@ -233,6 +301,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Embed representative images or link existing frame files",
     )
 
+    dialogue_script = subparsers.add_parser(
+        "build-dialogue-script",
+        help="Group reconciled utterances into readable timed dialogue lines",
+    )
+    dialogue_script.add_argument("timeline", type=Path)
+    dialogue_script.add_argument("--output", type=Path, required=True)
+    dialogue_script.add_argument("--max-gap", type=float, default=2.2)
+    dialogue_script.add_argument("--max-duration", type=float, default=20.0)
+    dialogue_script.add_argument("--max-chars", type=int, default=160)
+
     serve = subparsers.add_parser(
         "serve-editor", help="Serve the Edit Desk and contract-first agent API"
     )
@@ -324,6 +402,52 @@ def main(argv: list[str] | None = None) -> int:
                     review_path=args.review,
                 )
             )
+        elif args.command == "build-scene-dialogue-review-packet":
+            print(
+                build_scene_dialogue_packet(
+                    args.apple_transcript,
+                    args.timeline,
+                    args.output,
+                    mlx_normalized_path=args.mlx_normalized,
+                    max_window=args.max_window,
+                    visual_packet_path=args.visual_packet,
+                )
+            )
+        elif args.command == "validate-scene-dialogue-review":
+            validate_scene_dialogue_review(
+                load_json(args.packet),
+                load_json(args.review),
+            )
+            print("scene dialogue review valid")
+        elif args.command == "build-no-candidate-scene-dialogue-review":
+            print(
+                build_no_candidate_scene_dialogue_review(
+                    args.packet,
+                    args.output,
+                )
+            )
+        elif args.command == "slice-scene-dialogue-review-packet":
+            group_ids = [
+                item.strip() for item in args.groups.split(",") if item.strip()
+            ]
+            print(slice_scene_dialogue_packet(args.packet, group_ids, args.output))
+        elif args.command == "merge-scene-dialogue-review-shards":
+            print(
+                merge_scene_dialogue_review_shards(
+                    args.packet,
+                    args.reviews,
+                    args.output,
+                )
+            )
+        elif args.command == "merge-scene-dialogue-review":
+            print(
+                merge_scene_dialogue_review(
+                    args.timeline,
+                    args.packet,
+                    args.review,
+                    args.output,
+                )
+            )
         elif args.command == "attach-reconciled-transcript":
             print(
                 attach_reconciled_transcript(
@@ -394,6 +518,16 @@ def main(argv: list[str] | None = None) -> int:
                 proxy_root=args.proxy_root,
             )
             print(output)
+        elif args.command == "build-dialogue-script":
+            print(
+                attach_dialogue_script(
+                    args.timeline,
+                    args.output,
+                    max_gap=args.max_gap,
+                    max_duration=args.max_duration,
+                    max_chars=args.max_chars,
+                )
+            )
         elif args.command == "serve-editor":
             from .editor.server import serve_editor
 

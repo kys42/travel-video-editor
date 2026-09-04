@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from travel_video.library import render_video_library
+from travel_video.dialogue_script import attach_dialogue_script
 from travel_video.transcript_attach import (
     attach_reconciled_transcript,
     validate_transcript_timeline_alignment,
@@ -215,3 +216,71 @@ def test_attachment_rejects_mismatched_source_or_duration(tmp_path: Path) -> Non
     transcript["utterances"][1]["end"] = 10.5
     with pytest.raises(ValueError, match="outside timeline duration"):
         validate_transcript_timeline_alignment(timeline, transcript)
+
+
+def test_dialogue_script_groups_fragments_and_drives_renderers(tmp_path: Path) -> None:
+    timeline = _timeline(tmp_path)
+    transcript = _transcript()
+    transcript["utterances"] = [
+        {
+            **transcript["utterances"][0],
+            "start": 1.0,
+            "end": 1.8,
+            "original_text": "기차를 타러 가야 되는데",
+            "translations": {"en": "We need to catch the train,"},
+        },
+        {
+            **transcript["utterances"][0],
+            "utterance_id": "U0002",
+            "window_id": "RW0002",
+            "start": 2.2,
+            "end": 3.4,
+            "original_text": "준비하는 데 시간이 좀 걸렸어요.",
+            "translations": {"en": "but getting ready took a while."},
+        },
+        {
+            **transcript["utterances"][1],
+            "utterance_id": "U0003",
+            "window_id": "RW0003",
+            "start": 6.0,
+            "end": 7.0,
+        },
+    ]
+    timeline_path = tmp_path / "timeline.summarized.json"
+    transcript_path = tmp_path / "transcript.reconciled.json"
+    attached_path = tmp_path / "timeline.final.json"
+    scripted_path = tmp_path / "dialogue" / "timeline.scripted.json"
+    timeline_path.write_text(json.dumps(timeline), encoding="utf-8")
+    transcript_path.write_text(json.dumps(transcript), encoding="utf-8")
+
+    attach_reconciled_transcript(timeline_path, transcript_path, attached_path)
+    attach_dialogue_script(attached_path, scripted_path)
+    scripted = json.loads(scripted_path.read_text(encoding="utf-8"))
+
+    assert scripted["dialogue_script"]["source_utterance_count"] == 3
+    assert scripted["dialogue_script"]["line_count"] == 2
+    first = scripted["dialogue_script"]["lines"][0]
+    assert first["original_text"] == (
+        "기차를 타러 가야 되는데 준비하는 데 시간이 좀 걸렸어요."
+    )
+    assert first["source_utterance_ids"] == ["U0001", "U0002"]
+    assert scripted["reconciled_transcript"]["utterances"] == transcript["utterances"]
+    assert scripted["segments"][0]["dialogue_lines"][0]["source_start"] == 1.0
+
+    web_path = render_timeline_web(scripted_path, tmp_path / "scripted-web")
+    web = web_path.read_text(encoding="utf-8")
+    assert "정리 대본과 타임코드 보기" in web
+    assert "2개 대사 블록" in web
+    web_manifest = json.loads(
+        (web_path.parent / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert web_manifest["has_dialogue_script"] is True
+
+    library_path = render_video_library([scripted_path], tmp_path / "scripted-library")
+    library = library_path.read_text(encoding="utf-8")
+    assert "정리 대본" in library
+    assert "기차를 타러 가야 되는데 준비하는 데 시간이 좀 걸렸어요." in library
+    library_manifest = json.loads(
+        (library_path.parent / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert library_manifest["dialogue_script_video_count"] == 1
