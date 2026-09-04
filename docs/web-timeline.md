@@ -52,6 +52,29 @@ uv run travel-video render-web timeline.context-reviewed.json \
 10. 화면 맥락과 STT를 종합한 대화 요약
 11. 필요할 때만 펼치는 한국어·영어 STT 원문 후보
 
+## Review Workspace와 Rough Cut
+
+다중 영상 라이브러리가 생성하는 `index.html`에는 영상 목록과 장면 타임라인을
+묶은 `Review Workspace`가 하나만 존재합니다. Review와 Rough Cut은 이 DOM을
+복사하지 않고 같은 검색, 영상 선택, 장면 펼침, 다중 선택, 프록시 seek 상태를
+그대로 공유합니다.
+
+- Review: `Review Workspace + Source Monitor`
+- Rough Cut: `Review Workspace + Revision + AI Editor`
+
+서버에서는 `/`와 `/rough-cut`이 같은 생성 문서를 제공합니다. 브라우저 모드가
+바깥 패널 배치만 전환하므로 Review의 장면 정보나 동작을 수정하면 Rough Cut에도
+자동으로 반영됩니다. 오프라인 파일에서는 `?mode=review`와
+`?mode=rough-cut`으로 같은 전환을 사용합니다.
+
+에이전트가 `edit_revision_ref` 카드를 보내면 가운데 Revision 패널은 원본 장면
+ID를 가진 클립 목록을 구성합니다. 클립을 누르면 공용 Review Workspace가 해당
+영상으로 전환하고 연결 장면을 펼쳐 원본 근거와 STT를 즉시 검토할 수 있습니다.
+가운데 Program Preview는 같은 프록시의 `source_in`부터 `source_out`까지만
+재생합니다. 클라이언트는 마지막 revision 카드를 라이브러리 지문별 세션 저장소에
+보존하며, 서버 모드에서는 SQLite의 edit/revision이 실제로 존재하는지 확인한 뒤
+복원합니다. 편집의 권위 있는 상태는 계속 SQLite revision과 서버 도구 계약입니다.
+
 편집 제안은 `우선 유지`, `선별 사용`, `짧게 연결`, `축약·제외` 네 상태입니다. 핵심 순간, 중요도, 장면 유형과 기계 품질 경고로 만든 검토 우선순위이며 자동 컷 확정이 아닙니다. 사용자는 같은 행에서 실제 행동과 전사 후보를 함께 보고 구간 길이를 판단할 수 있습니다.
 
 특이 포인트는 사건 요약을 과장하지 않도록 별도 데이터로 둡니다. 그룹당 0~3개이며 실제로 편집 가치가 있을 때만 생성합니다. 모든 항목은 스토리보드 후보 프레임에 연결되고 `category`, `title`, `description`, `edit_hint`를 가집니다. 웹에서는 상단 특이 포인트 카드, 해당 편집 판단 행과 장면 흐름의 프레임 배지에 같은 근거를 반복 표시합니다.

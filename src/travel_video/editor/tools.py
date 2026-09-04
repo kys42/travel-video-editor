@@ -190,6 +190,8 @@ class ToolGateway:
                         "clip_id": item["id"],
                         "scene_id": item["metadata"].get("scene_id"),
                         "label": item["label"],
+                        "source_in": item["source_in"],
+                        "source_out": item["source_out"],
                         "duration": round(item["source_out"] - item["source_in"], 3),
                     }
                     for item in revision["plan"].get("clips", [])

@@ -9,8 +9,10 @@ The primary usage scene is a single editor reviewing many clips for long session
 ## Layout
 
 - Application chrome is 44px high.
-- Desktop uses three structural columns: 220–240px footage bin, flexible timeline, 300–360px source monitor.
-- The center timeline is the primary work surface and gets the remaining width.
+- `Review Workspace` is the single shared surface for the 220–240px footage bin and flexible source-time timeline. Review and Rough Cut must render this exact same DOM and behavior rather than maintaining visual copies.
+- Review mode places the shared workspace beside a 300–360px source monitor.
+- Rough Cut mode places the same shared workspace beside a 320–340px revision panel and a 320–360px AI chat panel. Only the outer shell and companion tools change.
+- The timeline is the primary reading surface and gets the remaining width inside the shared workspace.
 - Scene summaries stay compact. Opening a scene adds exactly one nested detail layer beneath that row.
 - Interpretation belongs in the expanded row; the right panel is only for selected visual evidence, source range, and media state.
 - At narrow widths, panels stack without changing the underlying information order.
@@ -44,6 +46,7 @@ Color always communicates selection, evidence type, confidence, or an error. It 
 - Scene rows expose time, representative frame, action interpretation, dialogue summary, notable state, and confidence before expansion.
 - Expanded scene detail follows this order: interpretation and dialogue; edit/notable guidance; segment-level action and raw STT evidence; contextual storyboard.
 - Only one scene is open at once inside the active clip to preserve scan position.
+- Selecting a revision clip must select its footage row, open the linked scene in the shared workspace, and keep the scene summary visible after scrolling.
 - The source monitor follows the selected scene and truthfully reports `프록시 없음` until proxy media exists.
 - Controls require hover, active, disabled, and visible keyboard-focus states. Motion is limited to 150–200ms state transitions and respects reduced motion.
 
