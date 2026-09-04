@@ -25,8 +25,20 @@ Use a JSON document so clip selection, captions, and render settings remain revi
       "source_out": 18.0,
       "label": "Reaction",
       "reason": "Reviewed candid moment",
-      "speed": 1.0,
-      "volume_db": 0.0
+      "speed": 2.5,
+      "volume_db": -2.0,
+      "audio_fade_in": 0.08,
+      "audio_fade_out": 0.12,
+      "reframe": {
+        "mode": "cover",
+        "anchor_x": 0.5,
+        "anchor_y": 0.42
+      },
+      "rotation": 0,
+      "transition_after": {
+        "type": "dissolve",
+        "duration": 0.35
+      }
     }
   ],
   "captions": [
@@ -53,13 +65,20 @@ Use a JSON document so clip selection, captions, and render settings remain revi
 - `source` is the authoritative media path. It is required and must never be the output path.
 - `proxy` is optional. `--media-mode auto` prefers it when it exists; `proxy` requires it; `source` ignores it.
 - `source_in` and `source_out` use seconds on the authoritative source timeline. The renderer verifies the range against the selected file and writes computed output ranges to the render manifest.
-- `speed` defaults to `1.0` and accepts `0.5` through `2.0`. Output duration is `(source_out - source_in) / speed`.
+- `speed` defaults to `1.0` and accepts `0.25` through `8.0`. The renderer chains legal FFmpeg `atempo` stages so audio keeps its pitch. Output duration is `(source_out - source_in) / speed`.
 - `volume_db` defaults to `0.0` and is applied before final loudness normalization.
+- `mute_audio` defaults to `false`. Use it for visual-only cutaways while keeping a valid silent audio stream.
+- `audio_fade_in` and `audio_fade_out` use seconds on the speed-adjusted clip and default to `0`.
+- `reframe.mode` is `contain` by default, preserving the full frame with padding. `cover` fills the output and crops overflow; `anchor_x` and `anchor_y` select the crop focus from `0` (left/top) to `1` (right/bottom).
+- `rotation` accepts `0`, `90`, `180`, or `270` clockwise degrees and is applied before reframing.
+- `transition_after` overlaps the clip with the following clip. It accepts `dissolve`, `fadeblack`, `fadewhite`, `wipeleft`, `wiperight`, `slideleft`, or `slideright`; its duration must be shorter than both clips. Omit it for a hard cut. Transitions reduce the assembled duration by their overlap.
 - `metadata` may carry reviewed scene IDs, notable-moment IDs, or other selection provenance. It is copied to the render manifest.
 - `captions` use seconds on the assembled output timeline and are both burned into the picture and exported to SRT.
 - Caption `kind` is provenance metadata: use `verified`, `stt`, or `paraphrase`. The renderer preserves it in the normalized manifest but does not change visual style automatically.
 - `overlays` use the assembled output timeline. Supported styles are `title`, `label`, and `subtitle`.
 - Top-level `provenance` may point to input timelines, transcript revisions, or an approval record. It is preserved unchanged in the render manifest.
+
+For transcript-derived captions, run `attach_timeline_captions.py` after setting clip speed and transitions. It maps source timestamps onto the overlapped output timeline.
 
 ## Output settings
 

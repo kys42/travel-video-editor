@@ -29,6 +29,18 @@ DEFAULT_FONT_CANDIDATES = (
     Path("/System/Library/Fonts/Supplemental/Arial Unicode.ttf"),
     Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"),
 )
+MIN_SPEED = 0.25
+MAX_SPEED = 8.0
+TRANSITION_TYPES = {
+    "dissolve": "fade",
+    "fade": "fade",
+    "fadeblack": "fadeblack",
+    "fadewhite": "fadewhite",
+    "wipeleft": "wipeleft",
+    "wiperight": "wiperight",
+    "slideleft": "slideleft",
+    "slideright": "slideright",
+}
 
 
 class PlanError(ValueError):
@@ -226,7 +238,6 @@ def normalize_plan(
 
     normalized_clips: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
-    cursor = 0.0
     resolved_output = output_path.resolve()
     for index, raw in enumerate(clips, start=1):
         if not isinstance(raw, dict):
@@ -264,13 +275,82 @@ def normalize_plan(
                 f"({source_out:.3f} > {selected_probe['duration']:.3f})"
             )
         speed = float(raw.get("speed", 1.0))
-        if not math.isfinite(speed) or not 0.5 <= speed <= 2.0:
-            raise PlanError(f"{clip_id}.speed must be between 0.5 and 2.0")
+        if not math.isfinite(speed) or not MIN_SPEED <= speed <= MAX_SPEED:
+            raise PlanError(
+                f"{clip_id}.speed must be between {MIN_SPEED} and {MAX_SPEED}"
+            )
         volume_db = float(raw.get("volume_db", 0.0))
         if not math.isfinite(volume_db) or not -60 <= volume_db <= 24:
             raise PlanError(f"{clip_id}.volume_db must be between -60 and 24")
+        mute_audio = raw.get("mute_audio", False)
+        if not isinstance(mute_audio, bool):
+            raise PlanError(f"{clip_id}.mute_audio must be true or false")
+        audio_fade_in = _time_value(
+            raw.get("audio_fade_in", 0), f"{clip_id}.audio_fade_in"
+        )
+        audio_fade_out = _time_value(
+            raw.get("audio_fade_out", 0), f"{clip_id}.audio_fade_out"
+        )
+
+        reframe_raw = raw.get("reframe") or {}
+        if isinstance(reframe_raw, str):
+            reframe_raw = {"mode": reframe_raw}
+        if not isinstance(reframe_raw, dict):
+            raise PlanError(f"{clip_id}.reframe must be an object or mode string")
+        reframe_mode = str(reframe_raw.get("mode", "contain"))
+        if reframe_mode not in {"contain", "cover"}:
+            raise PlanError(f"{clip_id}.reframe.mode must be contain or cover")
+        anchor_x = float(reframe_raw.get("anchor_x", 0.5))
+        anchor_y = float(reframe_raw.get("anchor_y", 0.5))
+        if not math.isfinite(anchor_x) or not 0 <= anchor_x <= 1:
+            raise PlanError(f"{clip_id}.reframe.anchor_x must be between 0 and 1")
+        if not math.isfinite(anchor_y) or not 0 <= anchor_y <= 1:
+            raise PlanError(f"{clip_id}.reframe.anchor_y must be between 0 and 1")
+
+        rotation_value = raw.get("rotation", 0)
+        try:
+            rotation_number = float(rotation_value)
+        except (TypeError, ValueError) as exc:
+            raise PlanError(f"{clip_id}.rotation must be 0, 90, 180, or 270") from exc
+        if not math.isfinite(rotation_number) or not rotation_number.is_integer():
+            raise PlanError(f"{clip_id}.rotation must be 0, 90, 180, or 270")
+        rotation = int(rotation_number) % 360
+        if rotation not in {0, 90, 180, 270}:
+            raise PlanError(f"{clip_id}.rotation must be 0, 90, 180, or 270")
+
+        transition_raw = raw.get("transition_after")
+        transition = None
+        if transition_raw is not None:
+            if isinstance(transition_raw, str):
+                transition_raw = {"type": transition_raw}
+            if not isinstance(transition_raw, dict):
+                raise PlanError(
+                    f"{clip_id}.transition_after must be an object or type string"
+                )
+            transition_type = str(transition_raw.get("type", "dissolve"))
+            if transition_type == "none":
+                transition_raw = None
+            else:
+                if transition_type not in TRANSITION_TYPES:
+                    raise PlanError(
+                        f"{clip_id}.transition_after.type is unsupported: "
+                        f"{transition_type}"
+                    )
+                transition_duration = _positive_number(
+                    transition_raw.get("duration", 0.35),
+                    f"{clip_id}.transition_after.duration",
+                )
+                transition = {
+                    "type": transition_type,
+                    "ffmpeg_type": TRANSITION_TYPES[transition_type],
+                    "duration": round(transition_duration, 6),
+                }
         source_duration = source_out - source_in
         output_duration = source_duration / speed
+        if audio_fade_in > output_duration:
+            raise PlanError(f"{clip_id}.audio_fade_in exceeds clip output duration")
+        if audio_fade_out > output_duration:
+            raise PlanError(f"{clip_id}.audio_fade_out exceeds clip output duration")
         normalized_clips.append(
             {
                 "id": clip_id,
@@ -283,11 +363,21 @@ def normalize_plan(
                 "source_in": round(source_in, 6),
                 "source_out": round(source_out, 6),
                 "source_duration": round(source_duration, 6),
-                "output_in": round(cursor, 6),
-                "output_out": round(cursor + output_duration, 6),
+                "output_in": 0.0,
+                "output_out": 0.0,
                 "output_duration": round(output_duration, 6),
                 "speed": speed,
                 "volume_db": volume_db,
+                "mute_audio": mute_audio,
+                "audio_fade_in": round(audio_fade_in, 6),
+                "audio_fade_out": round(audio_fade_out, 6),
+                "reframe": {
+                    "mode": reframe_mode,
+                    "anchor_x": anchor_x,
+                    "anchor_y": anchor_y,
+                },
+                "rotation": rotation,
+                "transition_after": transition,
                 "label": str(raw.get("label") or ""),
                 "reason": str(raw.get("reason") or ""),
                 "metadata": dict(raw.get("metadata") or {}),
@@ -295,7 +385,27 @@ def normalize_plan(
                 "selected_probe": selected_probe,
             }
         )
-        cursor += output_duration
+
+    cursor = 0.0
+    for index, clip in enumerate(normalized_clips):
+        clip["output_in"] = round(cursor, 6)
+        clip["output_out"] = round(cursor + clip["output_duration"], 6)
+        transition = clip["transition_after"]
+        if transition:
+            if index == len(normalized_clips) - 1:
+                raise PlanError(
+                    f"{clip['id']}.transition_after cannot follow the final clip"
+                )
+            next_clip = normalized_clips[index + 1]
+            maximum = min(clip["output_duration"], next_clip["output_duration"])
+            if transition["duration"] >= maximum:
+                raise PlanError(
+                    f"{clip['id']}.transition_after.duration must be shorter than "
+                    "both adjacent clips"
+                )
+            cursor = clip["output_out"] - transition["duration"]
+        else:
+            cursor = clip["output_out"]
 
     total_duration = round(cursor, 6)
 
@@ -451,8 +561,19 @@ def render_overlay_image(
     canvas.save(path)
 
 
-def _atempo(speed: float) -> str:
-    return f"atempo={speed:.8f}"
+def _atempo_filters(speed: float) -> list[str]:
+    """Return legal 0.5-2.0 atempo stages while preserving audio pitch."""
+    stages: list[float] = []
+    remaining = speed
+    while remaining < 0.5 - 1e-9:
+        stages.append(0.5)
+        remaining /= 0.5
+    while remaining > 2.0 + 1e-9:
+        stages.append(2.0)
+        remaining /= 2.0
+    if not math.isclose(remaining, 1.0, rel_tol=1e-9, abs_tol=1e-9):
+        stages.append(remaining)
+    return [f"atempo={stage:.8f}" for stage in stages]
 
 
 def build_command(
@@ -476,23 +597,48 @@ def build_command(
         command.extend(["-loop", "1", "-framerate", output["fps"], "-i", str(path)])
 
     graph: list[str] = []
-    concat_inputs: list[str] = []
     width, height, fps = output["width"], output["height"], output["fps"]
     for index, clip in enumerate(clips):
         duration = clip["source_duration"]
         speed = clip["speed"]
         video_filters = [
             f"trim=duration={duration:.6f}",
-            (
-                f"scale={width}:{height}:force_original_aspect_ratio=decrease:"
-                "flags=lanczos"
-            ),
-            f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black",
-            f"fps={fps}",
-            "setsar=1",
             f"setpts=(PTS-STARTPTS)/{speed:.8f}",
-            "format=yuv420p",
         ]
+        if clip["rotation"] == 90:
+            video_filters.append("transpose=clock")
+        elif clip["rotation"] == 180:
+            video_filters.extend(["hflip", "vflip"])
+        elif clip["rotation"] == 270:
+            video_filters.append("transpose=cclock")
+        reframe = clip["reframe"]
+        if reframe["mode"] == "cover":
+            video_filters.extend(
+                [
+                    (
+                        f"scale={width}:{height}:force_original_aspect_ratio=increase:"
+                        "flags=lanczos"
+                    ),
+                    (
+                        f"crop={width}:{height}:"
+                        f"(iw-{width})*{reframe['anchor_x']:.6f}:"
+                        f"(ih-{height})*{reframe['anchor_y']:.6f}"
+                    ),
+                ]
+            )
+        else:
+            video_filters.extend(
+                [
+                    (
+                        f"scale={width}:{height}:force_original_aspect_ratio=decrease:"
+                        "flags=lanczos"
+                    ),
+                    f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2:color=black",
+                ]
+            )
+        video_filters.extend(
+            [f"fps={fps}", "setsar=1", "format=yuv420p", "settb=AVTB"]
+        )
         graph.append(f"[{index}:v:0]{','.join(video_filters)}[v{index}]")
         if clip["selected_probe"]["audio"]:
             audio_filters = [
@@ -501,10 +647,22 @@ def build_command(
                 "aformat=sample_rates=48000:channel_layouts=stereo",
                 "asetpts=PTS-STARTPTS",
             ]
-            if speed != 1.0:
-                audio_filters.append(_atempo(speed))
-            if clip["volume_db"] != 0.0:
+            audio_filters.extend(_atempo_filters(speed))
+            if clip["mute_audio"]:
+                audio_filters.append("volume=0")
+            elif clip["volume_db"] != 0.0:
                 audio_filters.append(f"volume={clip['volume_db']:.3f}dB")
+            if clip["audio_fade_in"] > 0:
+                audio_filters.append(
+                    f"afade=t=in:st=0:d={clip['audio_fade_in']:.6f}"
+                )
+            if clip["audio_fade_out"] > 0:
+                audio_filters.append(
+                    f"afade=t=out:st="
+                    f"{clip['output_duration'] - clip['audio_fade_out']:.6f}:"
+                    f"d={clip['audio_fade_out']:.6f}"
+                )
+            audio_filters.append("asetpts=PTS-STARTPTS")
             graph.append(f"[{index}:a:0]{','.join(audio_filters)}[a{index}]")
         else:
             graph.append(
@@ -512,10 +670,33 @@ def build_command(
                 f"atrim=duration={clip['output_duration']:.6f},"
                 f"asetpts=PTS-STARTPTS[a{index}]"
             )
-        concat_inputs.append(f"[v{index}][a{index}]")
-    graph.append(f"{''.join(concat_inputs)}concat=n={len(clips)}:v=1:a=1[vcat][acat]")
+    current_video = "v0"
+    current_audio = "a0"
+    for index in range(1, len(clips)):
+        transition = clips[index - 1]["transition_after"]
+        next_video = f"vjoin{index}"
+        next_audio = f"ajoin{index}"
+        if transition:
+            graph.append(
+                f"[{current_video}][v{index}]xfade="
+                f"transition={transition['ffmpeg_type']}:"
+                f"duration={transition['duration']:.6f}:"
+                f"offset={clips[index]['output_in']:.6f}[{next_video}]"
+            )
+            graph.append(
+                f"[{current_audio}][a{index}]acrossfade="
+                f"d={transition['duration']:.6f}:c1=tri:c2=tri[{next_audio}]"
+            )
+        else:
+            graph.append(
+                f"[{current_video}][v{index}]concat=n=2:v=1:a=0[{next_video}]"
+            )
+            graph.append(
+                f"[{current_audio}][a{index}]concat=n=2:v=0:a=1[{next_audio}]"
+            )
+        current_video = next_video
+        current_audio = next_audio
 
-    current_video = "vcat"
     all_events = normalized["overlays"] + normalized["captions"]
     image_start_index = len(clips)
     for index, event in enumerate(all_events):
@@ -553,7 +734,7 @@ def build_command(
             f"afade=t=out:st={max(0.0, total - output['fade_out']):.6f}:"
             f"d={output['fade_out']:.6f}"
         )
-    graph.append(f"[acat]{','.join(audio_tail)}[aout]")
+    graph.append(f"[{current_audio}]{','.join(audio_tail)}[aout]")
 
     command.extend(
         [
@@ -715,6 +896,11 @@ def main() -> int:
                         "title": normalized["title"],
                         "timeline_duration": normalized["timeline_duration"],
                         "clip_count": len(normalized["clips"]),
+                        "transition_count": sum(
+                            1
+                            for clip in normalized["clips"]
+                            if clip["transition_after"]
+                        ),
                         "caption_count": len(normalized["captions"]),
                         "overlay_count": len(normalized["overlays"]),
                         "media_modes": sorted(
@@ -748,6 +934,12 @@ def main() -> int:
         normalized["output_probe"] = output_probe
         normalized["completed_at"] = datetime.now(UTC).isoformat()
         normalized["status"] = "completed"
+        normalized["clip_count"] = len(normalized["clips"])
+        normalized["transition_count"] = sum(
+            1 for clip in normalized["clips"] if clip["transition_after"]
+        )
+        normalized["caption_count"] = len(normalized["captions"])
+        normalized["overlay_count"] = len(normalized["overlays"])
         write_srt(normalized["captions"], srt_path)
         manifest_path.write_text(
             json.dumps(normalized, ensure_ascii=False, indent=2) + "\n",
