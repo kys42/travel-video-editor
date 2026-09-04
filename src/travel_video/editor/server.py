@@ -262,6 +262,29 @@ def create_editor_app(
         )
         return FileResponse(guide_path, media_type="text/html")
 
+    rough_cut_demo_dir = catalog.library_dir.parent / "rough-cut-demo"
+    rough_cut_data_path = catalog.library_dir.parent / "design-options" / "data.js"
+
+    @app.get("/rough-cut-demo", include_in_schema=False)
+    async def rough_cut_demo() -> FileResponse:
+        return FileResponse(rough_cut_demo_dir / "index.html", media_type="text/html")
+
+    @app.get("/rough-cut-demo/{filename}", include_in_schema=False)
+    async def rough_cut_demo_asset(filename: str) -> FileResponse:
+        if Path(filename).name != filename:
+            raise HTTPException(status_code=404)
+        if filename == "data.js":
+            candidate = rough_cut_data_path
+        else:
+            candidate = rough_cut_demo_dir / filename
+        if not candidate.is_file():
+            raise HTTPException(status_code=404)
+        media_type = {
+            ".css": "text/css",
+            ".js": "application/javascript",
+        }.get(candidate.suffix, "application/octet-stream")
+        return FileResponse(candidate, media_type=media_type)
+
     return app
 
 

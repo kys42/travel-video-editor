@@ -6,15 +6,20 @@ Do not start by streaming or sampling every frame into Codex. Use this ladder:
 
 1. Machine cuts, motion/change scores, audio activity, and sparse thumbnails.
 2. One contact sheet per provisional scene group.
-3. First-pass scene/group review from those sheets.
-4. Denser multi-frame storyboard only for each reviewed group.
-5. Exception inspection of individual frames or short proxy ranges.
+3. Quick scene grouping from those sheets plus compact speech-boundary hints.
+4. Denser multi-frame storyboard only for each coarse group.
+5. One integrated group review of visual context, dialogue, captions, and editorial beats.
+6. Exception inspection of individual frames or short proxy ranges.
 
 This keeps the expensive semantic pass compact while still allowing more images where actions or transitions matter.
 
 ## First-pass contact-sheet review
 
-Read the generated review packet and every referenced contact sheet. Author `timeline.review.json` without changing machine IDs or time ranges. Describe observable action rather than generic labels:
+Read the generated review packet and every referenced contact sheet. Author
+`timeline.review.json` without changing machine IDs or time ranges. Keep this pass
+cheap: write only enough observable detail to form safe coarse groups rather than
+attempting final scene understanding. Describe observable action rather than generic
+labels:
 
 - who/what is visible and what changes;
 - camera movement and setting;
@@ -31,7 +36,7 @@ uv run travel-video merge-review timeline.machine.json timeline.review.json \
 
 The validator requires exact segment order and contiguous coverage. Never invent frame IDs.
 
-## Dense storyboard review
+## Dense storyboard evidence and integrated review
 
 Build up to eight frames per reviewed group by default:
 
@@ -40,13 +45,25 @@ uv run travel-video build-context-packet timeline.reviewed.json \
   --output-dir context --max-frames 8
 ```
 
-Inspect each storyboard as a whole. Add:
+For the Golden path, do not author a separate detailed visual answer here. Pass the
+fresh `context-review-packet.json` to `build-scene-dialogue-review-packet
+--visual-packet`; one group-level model pass then adds:
 
 - a chronological `narrative_summary` describing what actually happens;
-- `dialogue_summary` as a semantic summary, not a verbatim transcript;
 - a representative sample ID from the candidate list;
 - notable moments with source-relative timestamps and candidate frame IDs;
-- confidence and explicit uncertainty.
+- confidence and explicit uncertainty;
+- actual utterances, readable original-language captions, and all-window decisions;
+- finer `editorial_beats` linked to visual and dialogue evidence.
+
+This pass follows `dialogue-preservation/v1`: visual context may support a careful
+normalization, but low ASR confidence alone may not remove plausible speech. Keep
+the uncertainty on the window or caption note while preserving every usable
+original-language turn.
+
+Use the separate `phase1-context-review/v1` shape below only when continuing a
+legacy visual-only run. Do not treat its older `dialogue_summary` as evidence for a
+fresh integrated review.
 
 Use denser sampling when a group contains a quick action, reaction, handoff, ordering exchange, or large camera move. Use fewer frames for static shots. If the sheet is ambiguous, inspect the listed individual frames before asking for more extraction.
 
@@ -98,7 +115,9 @@ uv run travel-video merge-context-review \
 
 ## Whole-video synthesis
 
-After every group is reviewed, create the compact video-summary packet. The synthesis agent should read group summaries and representative frames rather than all source frames.
+After every group has the integrated visual/dialogue review, create the compact
+video-summary packet. The synthesis agent should read group summaries, editorial
+beats, captions, and representative frames rather than all source frames.
 
 The final summary should state the clip's setting, progression, outcome, best moments, likely edit use, and uncertainty. Keep events chronological. Highlights must reference eligible groups/frames from the packet.
 
@@ -119,17 +138,13 @@ The final summary should state the clip's setting, progression, outcome, best mo
 There must be exactly one chronological event for every packet group in packet order, at most three unique highlights, and one to eight non-empty tags.
 
 ```bash
-uv run travel-video build-video-summary-packet timeline.context-reviewed.json \
+uv run travel-video build-video-summary-packet timeline.dialogue-reviewed.json \
   --output summary/video-summary-packet.json
 uv run travel-video validate-video-summary \
   summary/video-summary-packet.json summary/video-summary.json
-uv run travel-video merge-video-summary timeline.context-reviewed.json \
+uv run travel-video merge-video-summary timeline.dialogue-reviewed.json \
   summary/video-summary-packet.json summary/video-summary.json \
-  --output timeline.summarized.json
-
-uv run travel-video attach-reconciled-transcript \
-  timeline.summarized.json transcript.reconciled.json \
-  --output timeline.final.json
+  --output timeline.dialogue-reviewed.summarized.json
 ```
 
 ## Template rendering
@@ -137,9 +152,10 @@ uv run travel-video attach-reconciled-transcript \
 Use embedded assets for a portable desktop-first review page:
 
 ```bash
-uv run travel-video render-web timeline.final.json \
+uv run travel-video render-web timeline.dialogue-reviewed.summarized.json \
   --output-dir web --assets embed
-uv run travel-video render-library work/phase1-pilot/*/*/timeline.final.json \
+uv run travel-video render-library \
+  'work/phase1-pilot/*/*/timeline.dialogue-reviewed.summarized.json' \
   --output-dir library --assets embed \
   --proxy-root "$WORKING_MEDIA_ROOT/proxies/1080p-h264"
 ```
