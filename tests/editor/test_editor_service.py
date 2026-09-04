@@ -309,6 +309,10 @@ def test_demo_agent_runs_search_cards_and_revision_over_sse(tmp_path: Path) -> N
     assert "event: done" in response.text
     assert '"backend":"demo"' in response.text
     assert client.get("/openapi.json").status_code == 200
+    assert client.get("/").text == "<h1>Edit Desk</h1>"
+    rough_cut = client.get("/rough-cut")
+    assert rough_cut.status_code == 200
+    assert rough_cut.text == client.get("/").text
     guide = client.get("/guide")
     assert guide.status_code == 200
     assert 'data-capabilities' in guide.text

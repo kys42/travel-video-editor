@@ -197,7 +197,7 @@ uv run travel-video serve-editor \
   --host 127.0.0.1 --port 8765
 ```
 
-`http://127.0.0.1:8765`에서 Edit Desk를 엽니다. 모델 비용 없이 전체 UI·SSE·도구·revision 흐름을 검증하려면 `--agent-backend demo`를 사용합니다. API 계약은 `/openapi.json`, 실행 중인 단일 Editor Agent 계약은 `/api/contracts/agent`에서 확인할 수 있습니다.
+`http://127.0.0.1:8765`에서 Review를, `http://127.0.0.1:8765/rough-cut`에서 Rough Cut을 엽니다. 두 화면은 영상 목록과 장면 상세를 복제하지 않고 하나의 공용 Review Workspace로 렌더링하며, Rough Cut만 revision과 AI 채팅 패널을 추가합니다. 모델 비용 없이 전체 UI·SSE·도구·revision 흐름을 검증하려면 `--agent-backend demo`를 사용합니다. API 계약은 `/openapi.json`, 실행 중인 단일 Editor Agent 계약은 `/api/contracts/agent`에서 확인할 수 있습니다.
 
 ## 다음 단계
 

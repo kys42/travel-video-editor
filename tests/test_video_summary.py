@@ -203,6 +203,12 @@ def test_library_sorts_videos_by_capture_time(tmp_path: Path) -> None:
     assert "무엇을 먹을까" in document
     assert 'data-media-url="media/earlier.mp4"' in document
     assert "data-preview-video" in document
+    assert document.count('data-review-workspace') == 1
+    assert 'data-workspace-mode="review"' in document
+    assert 'data-workspace-mode="rough-cut"' in document
+    assert 'data-revision-panel' in document
+    assert 'data-rough-clips' in document
+    assert "workspace.classList.toggle('is-rough-cut'" in document
     assert (output.parent / "media" / "earlier.mp4").is_symlink()
     assert (output.parent / "media" / "earlier.mp4").resolve() == earlier_proxy
     assert manifest["video_count"] == 2

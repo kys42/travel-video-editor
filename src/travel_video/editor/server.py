@@ -250,6 +250,11 @@ def create_editor_app(
     async def index() -> FileResponse:
         return FileResponse(catalog.library_dir / "index.html", media_type="text/html")
 
+    @app.get("/rough-cut", include_in_schema=False)
+    async def rough_cut() -> FileResponse:
+        """Serve the same generated workspace; the client only changes tool layout."""
+        return FileResponse(catalog.library_dir / "index.html", media_type="text/html")
+
     @app.get("/guide", include_in_schema=False)
     async def guide() -> FileResponse:
         guide_path = (
