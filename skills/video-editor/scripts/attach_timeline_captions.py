@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import unicodedata
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +18,7 @@ REVIEWED_DIALOGUE_SOURCE = "reviewed_dialogue.captions"
 DIALOGUE_SCRIPT_SOURCE = "dialogue_script.lines"
 RECONCILED_TRANSCRIPT_SOURCE = "reconciled_transcript.utterances"
 DIALOGUE_PRESERVATION_POLICY = "dialogue-preservation/v1"
+REVIEWED_BOUNDARY_TOLERANCE_SECONDS = 0.05
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -114,6 +117,123 @@ def source_kind(item: dict[str, Any], source: str) -> str:
 def reviewed_caption_is_usable(item: dict[str, Any]) -> bool:
     status = str(item.get("review_status") or "").strip().lower()
     return status in REVIEWED_CAPTION_STATUSES and item.get("usable") is not False
+
+
+def _normalized_name(value: Any) -> str:
+    normalized = unicodedata.normalize(
+        "NFC", os.path.normpath(os.path.expanduser(str(value)))
+    )
+    return Path(normalized).name.casefold()
+
+
+def _normalized_parts(value: Any) -> tuple[str, ...]:
+    normalized = unicodedata.normalize(
+        "NFC", os.path.normpath(os.path.expanduser(str(value)))
+    )
+    return tuple(part.casefold() for part in Path(normalized).parts if part != os.sep)
+
+
+def _ends_with_parts(value: Any, suffix: Any) -> bool:
+    value_parts = _normalized_parts(value)
+    suffix_parts = _normalized_parts(suffix)
+    return bool(suffix_parts) and value_parts[-len(suffix_parts) :] == suffix_parts
+
+
+def validate_timeline_identity(
+    clip: dict[str, Any],
+    metadata: dict[str, Any],
+    timeline: dict[str, Any],
+    timeline_path: Path,
+    source_stage: str,
+) -> None:
+    """Fail closed when a clip is paired with another asset's timeline."""
+    policy_version = (
+        timeline.get("reviewed_dialogue", {}).get("policy", {}).get("policy_version")
+    )
+    strict = (
+        source_stage == REVIEWED_DIALOGUE_SOURCE
+        and policy_version == DIALOGUE_PRESERVATION_POLICY
+    )
+    timeline_source = timeline.get("source")
+    if not isinstance(timeline_source, dict):
+        if strict:
+            raise ValueError(
+                f"Reviewed timeline is missing source identity: {timeline_path}"
+            )
+        return
+
+    timeline_names = {
+        _normalized_name(value)
+        for value in (timeline_source.get("path"), timeline_source.get("name"))
+        if value
+    }
+    clip_names = {
+        _normalized_name(value)
+        for value in (
+            metadata.get("source_relative_path"),
+            clip.get("source"),
+            clip.get("proxy"),
+        )
+        if value
+    }
+    if not timeline_names or not clip_names:
+        if strict:
+            raise ValueError(
+                f"Reviewed clip/timeline source identity is incomplete: {timeline_path}"
+            )
+    elif timeline_names.isdisjoint(clip_names):
+        raise ValueError(
+            "Clip source does not match reviewed timeline source: "
+            f"clip={sorted(clip_names)}, timeline={sorted(timeline_names)}"
+        )
+
+    source_relative_path = metadata.get("source_relative_path")
+    timeline_source_path = timeline_source.get("path")
+    clip_source_path = clip.get("source")
+    if strict and not source_relative_path:
+        raise ValueError(
+            "dialogue-preservation/v1 clips require metadata.source_relative_path"
+        )
+    if source_relative_path:
+        if not timeline_source_path or not _ends_with_parts(
+            timeline_source_path, source_relative_path
+        ):
+            raise ValueError(
+                "Clip relative path does not match reviewed timeline source: "
+                f"{source_relative_path}"
+            )
+        if clip_source_path and not _ends_with_parts(
+            clip_source_path, source_relative_path
+        ):
+            raise ValueError(
+                "Clip source does not match its source_relative_path: "
+                f"{source_relative_path}"
+            )
+
+    timeline_fingerprint = timeline_source.get("quick_fingerprint")
+    expected_fingerprint = metadata.get("timeline_quick_fingerprint")
+    if strict and not expected_fingerprint:
+        raise ValueError(
+            "dialogue-preservation/v1 clips require metadata.timeline_quick_fingerprint"
+        )
+    if expected_fingerprint and str(expected_fingerprint) != str(timeline_fingerprint):
+        raise ValueError(
+            f"Clip metadata fingerprint does not match reviewed timeline: {timeline_path}"
+        )
+    if strict and not timeline_fingerprint:
+        raise ValueError(
+            f"Reviewed timeline is missing source.quick_fingerprint: {timeline_path}"
+        )
+
+    duration = float(timeline.get("media", {}).get("duration", 0.0))
+    if strict and duration <= 0:
+        raise ValueError(
+            f"Reviewed timeline is missing media duration: {timeline_path}"
+        )
+    if duration > 0 and float(clip["source_out"]) > duration + 0.05:
+        raise ValueError(
+            f"Clip range exceeds reviewed timeline duration: {timeline_path}"
+        )
 
 
 def resolve_timeline_path(
@@ -217,11 +337,22 @@ def main() -> int:
         timeline = load_json(timeline_path)
         timelines.add(str(timeline_path))
         source, source_items = caption_source(timeline)
-        source_item_counts[source] = source_item_counts.get(source, 0) + len(source_items)
+        validate_timeline_identity(
+            clip,
+            metadata,
+            timeline,
+            timeline_path,
+            source,
+        )
+        source_item_counts[source] = source_item_counts.get(source, 0) + len(
+            source_items
+        )
         for item in source_items:
             if not isinstance(item, dict):
                 continue
-            if source == REVIEWED_DIALOGUE_SOURCE and not reviewed_caption_is_usable(item):
+            if source == REVIEWED_DIALOGUE_SOURCE and not reviewed_caption_is_usable(
+                item
+            ):
                 continue
             text = source_text(item, source)
             language = item.get("language")
@@ -233,10 +364,7 @@ def main() -> int:
             # Reapplying an acoustic STT threshold here silently drops reviewed
             # speech in windy, distant, or mixed-language scenes. Keep the
             # threshold only for legacy, unreviewed caption sources.
-            if (
-                source != REVIEWED_DIALOGUE_SOURCE
-                and confidence < args.min_confidence
-            ):
+            if source != REVIEWED_DIALOGUE_SOURCE and confidence < args.min_confidence:
                 continue
             utterance_start = float(item["start"])
             utterance_end = float(item["end"])
@@ -244,14 +372,33 @@ def main() -> int:
             overlap_start = max(source_in, utterance_start)
             overlap_end = min(source_out, utterance_end)
             overlap_duration = overlap_end - overlap_start
-            if utterance_duration <= 0 or overlap_duration < 0.6:
+            if utterance_duration <= 0:
                 continue
-            if overlap_duration / utterance_duration < args.min_coverage:
+            if source == REVIEWED_DIALOGUE_SOURCE:
+                if overlap_duration <= 0:
+                    continue
+                if (
+                    utterance_start < source_in - REVIEWED_BOUNDARY_TOLERANCE_SECONDS
+                    or utterance_end > source_out + REVIEWED_BOUNDARY_TOLERANCE_SECONDS
+                ):
+                    caption_id = item.get("caption_id") or "<missing caption_id>"
+                    raise ValueError(
+                        f"Reviewed caption {caption_id} is only partially included "
+                        f"by clip {clip.get('id', '<missing clip id>')}"
+                    )
+            elif overlap_duration < 0.6:
+                continue
+            if (
+                source != REVIEWED_DIALOGUE_SOURCE
+                and overlap_duration / utterance_duration < args.min_coverage
+            ):
                 continue
             output_start = clip_output_start + (overlap_start - source_in) / speed
             output_end = clip_output_start + (overlap_end - source_in) / speed
             if any(
-                overlaps(output_start, output_end, float(item["start"]), float(item["end"]))
+                overlaps(
+                    output_start, output_end, float(item["start"]), float(item["end"])
+                )
                 for item in retained
             ):
                 continue
@@ -283,7 +430,9 @@ def main() -> int:
                     caption["review_status"] = str(item["review_status"])
                 generated.append(caption)
                 piece_cursor = piece_end
-    plan["captions"] = sorted(retained + generated, key=lambda item: (item["start"], item["end"]))
+    plan["captions"] = sorted(
+        retained + generated, key=lambda item: (item["start"], item["end"])
+    )
     provenance = dict(plan.get("provenance") or {})
     provenance["caption_generation"] = {
         "method": (

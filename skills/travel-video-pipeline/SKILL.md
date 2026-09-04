@@ -33,7 +33,9 @@ Use deterministic local processing to reduce video into traceable evidence, then
 - Do not make Codex or a subagent watch the full original sequentially. Use machine boundaries, low-resolution frames, contact sheets, storyboards, aligned STT, and scene metadata.
 - Preserve `raw → normalized → aligned → decisions → reconciled → corrections → exports`. A later stage never replaces an earlier one.
 - Keep original-language transcript text separate from translations. A wrong-locale STT candidate is evidence, not a translation and not ground truth.
-- Validate every model-authored JSON before merging it. Reject invented IDs, out-of-window timestamps, missing coverage, and representative frames not present in the packet.
+- Validate every model-authored JSON before merging it. Reject invented IDs,
+  out-of-window timestamps, missing evidence-time coverage, and representative
+  frames whose ID, time, timecode, or path differs from the source timeline.
 - Prefer proxy/audio/frame caches on the configured working-media volume. Keep code, manifests, small JSON, prompts, and decision history in or alongside the project.
 
 ## Subagent policy
@@ -48,6 +50,8 @@ Use subagents only for bounded packet review, not media discovery or destructive
 - Keep the older window-shard reconciliation flow only for transcript-only jobs or compatibility with an existing run.
 - Do not run acoustic language detection by default. A mixed window may contain several language turns. Let the review agent emit multiple utterances first; use MLX `detect_language` only for unresolved audio windows.
 - Always run the matching project validator before merge. A syntactically valid model answer is not an accepted transcript or caption script.
+- When a caption cites multiple utterances, require its display interval to
+  overlap every cited utterance; the broad first-to-last envelope is not enough.
 - Escalate only low-confidence, conflicting, or context-dependent windows to a stronger agent such as Terra when available. Codex reviews the remaining exceptions and the merged summary, not every clear window.
 - For visual review, shard by complete scene groups. Never split a group between agents, and require all frame/sample IDs to come from the packet.
 - Treat coarse groups as cheap review units, not edit clips. Use sparse sheets plus speech-boundary hints to group quickly; do the detailed visual/action/dialogue interpretation once in the dense group review. Preserve and resolve any speech window that crosses a coarse boundary.

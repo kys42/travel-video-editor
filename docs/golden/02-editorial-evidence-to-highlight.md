@@ -103,6 +103,7 @@ visual shot / dialogue beat / action beat / transition
   "candidate_id": "DAY27-CAND-0042",
   "asset_id": "…",
   "source_relative_path": "0827/…MP4",
+  "timeline_quick_fingerprint": "…",
   "group_id": "G002",
   "segment_ids": ["S…"],
   "candidate_range": {"start": 328.3, "end": 376.5},

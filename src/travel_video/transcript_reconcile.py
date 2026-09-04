@@ -30,7 +30,23 @@ def _split_activity(
     end: float,
     max_window: float,
     boundaries: list[float],
+    atomic_intervals: list[tuple[float, float]],
 ) -> list[tuple[float, float]]:
+    protected: list[list[float]] = []
+    for interval_start, interval_end in sorted(atomic_intervals):
+        if interval_end <= interval_start:
+            continue
+        if protected and interval_start < protected[-1][1] - 0.001:
+            protected[-1][1] = max(protected[-1][1], interval_end)
+        else:
+            protected.append([interval_start, interval_end])
+
+    def cuts_evidence(value: float) -> bool:
+        return any(
+            interval_start + 0.001 < value < interval_end - 0.001
+            for interval_start, interval_end in protected
+        )
+
     windows: list[tuple[float, float]] = []
     cursor = start
     while end - cursor > max_window:
@@ -40,13 +56,41 @@ def _split_activity(
             for boundary in boundaries
             if cursor + max_window * 0.5 <= boundary <= cursor + max_window * 1.5
             and end - boundary >= 1.0
+            and not cuts_evidence(boundary)
         ]
-        boundary = min(usable, key=lambda value: abs(value - target)) if usable else target
+        if usable:
+            boundary = min(usable, key=lambda value: abs(value - target))
+        else:
+            covering = [
+                interval_end
+                for interval_start, interval_end in protected
+                if interval_start < target < interval_end
+            ]
+            boundary = max(covering) if covering else target
+        if boundary >= end or end - boundary < 1.0:
+            break
         windows.append((cursor, boundary))
         cursor = boundary
     if end - cursor >= 0.05:
         windows.append((cursor, end))
     return windows
+
+
+def _evidence_interval(
+    candidate: dict[str, Any], span: dict[str, Any] | None
+) -> tuple[float, float, str]:
+    if (
+        span is not None
+        and span.get("start") is not None
+        and span.get("end") is not None
+        and float(span["end"]) > float(span["start"])
+    ):
+        return float(span["start"]), float(span["end"]), "span"
+    return (
+        float(candidate["start"]),
+        float(candidate["end"]),
+        "candidate_interval_fallback",
+    )
 
 
 def _locale_fragment(
@@ -65,18 +109,22 @@ def _locale_fragment(
         if float(candidate["start"]) >= end or float(candidate["end"]) <= start:
             continue
         spans = candidate.get("spans", [])
-        selected_spans = [
-            (span_index, span)
-            for span_index, span in enumerate(spans)
-            if span.get("start") is not None
-            and span.get("end") is not None
-            and start <= (float(span["start"]) + float(span["end"])) / 2 < end
-        ]
+        selected_spans = []
+        for span_index, span in enumerate(spans):
+            span_start, span_end, timing_source = _evidence_interval(candidate, span)
+            if span_start < end and span_end > start:
+                selected_spans.append(
+                    (span_index, span, span_start, span_end, timing_source)
+                )
         if selected_spans:
-            parts.extend(str(span.get("text", "")) for _, span in selected_spans)
+            parts.extend(
+                str(span.get("text", ""))
+                for _, span, span_start, span_end, _ in selected_spans
+                if start <= (span_start + span_end) / 2 < end
+            )
             confidences.extend(
                 float(span["confidence"])
-                for _, span in selected_spans
+                for _, span, _, _, _ in selected_spans
                 if span.get("confidence") is not None
             )
             source_ids.append(str(candidate["utterance_id"]))
@@ -84,24 +132,34 @@ def _locale_fragment(
                 {
                     "source_candidate_id": str(candidate["utterance_id"]),
                     "source_span_index": span_index,
-                    "source_start": round(float(span["start"]), 3),
-                    "source_end": round(float(span["end"]), 3),
-                    "start": round(max(start, float(span["start"])), 3),
-                    "end": round(min(end, float(span["end"])), 3),
-                    "text": str(span.get("text", "")),
+                    "source_start": round(span_start, 3),
+                    "source_end": round(span_end, 3),
+                    "start": round(max(start, span_start), 3),
+                    "end": round(min(end, span_end), 3),
+                    "text": (
+                        str(span.get("text", ""))
+                        if start <= (span_start + span_end) / 2 < end
+                        else ""
+                    ),
+                    "text_owner": start <= (span_start + span_end) / 2 < end,
+                    "timing_source": timing_source,
                     "confidence": float(span["confidence"])
                     if span.get("confidence") is not None
                     else None,
                 }
-                for span_index, span in selected_spans
+                for span_index, span, span_start, span_end, timing_source in selected_spans
             )
         elif (
             not spans
-            and start
-            <= (float(candidate["start"]) + float(candidate["end"])) / 2
-            < end
+            and float(candidate["start"]) < end
+            and float(candidate["end"]) > start
         ):
-            parts.append(str(candidate.get("text", "")))
+            candidate_start, candidate_end, timing_source = _evidence_interval(
+                candidate, None
+            )
+            owns_text = start <= (candidate_start + candidate_end) / 2 < end
+            if owns_text:
+                parts.append(str(candidate.get("text", "")))
             if candidate.get("mean_confidence") is not None:
                 confidences.append(float(candidate["mean_confidence"]))
             source_ids.append(str(candidate["utterance_id"]))
@@ -109,11 +167,13 @@ def _locale_fragment(
                 {
                     "source_candidate_id": str(candidate["utterance_id"]),
                     "source_span_index": None,
-                    "source_start": round(float(candidate["start"]), 3),
-                    "source_end": round(float(candidate["end"]), 3),
-                    "start": round(max(start, float(candidate["start"])), 3),
-                    "end": round(min(end, float(candidate["end"])), 3),
-                    "text": str(candidate.get("text", "")),
+                    "source_start": round(candidate_start, 3),
+                    "source_end": round(candidate_end, 3),
+                    "start": round(max(start, candidate_start), 3),
+                    "end": round(min(end, candidate_end), 3),
+                    "text": str(candidate.get("text", "")) if owns_text else "",
+                    "text_owner": owns_text,
+                    "timing_source": timing_source,
                     "confidence": candidate.get("mean_confidence"),
                 }
             )
@@ -129,6 +189,26 @@ def _locale_fragment(
         "source_candidate_ids": list(dict.fromkeys(source_ids)),
         "evidence_spans": evidence_spans,
     }
+
+
+def _covers_interval(
+    source_start: float,
+    source_end: float,
+    fragments: list[tuple[float, float]],
+    *,
+    tolerance: float = 0.002,
+) -> bool:
+    """Return whether overlapping window fragments cover a source interval."""
+    cursor = source_start
+    for start, end in sorted(fragments):
+        clipped_start = max(source_start, start)
+        clipped_end = min(source_end, end)
+        if clipped_end <= clipped_start:
+            continue
+        if clipped_start > cursor + tolerance:
+            return False
+        cursor = max(cursor, clipped_end)
+    return cursor >= source_end - tolerance
 
 
 def _mlx_hints(
@@ -151,9 +231,7 @@ def _mlx_hints(
                 "top_probability": chunk.get("top_probability"),
                 "margin": chunk.get("margin"),
                 "uncertain": chunk.get("uncertain"),
-                "resolved_language": chunk.get("resolution", {}).get(
-                    "spoken_language"
-                ),
+                "resolved_language": chunk.get("resolution", {}).get("spoken_language"),
             }
         )
     return hints
@@ -279,7 +357,18 @@ def create_reconciliation_packet(
         )
     )
     if any(not str(candidate.get("requested_locale", "")) for candidate in candidates):
-        raise ValueError("Apple transcript must contain candidates with requested locales")
+        raise ValueError(
+            "Apple transcript must contain candidates with requested locales"
+        )
+    for candidate in candidates:
+        if not str(candidate.get("text", "")).strip() and not candidate.get("spans"):
+            continue
+        if float(candidate.get("start", -1)) < 0 or float(
+            candidate.get("end", -1)
+        ) <= float(candidate.get("start", -1)):
+            raise ValueError(
+                f"Apple candidate has an invalid interval: {candidate['utterance_id']}"
+            )
     lexical_candidates = [
         candidate
         for candidate in candidates
@@ -291,6 +380,11 @@ def create_reconciliation_packet(
         if not str(candidate.get("text", "")).strip() and not candidate.get("spans")
     ]
     activities = _candidate_activity_intervals(apple, lexical_candidates)
+    atomic_evidence_intervals = [
+        _evidence_interval(candidate, span)[0:2]
+        for candidate in lexical_candidates
+        for span in (candidate.get("spans") or [None])
+    ]
     windows: list[dict[str, Any]] = []
     for activity in activities:
         activity_start = float(activity["start"])
@@ -317,14 +411,17 @@ def create_reconciliation_packet(
             activity_end,
             max_window,
             boundaries,
+            [
+                (span_start, span_end)
+                for span_start, span_end in atomic_evidence_intervals
+                if span_start < activity_end and span_end > activity_start
+            ],
         ):
             candidate_map = {
                 locale: fragment
                 for locale in locales
                 if (
-                    fragment := _locale_fragment(
-                        lexical_candidates, locale, start, end
-                    )
+                    fragment := _locale_fragment(lexical_candidates, locale, start, end)
                 )
                 is not None
             }
@@ -347,22 +444,67 @@ def create_reconciliation_packet(
                 }
             )
 
-    expected_evidence = {
-        (str(candidate["utterance_id"]), span_index)
-        for candidate in lexical_candidates
-        for span_index in (
-            range(len(candidate.get("spans", [])))
-            if candidate.get("spans")
-            else (None,)
-        )
-    }
+    expected_evidence: dict[tuple[str, int | None], tuple[float, float, str]] = {}
+    for candidate in lexical_candidates:
+        spans = candidate.get("spans", [])
+        if spans:
+            for span_index, span in enumerate(spans):
+                source_start, source_end, _ = _evidence_interval(candidate, span)
+                expected_evidence[(str(candidate["utterance_id"]), span_index)] = (
+                    source_start,
+                    source_end,
+                    str(span.get("text", "")).strip(),
+                )
+        else:
+            expected_evidence[(str(candidate["utterance_id"]), None)] = (
+                float(candidate["start"]),
+                float(candidate["end"]),
+                str(candidate.get("text", "")).strip(),
+            )
     included_evidence = {
         (str(span["source_candidate_id"]), span.get("source_span_index"))
         for window in windows
         for candidate in window["apple_candidates"].values()
         for span in candidate["evidence_spans"]
     }
-    missing_evidence = expected_evidence - included_evidence
+    missing_evidence = set(expected_evidence) - included_evidence
+    evidence_fragments: dict[tuple[str, int | None], list[tuple[float, float]]] = {}
+    for window in windows:
+        for candidate in window["apple_candidates"].values():
+            for span in candidate["evidence_spans"]:
+                key = (
+                    str(span["source_candidate_id"]),
+                    span.get("source_span_index"),
+                )
+                evidence_fragments.setdefault(key, []).append(
+                    (float(span["start"]), float(span["end"]))
+                )
+    incomplete_evidence = {
+        key
+        for key, (source_start, source_end, _) in expected_evidence.items()
+        if not _covers_interval(
+            source_start,
+            source_end,
+            evidence_fragments.get(key, []),
+        )
+    }
+    evidence_text_owner_counts: dict[tuple[str, int | None], int] = {}
+    for window in windows:
+        for candidate in window["apple_candidates"].values():
+            for span in candidate["evidence_spans"]:
+                if str(span.get("text", "")).strip():
+                    key = (
+                        str(span["source_candidate_id"]),
+                        span.get("source_span_index"),
+                    )
+                    evidence_text_owner_counts[key] = (
+                        evidence_text_owner_counts.get(key, 0) + 1
+                    )
+    invalid_text_ownership = {
+        key
+        for key, (_, _, text) in expected_evidence.items()
+        if text and evidence_text_owner_counts.get(key, 0) != 1
+    }
     included_candidate_ids = {
         str(candidate_id)
         for window in windows
@@ -373,15 +515,30 @@ def create_reconciliation_packet(
         str(candidate["utterance_id"]) for candidate in lexical_candidates
     }
     missing_candidate_ids = lexical_candidate_ids - included_candidate_ids
-    if missing_candidate_ids or missing_evidence:
+    if (
+        missing_candidate_ids
+        or missing_evidence
+        or incomplete_evidence
+        or invalid_text_ownership
+    ):
         details: list[str] = []
         if missing_candidate_ids:
-            details.append(
-                "candidate IDs: " + ", ".join(sorted(missing_candidate_ids))
-            )
+            details.append("candidate IDs: " + ", ".join(sorted(missing_candidate_ids)))
         if missing_evidence:
             details.append(f"evidence spans: {len(missing_evidence)}")
-        raise ValueError("Fresh reconciliation packet lost Apple evidence (" + "; ".join(details) + ")")
+        if incomplete_evidence:
+            details.append(
+                f"incompletely covered evidence spans: {len(incomplete_evidence)}"
+            )
+        if invalid_text_ownership:
+            details.append(
+                f"evidence spans without exactly one text owner: {len(invalid_text_ownership)}"
+            )
+        raise ValueError(
+            "Fresh reconciliation packet lost Apple evidence ("
+            + "; ".join(details)
+            + ")"
+        )
 
     return {
         "schema_version": RECONCILIATION_PACKET_SCHEMA,
@@ -399,11 +556,13 @@ def create_reconciliation_packet(
         "detector": apple.get("detector"),
         "policy": {
             "max_window_seconds": max_window,
+            "max_window_is_soft_to_preserve_atomic_evidence": True,
             "activity_source": "fresh_union_of_detector_activity_and_all_apple_candidates",
             "preserve_original_language": True,
             "translations_are_separate_fields": True,
             "machine_language_hints_are_non_authoritative": True,
             "all_apple_candidates_and_evidence_are_preserved": True,
+            "evidence_text_is_owned_by_exactly_one_window": True,
         },
         "instructions": [
             "Use Apple candidates as evidence, not as ground truth.",
@@ -426,6 +585,8 @@ def create_reconciliation_packet(
             "included_evidence_span_count": len(included_evidence),
             "missing_candidate_ids": [],
             "missing_evidence_span_count": 0,
+            "incompletely_covered_evidence_span_count": 0,
+            "invalid_evidence_text_owner_count": 0,
         },
         "windows": windows,
     }
@@ -470,9 +631,7 @@ def validate_reconciliation_review(
         }
         for utterance in reviewed_window.get("utterances", []):
             if utterance.get("language") not in valid_languages:
-                raise ValueError(
-                    f"Invalid language in {reviewed_window['window_id']}"
-                )
+                raise ValueError(f"Invalid language in {reviewed_window['window_id']}")
             start = float(utterance["start"])
             end = float(utterance["end"])
             if (
@@ -488,9 +647,10 @@ def validate_reconciliation_review(
                 raise ValueError(
                     f"Invalid source candidate IDs in {reviewed_window['window_id']}"
                 )
-            if utterance.get("language") not in {"uncertain", "non_speech"} and not str(
-                utterance.get("original_text", "")
-            ).strip():
+            if (
+                utterance.get("language") not in {"uncertain", "non_speech"}
+                and not str(utterance.get("original_text", "")).strip()
+            ):
                 raise ValueError(
                     f"Missing original text in {reviewed_window['window_id']}"
                 )
@@ -549,9 +709,7 @@ def render_reconciliation_html(
     packet = _load(packet_path)
     review = _load(review_path)
     assert packet is not None
-    reviewed = {
-        item["window_id"]: item for item in (review or {}).get("windows", [])
-    }
+    reviewed = {item["window_id"]: item for item in (review or {}).get("windows", [])}
     cards: list[str] = []
     for window in packet["windows"]:
         candidates = "".join(
@@ -562,13 +720,19 @@ def render_reconciliation_html(
             "</section>"
             for locale, candidate in window["apple_candidates"].items()
         )
-        scene = " / ".join(
-            str(item.get("label")) for item in window.get("scene_context", [])
-        ) or "장면 맥락 없음"
-        mlx = ", ".join(
-            f"{hint.get('selected_language')} {hint.get('top_probability')}"
-            for hint in window.get("mlx_language_hints", [])
-        ) or "—"
+        scene = (
+            " / ".join(
+                str(item.get("label")) for item in window.get("scene_context", [])
+            )
+            or "장면 맥락 없음"
+        )
+        mlx = (
+            ", ".join(
+                f"{hint.get('selected_language')} {hint.get('top_probability')}"
+                for hint in window.get("mlx_language_hints", [])
+            )
+            or "—"
+        )
         reviewed_window = reviewed.get(window["window_id"])
         resolved_items = (reviewed_window or {}).get("utterances", [])
         if resolved_items:
@@ -610,8 +774,8 @@ article{{border-top:1px solid var(--line);padding:22px 0}} article header{{displ
 @media(max-width:760px){{main{{width:min(100% - 24px,1380px)}}.candidates{{grid-template-columns:1fr}}.summary{{display:block}}}}
 </style></head><body><main><h1>음식 주문 영상 · 대화 종합</h1>
 <p class="lede">Apple Detector 게이팅 → 한국어/영어 원시 후보 → MLX 언어 힌트 → 원문 보존 종합 → 번역 분리</p>
-<div class="summary"><span>대조 창 <strong>{len(packet['windows'])}</strong></span><span>원시 후보 <strong>{packet['summary']['apple_candidate_count']}</strong></span><span>Detector <strong>{html.escape(str(packet.get('detector', {}).get('sensitivity', '—')))}</strong></span></div>
-{''.join(cards)}</main></body></html>"""
+<div class="summary"><span>대조 창 <strong>{len(packet["windows"])}</strong></span><span>원시 후보 <strong>{packet["summary"]["apple_candidate_count"]}</strong></span><span>Detector <strong>{html.escape(str(packet.get("detector", {}).get("sensitivity", "—")))}</strong></span></div>
+{"".join(cards)}</main></body></html>"""
     output_path = output_path.expanduser().resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(document, encoding="utf-8")

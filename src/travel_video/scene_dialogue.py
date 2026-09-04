@@ -305,8 +305,10 @@ def _integrated_visual_contexts(
             "Integrated visual packet groups must match timeline group order"
         )
 
-    timeline_sample_ids = {
-        str(sample.get("sample_id")) for sample in timeline.get("samples", [])
+    timeline_samples = {
+        str(sample.get("sample_id")): sample
+        for sample in timeline.get("samples", [])
+        if sample.get("sample_id")
     }
     timeline_segments = {
         str(segment.get("segment_id")): segment
@@ -316,13 +318,8 @@ def _integrated_visual_contexts(
     for timeline_group, packet_group in zip(groups, packet_groups, strict=True):
         group_id = str(timeline_group["group_id"])
         for field in ("start", "end"):
-            if (
-                abs(float(packet_group[field]) - float(timeline_group[field]))
-                > EPSILON
-            ):
-                raise ValueError(
-                    f"Integrated visual packet changed {group_id} {field}"
-                )
+            if abs(float(packet_group[field]) - float(timeline_group[field])) > EPSILON:
+                raise ValueError(f"Integrated visual packet changed {group_id} {field}")
         if list(packet_group.get("segment_ids", [])) != list(
             timeline_group.get("segment_ids", [])
         ):
@@ -340,11 +337,33 @@ def _integrated_visual_contexts(
         if (
             any(not item for item in candidate_ids)
             or len(candidate_ids) != len(set(candidate_ids))
-            or set(candidate_ids) - timeline_sample_ids
+            or set(candidate_ids) - set(timeline_samples)
         ):
             raise ValueError(
                 f"Integrated visual packet group {group_id} has invalid sample IDs"
             )
+        for candidate in candidate_frames:
+            sample_id = str(candidate["sample_id"])
+            source_sample = timeline_samples[sample_id]
+            if (
+                abs(float(candidate.get("time", -1)) - float(source_sample["time"]))
+                > EPSILON
+            ):
+                raise ValueError(
+                    f"Integrated visual packet changed sample {sample_id} time"
+                )
+            if str(candidate.get("timecode", "")) != str(
+                source_sample.get("timecode", "")
+            ):
+                raise ValueError(
+                    f"Integrated visual packet changed sample {sample_id} timecode"
+                )
+            if _normalized_source_path(candidate.get("frame", "")) != (
+                _normalized_source_path(source_sample.get("frame", ""))
+            ):
+                raise ValueError(
+                    f"Integrated visual packet changed sample {sample_id} frame"
+                )
         storyboard = visual_packet_path.parent / str(packet_group.get("storyboard", ""))
         if not storyboard.is_file():
             raise ValueError(
@@ -952,9 +971,7 @@ def _validate_integrated_scene_review(
 
     visual_context = packet_scene.get("visual_context", {})
     candidate_frames = visual_context.get("candidate_frames", [])
-    allowed_sample_ids = {
-        str(item.get("sample_id", "")) for item in candidate_frames
-    }
+    allowed_sample_ids = {str(item.get("sample_id", "")) for item in candidate_frames}
     representative = str(understanding.get("representative_sample_id", ""))
     if not representative or representative not in allowed_sample_ids:
         raise ValueError(
@@ -968,9 +985,7 @@ def _validate_integrated_scene_review(
             )
         for field in ("sample_id", "category", "title", "description", "edit_hint"):
             if not str(moment.get(field, "")).strip():
-                raise ValueError(
-                    f"Scene {group_id} notable moment requires {field}"
-                )
+                raise ValueError(f"Scene {group_id} notable moment requires {field}")
 
     beats = reviewed_scene.get("editorial_beats")
     if not isinstance(beats, list) or not beats:
@@ -1012,9 +1027,10 @@ def _validate_integrated_scene_review(
         boundary_adjustment = beat.get("boundary_adjustment")
         if boundary_adjustment not in BOUNDARY_ADJUSTMENTS:
             raise ValueError(f"Beat {beat_id} has an invalid boundary_adjustment")
-        if not str(beat.get("title", "")).strip() or not str(
-            beat.get("summary", "")
-        ).strip():
+        if (
+            not str(beat.get("title", "")).strip()
+            or not str(beat.get("summary", "")).strip()
+        ):
             raise ValueError(f"Beat {beat_id} requires title and summary")
         if not str(beat.get("boundary_reason", "")).strip():
             raise ValueError(f"Beat {beat_id} requires boundary_reason")
@@ -1370,6 +1386,19 @@ def validate_scene_dialogue_review(
                 raise ValueError(
                     f"Caption {caption_id} timing is not grounded in sources"
                 )
+            if any(
+                _overlap(
+                    start,
+                    end,
+                    float(source_utterance["start"]),
+                    float(source_utterance["end"]),
+                )
+                <= 0
+                for source_utterance in source_utterances
+            ):
+                raise ValueError(
+                    f"Caption {caption_id} does not overlap every cited source utterance"
+                )
             captioned_utterance_ids.update(source_utterance_ids)
 
         lexical_ids = {
@@ -1629,9 +1658,7 @@ def _dialogue_preservation_audit(
         for utterance in utterances
         if utterance.get("language") in CAPTION_LANGUAGES
     }
-    uncaptioned_lexical_ids = sorted(
-        lexical_utterance_ids - captioned_utterance_ids
-    )
+    uncaptioned_lexical_ids = sorted(lexical_utterance_ids - captioned_utterance_ids)
     status_counts = {status: 0 for status in sorted(WINDOW_STATUSES)}
     uncertain_windows_with_captions = 0
     for scene in review["scenes"]:
@@ -1645,9 +1672,7 @@ def _dialogue_preservation_audit(
                 uncertain_windows_with_captions += 1
 
     lexical_count = len(lexical_utterance_ids)
-    captioned_lexical_count = len(
-        lexical_utterance_ids & captioned_utterance_ids
-    )
+    captioned_lexical_count = len(lexical_utterance_ids & captioned_utterance_ids)
     return {
         "policy_version": packet.get("policy", {}).get(
             "policy_version", "legacy-unversioned"
@@ -1658,13 +1683,9 @@ def _dialogue_preservation_audit(
         "captioned_lexical_utterance_count": captioned_lexical_count,
         "uncaptioned_lexical_utterance_ids": uncaptioned_lexical_ids,
         "caption_coverage_ratio": (
-            round(captioned_lexical_count / lexical_count, 6)
-            if lexical_count
-            else 1.0
+            round(captioned_lexical_count / lexical_count, 6) if lexical_count else 1.0
         ),
-        "uncertain_windows_with_captioned_speech": (
-            uncertain_windows_with_captions
-        ),
+        "uncertain_windows_with_captioned_speech": (uncertain_windows_with_captions),
         "uncertain_residue_utterance_count": sum(
             utterance.get("language") == "uncertain" for utterance in utterances
         ),
@@ -1735,15 +1756,32 @@ def merge_scene_dialogue_review(
         group = group_map[group_id]
         group["reviewed_dialogue"] = {
             "window_decisions": copy.deepcopy(reviewed_scene["window_decisions"]),
-            "utterances": copy.deepcopy(
-                [item for item in utterances if item["group_id"] == group_id]
-            ),
-            "captions": copy.deepcopy(
-                [item for item in captions if item["group_id"] == group_id]
-            ),
+            "utterances": [
+                _attached_copy(item, float(group["start"]), float(group["end"]))
+                for item in utterances
+                if _overlap(
+                    float(group["start"]),
+                    float(group["end"]),
+                    float(item["start"]),
+                    float(item["end"]),
+                )
+                > 0
+            ],
+            "captions": [
+                _attached_copy(item, float(group["start"]), float(group["end"]))
+                for item in captions
+                if _overlap(
+                    float(group["start"]),
+                    float(group["end"]),
+                    float(item["start"]),
+                    float(item["end"]),
+                )
+                > 0
+            ],
         }
         if "scene_understanding" in reviewed_scene:
             understanding = copy.deepcopy(reviewed_scene["scene_understanding"])
+            prior_context_review = group.get("context_review", {})
             group["scene_understanding"] = understanding
             dialogue_summaries = [
                 str(beat["summary"])
@@ -1761,13 +1799,13 @@ def merge_scene_dialogue_review(
                         if utterance["language"] != "uncertain"
                     }
                 ),
-                "representative_sample_id": understanding[
-                    "representative_sample_id"
-                ],
+                "representative_sample_id": understanding["representative_sample_id"],
                 "representative_reason": (
                     "통합 화면·대화 리뷰에서 장면을 대표하는 프레임으로 선택"
                 ),
-                "key_moments": [],
+                "key_moments": copy.deepcopy(
+                    prior_context_review.get("key_moments", [])
+                ),
                 "notable_moments": copy.deepcopy(
                     understanding.get("notable_moments", [])
                 ),
@@ -1775,11 +1813,7 @@ def merge_scene_dialogue_review(
             }
         if "editorial_beats" in reviewed_scene:
             group["editorial_beats"] = copy.deepcopy(
-                [
-                    item
-                    for item in editorial_beats
-                    if item["group_id"] == group_id
-                ]
+                [item for item in editorial_beats if item["group_id"] == group_id]
             )
 
     for segment in result.get("segments", []):

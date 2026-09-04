@@ -61,10 +61,21 @@
   setup이나 접속사에서 끊겼다.
 - 해결: 그룹 내부 `editorial_beats`, `dialogue_closure`, 경계 확장/병합 결정을
   먼저 만들고 길이 최적화는 완결된 beat 단위로 수행하게 했다.
+- 독립 PR 리뷰에서 긴 STT span의 window 분할 손실, partial caption 허용,
+  clip↔timeline 오연결, 다중 발화 caption의 빈 구간 허용을 발견했다.
+- 해결: 모든 겹치는 window에 span 조각을 보존하고 시간 합집합을 검증하며,
+  정식 reviewed caption은 100% 포함과 source identity를 강제하고, caption이
+  인용한 각 utterance와 실제로 겹치도록 validator를 강화했다.
+- 기존 key moment 덮어쓰기, storyboard frame 좌표 변조, 대본 batch의 stale
+  cache와 경로 탈출도 각각 보존·exact match·SHA 상태·safe ID로 차단했다.
 
 ### 테스트 및 검증
 
-- 전체 `pytest`: 61 passed
+- 수정 범위 회귀 테스트: 42 passed
+- 전체 `pytest`: 72 passed (기존 dependency deprecation warning 2개)
+- Ruff lint와 변경 파일 format: 통과
+- 저장소 전체 format check: 기존 미포맷 파일 21개를 보고했으며 이번 변경에서
+  무관한 파일을 일괄 재포맷하지 않음
 - Ruff: 통과
 - `git diff --check`: 통과
 - travel-video-pipeline/video-editor skill validator: 통과

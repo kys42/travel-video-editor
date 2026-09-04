@@ -25,7 +25,10 @@ from travel_video.speech import (
     expand_contextual_fallbacks,
     resolve_candidate_language,
 )
-from travel_video.transcript_reconcile import validate_reconciliation_review
+from travel_video.transcript_reconcile import (
+    create_reconciliation_packet,
+    validate_reconciliation_review,
+)
 from travel_video.web import render_timeline_web
 
 
@@ -117,8 +120,7 @@ def test_apple_activity_ranges_are_labeled_as_derived_detector_evidence() -> Non
         (3.9, 5.1),
     ]
     assert all(
-        item["source"] == "detector_gated_transcriber_time_union"
-        for item in activity
+        item["source"] == "detector_gated_transcriber_time_union" for item in activity
     )
 
 
@@ -157,6 +159,120 @@ def test_transcript_reconciliation_requires_exact_windows_and_source_ids() -> No
     review["windows"][0]["utterances"][0]["source_candidate_ids"] = ["invented"]
     with pytest.raises(ValueError, match="source candidate IDs"):
         validate_reconciliation_review(packet, review)
+
+
+def test_reconciliation_preserves_long_spans_across_all_windows(
+    tmp_path: Path,
+) -> None:
+    transcript_path = tmp_path / "transcript.apple.json"
+    transcript_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "apple-stt/v1",
+                "source": {
+                    "path": "/archive/clip.mp4",
+                    "quick_fingerprint": "abc123",
+                },
+                "locales": ["en-US"],
+                "activity_intervals": [
+                    {"activity_id": "A001", "start": 0.0, "end": 20.0}
+                ],
+                "candidates": [
+                    {
+                        "utterance_id": "APPLE-en-US-T0001",
+                        "requested_locale": "en-US",
+                        "start": 0.0,
+                        "end": 20.0,
+                        "text": "A long recognition span",
+                        "mean_confidence": 0.8,
+                        "spans": [
+                            {
+                                "start": 0.0,
+                                "end": 20.0,
+                                "text": "A long recognition span",
+                                "confidence": 0.8,
+                            }
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    packet = create_reconciliation_packet(transcript_path, max_window=6.0)
+    fragments = [
+        span
+        for window in packet["windows"]
+        for candidate in window["apple_candidates"].values()
+        for span in candidate["evidence_spans"]
+    ]
+
+    assert [(span["start"], span["end"]) for span in fragments] == [(0.0, 20.0)]
+    assert [(window["start"], window["end"]) for window in packet["windows"]] == [
+        (0.0, 20.0)
+    ]
+    assert all(span["source_start"] == 0.0 for span in fragments)
+    assert all(span["source_end"] == 20.0 for span in fragments)
+    assert [span["text"] for span in fragments].count("A long recognition span") == 1
+    assert packet["summary"]["incompletely_covered_evidence_span_count"] == 0
+    assert packet["summary"]["invalid_evidence_text_owner_count"] == 0
+
+
+def test_reconciliation_preserves_untimed_spans_with_candidate_timing(
+    tmp_path: Path,
+) -> None:
+    transcript_path = tmp_path / "transcript.apple.json"
+    transcript_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "apple-stt/v1",
+                "source": {
+                    "path": "/archive/clip.mp4",
+                    "quick_fingerprint": "abc123",
+                },
+                "locales": ["en-US"],
+                "activity_intervals": [],
+                "candidates": [
+                    {
+                        "utterance_id": "APPLE-en-US-T0001",
+                        "requested_locale": "en-US",
+                        "start": 0.0,
+                        "end": 2.0,
+                        "text": "hello world",
+                        "mean_confidence": 0.8,
+                        "spans": [
+                            {
+                                "start": 0.0,
+                                "end": 1.0,
+                                "text": "hello",
+                                "confidence": 0.8,
+                            },
+                            {"text": "world", "confidence": 0.7},
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    packet = create_reconciliation_packet(transcript_path, max_window=1.0)
+    fragments = [
+        span
+        for window in packet["windows"]
+        for candidate in window["apple_candidates"].values()
+        for span in candidate["evidence_spans"]
+    ]
+    untimed = [span for span in fragments if span["source_span_index"] == 1]
+
+    assert [(span["start"], span["end"]) for span in untimed] == [(0.0, 2.0)]
+    assert all(
+        span["timing_source"] == "candidate_interval_fallback" for span in untimed
+    )
+    assert [span["text"] for span in untimed].count("world") == 1
+    assert packet["summary"]["apple_evidence_span_count"] == 2
+    assert packet["summary"]["missing_evidence_span_count"] == 0
 
 
 def test_segments_cover_asset_without_gaps() -> None:

@@ -236,6 +236,17 @@ packet에는 다음을 넣는다.
 - 시간순 evidence span과 source candidate ID
 - 이전·다음 장면 경계와 crossing window
 
+review window 경계는 Apple evidence span 내부를 자르지 않는다. 긴 span이면
+설정된 max window보다 window를 늘려 하나의 atomic evidence로 유지한다. 경계
+허용오차 등으로 한 span의 timing fragment가 둘 이상 생기더라도 validator는
+조각 합집합이 원래 `source_start/source_end`를 빈틈없이 덮는지 확인하고,
+원문 문자열은 midpoint가 속한 단 하나의 window만 소유하게 해 장면·shard
+경계의 중복 대사를 막는다. span 자체에 시간이 없으면 candidate interval을
+fallback으로 명시해 atomic하게 보존한다. 경계를 횡단해 확정된 발화와 자막은
+정본 병합 때 시간상 겹치는 모든 context group에 첨부한다. 연락판의
+`candidate_frames`도 sample ID뿐 아니라 원본 timeline의 time, timecode와 frame
+경로가 정확히 일치해야 한다.
+
 하나의 모델 패스가 서로 연결되지만 구분된 다섯 결과를 낸다.
 
 1. `scene_understanding`: 시간순 행동, 맥락, 대표 프레임과 특이점
@@ -258,7 +269,9 @@ packet에는 다음을 넣는다.
 
 모든 window, utterance와 caption은 정확히 하나의 beat에 연결돼야 한다.
 beat 경계는 기존 segment, frame, window, utterance 또는 caption 시각에
-고정하며 실제 발화 중간을 자를 수 없다.
+고정하며 실제 발화 중간을 자를 수 없다. 여러 utterance를 묶은 caption은
+인용한 각 utterance와 실제로 겹쳐야 하며, 첫 발화와 마지막 발화 사이의 빈
+구간에만 놓인 caption은 source envelope 안에 있더라도 거부한다.
 
 긴 영상은 **완전한 context group** 단위로만 나눠 병렬 처리한다. 하나의
 그룹을 두 에이전트가 나눠 판단하거나 이전 reconciliation 결과를 새 packet의

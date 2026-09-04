@@ -38,6 +38,11 @@ Use a JSON document so clip selection, captions, and render settings remain revi
       "transition_after": {
         "type": "dissolve",
         "duration": 0.35
+      },
+      "metadata": {
+        "source_relative_path": "0827/original.mp4",
+        "timeline_final": "/absolute/path/timeline.dialogue-reviewed.summarized.json",
+        "timeline_quick_fingerprint": "reviewed-timeline-source-fingerprint"
       }
     }
   ],
@@ -72,7 +77,7 @@ Use a JSON document so clip selection, captions, and render settings remain revi
 - `reframe.mode` is `contain` by default, preserving the full frame with padding. `cover` fills the output and crops overflow; `anchor_x` and `anchor_y` select the crop focus from `0` (left/top) to `1` (right/bottom).
 - `rotation` accepts `0`, `90`, `180`, or `270` clockwise degrees and is applied before reframing.
 - `transition_after` overlaps the clip with the following clip. It accepts `dissolve`, `fadeblack`, `fadewhite`, `wipeleft`, `wiperight`, `slideleft`, or `slideright`; its duration must be shorter than both clips. Omit it for a hard cut. Transitions reduce the assembled duration by their overlap.
-- `metadata` may carry reviewed scene IDs, notable-moment IDs, or other selection provenance. It is copied to the render manifest.
+- `metadata` may carry reviewed scene IDs, notable-moment IDs, or other selection provenance. It is copied to the render manifest. Audited unified captions require `source_relative_path`, `timeline_final`, and `timeline_quick_fingerprint`; the fingerprint is the reviewed timeline source fingerprint, which may be the proxy fingerprint rather than the original-media fingerprint.
 - `captions` use seconds on the assembled output timeline and are both burned into the picture and exported to SRT.
 - Caption `kind` is provenance metadata: use `verified`, `stt`, or `paraphrase`. The renderer preserves it in the normalized manifest but does not change visual style automatically.
 - `overlays` use the assembled output timeline. Supported styles are `title`, `label`, and `subtitle`.

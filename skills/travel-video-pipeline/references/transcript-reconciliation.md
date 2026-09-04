@@ -319,6 +319,11 @@ uv run python scripts/build_dialogue_script_batch.py /absolute/phase1/day-root \
 
 The batch writes one new scripted timeline per asset plus a manifest with source
 utterance and output line counts. It never modifies final timelines in place.
+Each asset also has `state.json` containing the input SHA-256, grouping policy,
+and output SHA-256. Reuse occurs only when all three still match; a changed input,
+changed grouping limit, missing state, or modified output rebuilds that asset.
+`asset_id` is restricted to a single safe path component and duplicate IDs abort
+the batch before they can share an output directory.
 
 Keep the pre-escalation review and an explicit correction log. A polished transcript is still an evidence-based editorial transcript, not a measured ground truth unless a person verifies it against the audio.
 

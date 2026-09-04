@@ -48,7 +48,12 @@ For `dialogue-preservation/v1` timelines, the helper fails closed unless
 `reviewed_dialogue.policy_audit.status=pass`, `caption_coverage_ratio=1.0`, and
 `uncaptioned_lexical_utterance_ids` is empty. Legacy reviewed timelines without a
 policy version remain readable for compatibility, but new production edits should
-use the audited policy.
+use the audited policy. It also requires `metadata.source_relative_path` and
+`metadata.timeline_quick_fingerprint`, verifies the relative suffix and filename
+against the timeline's normalized `source.path`/`source.name`, and matches the
+expected fingerprint to the reviewed source fingerprint. Media duration must also
+cover the clip. A manually pointed `metadata.timeline_final` from another asset is
+an error, even if its timestamps happen to fit.
 
 Caption attachment validates individual overlaps; it does not prove that a clip
 contains a complete conversational thought. Before fixing dialogue-led source
@@ -106,8 +111,10 @@ correct.
   as an STT candidate subject to `--min-confidence`.
 - Exclude `uncertain`, `non_speech`, unreviewed unified candidates, and items
   below the requested confidence threshold in legacy sources.
-- Require most of an utterance to remain inside the selected source range so a
-  caption does not describe speech cut off by the edit.
+- Require a unified reviewed caption to remain 100% inside the selected source
+  range, allowing only 50 ms of timestamp tolerance. Any genuine partial overlap
+  fails closed so the edit range must be revised. The configurable
+  `--min-coverage` threshold applies only to legacy caption sources.
 - Split long retained text into consecutive captions without rewriting it.
   A human-authored shortening must use `kind=paraphrase`, not `kind=stt`.
 - Keep captions as plan entries. The renderer burns them into the picture and

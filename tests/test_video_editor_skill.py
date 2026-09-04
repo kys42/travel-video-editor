@@ -225,14 +225,18 @@ def test_caption_helper_prefers_dialogue_script(tmp_path: Path) -> None:
     )
     result = json.loads(output_path.read_text(encoding="utf-8"))
 
-    assert [item["text"] for item in result["captions"]] == [
-        "잘 정리된 대사입니다."
-    ]
+    assert [item["text"] for item in result["captions"]] == ["잘 정리된 대사입니다."]
     assert "단 어 별 원 문" not in output_path.read_text(encoding="utf-8")
 
 
 def test_caption_helper_prefers_only_usable_reviewed_dialogue(tmp_path: Path) -> None:
     timeline = {
+        "source": {
+            "name": "source-1.mp4",
+            "path": "/analysis/source-1.mp4",
+            "quick_fingerprint": "fingerprint-1",
+        },
+        "media": {"duration": 30.0},
         "reviewed_dialogue": {
             "policy": {"policy_version": "dialogue-preservation/v1"},
             "policy_audit": {
@@ -301,7 +305,7 @@ def test_caption_helper_prefers_only_usable_reviewed_dialogue(tmp_path: Path) ->
                     "edit_type": "normalized",
                     "usable": False,
                 },
-            ]
+            ],
         },
         "dialogue_script": {
             "lines": [
@@ -328,6 +332,14 @@ def test_caption_helper_prefers_only_usable_reviewed_dialogue(tmp_path: Path) ->
     }
     timeline_path = tmp_path / "timeline.reviewed.json"
     timeline_path.write_text(json.dumps(timeline), encoding="utf-8")
+    timeline_two = json.loads(json.dumps(timeline))
+    timeline_two["source"] = {
+        "name": "source-2.mp4",
+        "path": "/analysis/source-2.mp4",
+        "quick_fingerprint": "fingerprint-2",
+    }
+    timeline_path_two = tmp_path / "timeline.reviewed-2.json"
+    timeline_path_two.write_text(json.dumps(timeline_two), encoding="utf-8")
     plan = {
         "schema_version": "video-edit-plan/v1",
         "clips": [
@@ -338,14 +350,22 @@ def test_caption_helper_prefers_only_usable_reviewed_dialogue(tmp_path: Path) ->
                 "source_out": 18.0,
                 "speed": 2.0,
                 "transition_after": {"type": "dissolve", "duration": 1.0},
-                "metadata": {"timeline_final": str(timeline_path)},
+                "metadata": {
+                    "source_relative_path": "source-1.mp4",
+                    "timeline_quick_fingerprint": "fingerprint-1",
+                    "timeline_final": str(timeline_path),
+                },
             },
             {
                 "id": "C002",
                 "source": "/tmp/source-2.mp4",
                 "source_in": 20.0,
                 "source_out": 26.0,
-                "metadata": {"timeline_final": str(timeline_path)},
+                "metadata": {
+                    "source_relative_path": "source-2.mp4",
+                    "timeline_quick_fingerprint": "fingerprint-2",
+                    "timeline_final": str(timeline_path_two),
+                },
             },
         ],
     }
@@ -397,6 +417,143 @@ def test_caption_helper_prefers_only_usable_reviewed_dialogue(tmp_path: Path) ->
     assert "We are boarding the train." not in rendered_text
     assert "낮은 단계의 대사는 사용하면 안 됩니다." not in rendered_text
     assert "원시 전사도 사용하면 안 됩니다." not in rendered_text
+
+
+def test_caption_helper_rejects_partially_included_reviewed_caption(
+    tmp_path: Path,
+) -> None:
+    timeline_path = tmp_path / "timeline.reviewed.json"
+    timeline_path.write_text(
+        json.dumps(
+            {
+                "source": {
+                    "name": "source.mp4",
+                    "path": "/analysis/source.mp4",
+                    "quick_fingerprint": "fingerprint",
+                },
+                "media": {"duration": 10.0},
+                "reviewed_dialogue": {
+                    "policy": {"policy_version": "dialogue-preservation/v1"},
+                    "policy_audit": {
+                        "status": "pass",
+                        "caption_coverage_ratio": 1.0,
+                        "uncaptioned_lexical_utterance_ids": [],
+                    },
+                    "captions": [
+                        {
+                            "caption_id": "CAP001",
+                            "start": 2.0,
+                            "end": 4.0,
+                            "language": "ko",
+                            "display_text": "끝까지 들어야 하는 문장입니다.",
+                            "confidence": 0.8,
+                            "review_status": "reviewed",
+                            "edit_type": "normalized",
+                        }
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    plan_path = tmp_path / "plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "video-edit-plan/v1",
+                "clips": [
+                    {
+                        "id": "C001",
+                        "source": "/original/source.mp4",
+                        "source_in": 1.0,
+                        "source_out": 3.0,
+                        "metadata": {
+                            "source_relative_path": "source.mp4",
+                            "timeline_quick_fingerprint": "fingerprint",
+                            "timeline_final": str(timeline_path),
+                        },
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    output_path = tmp_path / "captioned.json"
+    script = (
+        Path(__file__).resolve().parents[1]
+        / "skills/video-editor/scripts/attach_timeline_captions.py"
+    )
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            str(plan_path),
+            "--output",
+            str(output_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode != 0
+    assert "only partially included" in completed.stderr
+
+
+def test_caption_helper_rejects_mismatched_reviewed_timeline_source() -> None:
+    helper = load_caption_helper()
+    timeline = {
+        "source": {
+            "name": "same.mp4",
+            "path": "/analysis/0826/same.mp4",
+            "quick_fingerprint": "fingerprint",
+        },
+        "media": {"duration": 10.0},
+        "reviewed_dialogue": {"policy": {"policy_version": "dialogue-preservation/v1"}},
+    }
+
+    with pytest.raises(ValueError, match="relative path does not match"):
+        helper.validate_timeline_identity(
+            {
+                "source": "/original/0827/same.mp4",
+                "source_in": 0.0,
+                "source_out": 5.0,
+            },
+            {"source_relative_path": "0827/same.mp4"},
+            timeline,
+            Path("/analysis/timeline.json"),
+            helper.REVIEWED_DIALOGUE_SOURCE,
+        )
+
+
+def test_caption_helper_requires_matching_timeline_fingerprint() -> None:
+    helper = load_caption_helper()
+    timeline = {
+        "source": {
+            "name": "same.mp4",
+            "path": "/analysis/0827/same.mp4",
+            "quick_fingerprint": "actual-fingerprint",
+        },
+        "media": {"duration": 10.0},
+        "reviewed_dialogue": {"policy": {"policy_version": "dialogue-preservation/v1"}},
+    }
+
+    with pytest.raises(ValueError, match="fingerprint does not match"):
+        helper.validate_timeline_identity(
+            {
+                "source": "/original/0827/same.mp4",
+                "source_in": 0.0,
+                "source_out": 5.0,
+            },
+            {
+                "source_relative_path": "0827/same.mp4",
+                "timeline_quick_fingerprint": "stale-fingerprint",
+            },
+            timeline,
+            Path("/analysis/timeline.json"),
+            helper.REVIEWED_DIALOGUE_SOURCE,
+        )
 
 
 def test_caption_helper_rejects_failed_preservation_audit() -> None:
@@ -630,6 +787,7 @@ def test_caption_helper_resolves_reviewed_timeline_root(tmp_path: Path) -> None:
     assert [caption["text"] for caption in result["captions"]] == [
         "새 검수 대본입니다."
     ]
-    assert result["provenance"]["caption_generation"][
-        "replaced_existing_caption_count"
-    ] == 1
+    assert (
+        result["provenance"]["caption_generation"]["replaced_existing_caption_count"]
+        == 1
+    )

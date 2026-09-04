@@ -13,6 +13,10 @@ Turn explicit source ranges into a reproducible local video edit. Preserve sourc
 2. Write a `video-edit-plan/v1` JSON file. Read [references/edit-plan.md](references/edit-plan.md) when authoring or changing a plan.
 3. Keep every clip tied to a source path, source in/out time, purpose, and selection reason. Treat STT text as uncertain unless it was verified; label paraphrased captions in the plan.
 4. When the requested edit should show dialogue and each clip carries a reviewed `metadata.timeline_final`, read [references/transcript-captions.md](references/transcript-captions.md). Prefer audited `dialogue-preservation/v1` `reviewed_dialogue.captions`, falling back to older reviewed dialogue, `dialogue_script.lines`, and then reconciled utterances only for compatibility. Build output-timeline captions before rendering and review their sequence; an exported SRT alone does not make captions visible in the video.
+   The helper must verify `metadata.source_relative_path` and
+   `metadata.timeline_quick_fingerprint` against the normalized timeline source,
+   and every selected reviewed caption must fit wholly inside the clip. A partial
+   overlap is an edit-boundary error, not permission to truncate the caption text.
 5. Validate before rendering:
 
    ```bash

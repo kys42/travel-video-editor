@@ -312,6 +312,7 @@ def _visual_packet(tmp_path: Path) -> Path:
                     {
                         "sample_id": "F0001",
                         "time": 2.0,
+                        "timecode": "00:02.000",
                         "frame": str(tmp_path / "frame.jpg"),
                     }
                 ],
@@ -331,6 +332,7 @@ def _visual_packet(tmp_path: Path) -> Path:
                     {
                         "sample_id": "F0001",
                         "time": 2.0,
+                        "timecode": "00:02.000",
                         "frame": str(tmp_path / "frame.jpg"),
                     }
                 ],
@@ -453,6 +455,13 @@ def test_build_validate_and_merge_one_pass_scene_dialogue(tmp_path: Path) -> Non
         merged["context_groups"][1]["reviewed_dialogue"]["captions"][0]["caption_id"]
         == "G002-C001"
     )
+    crossing = next(
+        item
+        for item in merged["context_groups"][0]["reviewed_dialogue"]["utterances"]
+        if item["utterance_id"] == "G002-U001"
+    )
+    assert crossing["source_start"] == 5.8
+    assert crossing["overlap_end"] == 6.0
     assert merged["segments"][0]["caption_lines"][0]["source_start"] == 1.1
 
     web_path = render_timeline_web(output_path, tmp_path / "web", frame_limit=4)
@@ -471,7 +480,11 @@ def test_integrated_visual_dialogue_review_emits_valid_editorial_beats(
     packet_path = tmp_path / "scene-dialogue.integrated.packet.json"
     review_path = tmp_path / "scene-dialogue.integrated.review.json"
     output_path = tmp_path / "timeline.integrated-reviewed.json"
-    timeline_path.write_text(json.dumps(_quick_timeline(tmp_path)), encoding="utf-8")
+    quick_timeline = _quick_timeline(tmp_path)
+    quick_timeline["reviewed_groups"][0]["context_review"] = {
+        "key_moments": [{"sample_id": "F0001", "role": "ticket"}]
+    }
+    timeline_path.write_text(json.dumps(quick_timeline), encoding="utf-8")
     apple_path.write_text(json.dumps(_apple_transcript()), encoding="utf-8")
 
     build_scene_dialogue_packet(
@@ -483,15 +496,14 @@ def test_integrated_visual_dialogue_review_emits_valid_editorial_beats(
     packet = json.loads(packet_path.read_text(encoding="utf-8"))
     assert packet["policy"]["integrated_visual_review"] is True
     assert packet["policy"]["editorial_beats_required"] is True
-    assert packet["policy"]["preservation_mode"] == (
-        "recall_first_plausible_speech"
-    )
+    assert packet["policy"]["preservation_mode"] == ("recall_first_plausible_speech")
     assert packet["policy"]["policy_version"] == DIALOGUE_PRESERVATION_POLICY
     assert packet["policy"]["canonical_for_editing"] is True
     assert packet["policy"]["uncertain_window_does_not_block_captions"] is True
-    assert "low ASR confidence" in packet["review_contract"]["utterance"][
-        "preservation_rule"
-    ]
+    assert (
+        "low ASR confidence"
+        in packet["review_contract"]["utterance"]["preservation_rule"]
+    )
     assert packet["scenes"][0]["visual_context"]["review_stage"] == (
         "quick_group_plus_dense_storyboard"
     )
@@ -510,9 +522,7 @@ def test_integrated_visual_dialogue_review_emits_valid_editorial_beats(
     review = _integrated_review(packet)
     validate_scene_dialogue_review(packet, review)
     review_path.write_text(json.dumps(review), encoding="utf-8")
-    merge_scene_dialogue_review(
-        timeline_path, packet_path, review_path, output_path
-    )
+    merge_scene_dialogue_review(timeline_path, packet_path, review_path, output_path)
     merged = json.loads(output_path.read_text(encoding="utf-8"))
     assert merged["schema_version"] == "phase1-context-reviewed-timeline/v1"
     assert merged["reviewed_dialogue"]["summary"]["editorial_beat_count"] == 2
@@ -532,17 +542,79 @@ def test_integrated_visual_dialogue_review_emits_valid_editorial_beats(
         "uncertain_residue_utterance_count": 1,
     }
     assert len(merged["reviewed_dialogue"]["editorial_beats"]) == 2
-    assert merged["context_groups"][1]["editorial_beats"][0][
-        "boundary_adjustment"
-    ] == "extend_before"
-    assert merged["context_groups"][0]["context_review"][
-        "representative_sample_id"
-    ] == "F0001"
+    assert (
+        merged["context_groups"][1]["editorial_beats"][0]["boundary_adjustment"]
+        == "extend_before"
+    )
+    assert (
+        merged["context_groups"][0]["context_review"]["representative_sample_id"]
+        == "F0001"
+    )
+    assert merged["context_groups"][0]["context_review"]["key_moments"] == [
+        {"sample_id": "F0001", "role": "ticket"}
+    ]
 
     invalid = _integrated_review(packet)
     invalid["scenes"][1]["editorial_beats"][0]["start"] = 6.0
     with pytest.raises(ValueError, match="cuts utterance"):
         validate_scene_dialogue_review(packet, invalid)
+
+
+def test_integrated_visual_packet_must_preserve_sample_coordinates(
+    tmp_path: Path,
+) -> None:
+    timeline_path = tmp_path / "timeline.json"
+    apple_path = tmp_path / "transcript.apple.json"
+    visual_path = _visual_packet(tmp_path)
+    timeline_path.write_text(json.dumps(_quick_timeline(tmp_path)), encoding="utf-8")
+    apple_path.write_text(json.dumps(_apple_transcript()), encoding="utf-8")
+    visual = json.loads(visual_path.read_text(encoding="utf-8"))
+    visual["groups"][0]["candidate_frames"][0]["time"] = 3.0
+    visual_path.write_text(json.dumps(visual), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="changed sample F0001 time"):
+        build_scene_dialogue_packet(
+            apple_path,
+            timeline_path,
+            tmp_path / "packet.json",
+            visual_packet_path=visual_path,
+        )
+
+
+def test_caption_must_overlap_every_cited_utterance(tmp_path: Path) -> None:
+    timeline_path = tmp_path / "timeline.json"
+    apple_path = tmp_path / "transcript.apple.json"
+    packet_path = tmp_path / "packet.json"
+    timeline_path.write_text(json.dumps(_timeline(tmp_path)), encoding="utf-8")
+    apple_path.write_text(json.dumps(_apple_transcript()), encoding="utf-8")
+    build_scene_dialogue_packet(apple_path, timeline_path, packet_path)
+    packet = json.loads(packet_path.read_text(encoding="utf-8"))
+    review = _review(packet)
+    scene = review["scenes"][1]
+    scene["utterances"][1].update(
+        {"language": "en", "original_text": "Second phrase", "notes": ""}
+    )
+    scene["captions"] = [
+        {
+            "caption_id": "G002-C001",
+            "start": 7.2,
+            "end": 7.5,
+            "language": "en",
+            "display_text": "This way, please. Second phrase.",
+            "edit_type": "normalized",
+            "confidence": 0.8,
+            "review_status": "reviewed",
+            "source_utterance_ids": ["G002-U001", "G002-U002"],
+            "source_window_ids": ["RW0002", "RW0003"],
+            "source_candidate_ids": [
+                "APPLE-en-US-T0002",
+                "APPLE-ko-KR-T0003",
+            ],
+        }
+    ]
+
+    with pytest.raises(ValueError, match="overlap every cited source utterance"):
+        validate_scene_dialogue_review(packet, review)
 
 
 def test_scene_dialogue_validator_rejects_untraceable_or_uncaptioned_text(
@@ -594,9 +666,7 @@ def test_uncertain_window_can_preserve_caption_ready_turns(tmp_path: Path) -> No
 
     validate_scene_dialogue_review(packet, review)
     review_path.write_text(json.dumps(review), encoding="utf-8")
-    merge_scene_dialogue_review(
-        timeline_path, packet_path, review_path, output_path
-    )
+    merge_scene_dialogue_review(timeline_path, packet_path, review_path, output_path)
     merged = json.loads(output_path.read_text(encoding="utf-8"))
     audit = merged["reviewed_dialogue"]["policy_audit"]
     assert audit["status"] == "pass"
