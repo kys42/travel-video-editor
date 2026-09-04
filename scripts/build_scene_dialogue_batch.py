@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Prepare fresh scene-dialogue review packets from an inventory.
+"""Prepare fresh integrated scene-dialogue review packets from an inventory.
 
-The core CLI builds fresh reconciliation evidence internally. This batch stops
-before model review, validation, or merge. Each asset is built from its raw
-Apple transcript and context-reviewed timeline; prior reconciliation and
-final-timeline derivatives are never command inputs.
+The Golden path starts from the quick grouped ``timeline.reviewed.json``, builds
+a fresh dense visual packet, and combines it with raw Apple evidence. The
+legacy context-reviewed input remains available for old inventories. This
+batch stops before model review, validation, or merge; prior reconciliation,
+review, summary, and final-timeline derivatives are never command inputs.
 """
 
 from __future__ import annotations
@@ -131,14 +132,15 @@ def selected_assets(
     return selected
 
 
-def canonical_inputs(asset: dict[str, Any]) -> tuple[Path, Path]:
+def canonical_inputs(asset: dict[str, Any]) -> tuple[Path, Path, bool]:
     asset_id = str(asset["asset_id"])
     apple_value = asset.get("apple_transcript_path")
-    timeline_value = asset.get("timeline_context_reviewed_path")
+    grouped_value = asset.get("timeline_reviewed_path")
+    timeline_value = grouped_value or asset.get("timeline_context_reviewed_path")
     if not apple_value or not timeline_value:
         raise ValueError(
-            f"{asset_id}: apple_transcript_path and "
-            "timeline_context_reviewed_path are required"
+            f"{asset_id}: apple_transcript_path and either timeline_reviewed_path "
+            "or timeline_context_reviewed_path are required"
         )
     apple_path = Path(str(apple_value)).expanduser().resolve()
     timeline_path = Path(str(timeline_value)).expanduser().resolve()
@@ -146,10 +148,15 @@ def canonical_inputs(asset: dict[str, Any]) -> tuple[Path, Path]:
         raise ValueError(
             f"{asset_id}: apple_transcript_path must name transcript.apple.json"
         )
-    if timeline_path.name != "timeline.context-reviewed.json":
+    integrated_visual = bool(grouped_value)
+    expected_timeline_name = (
+        "timeline.reviewed.json"
+        if integrated_visual
+        else "timeline.context-reviewed.json"
+    )
+    if timeline_path.name != expected_timeline_name:
         raise ValueError(
-            f"{asset_id}: timeline_context_reviewed_path must name "
-            "timeline.context-reviewed.json"
+            f"{asset_id}: selected timeline path must name {expected_timeline_name}"
         )
     if not apple_path.is_file():
         raise FileNotFoundError(f"{asset_id}: missing raw Apple transcript: {apple_path}")
@@ -157,7 +164,7 @@ def canonical_inputs(asset: dict[str, Any]) -> tuple[Path, Path]:
         raise FileNotFoundError(
             f"{asset_id}: missing context-reviewed timeline: {timeline_path}"
         )
-    return apple_path, timeline_path
+    return apple_path, timeline_path, integrated_visual
 
 
 def output_paths(output_root: Path, asset_id: str) -> dict[str, Path]:
@@ -167,6 +174,7 @@ def output_paths(output_root: Path, asset_id: str) -> dict[str, Path]:
         "scene_dialogue_packet": asset_root
         / "scene-dialogue"
         / "review-packet.json",
+        "context_packet": asset_root / "context" / "context-review-packet.json",
         "state": asset_root / "state.json",
     }
 
@@ -181,8 +189,9 @@ def output_record(path: Path) -> dict[str, str]:
 
 def reusable_state(
     state_path: Path,
-    inputs: dict[str, dict[str, str]],
+    inputs: dict[str, Any],
     paths: dict[str, Path],
+    output_names: tuple[str, ...],
 ) -> dict[str, Any] | None:
     if not state_path.is_file():
         return None
@@ -197,7 +206,7 @@ def reusable_state(
     outputs = state.get("outputs")
     if not isinstance(outputs, dict):
         return None
-    for name in ("scene_dialogue_packet",):
+    for name in output_names:
         path = paths[name]
         expected = outputs.get(name)
         if not path.is_file() or not isinstance(expected, dict):
@@ -219,17 +228,35 @@ def prepare_asset(
     asset: dict[str, Any],
     output_root: Path,
     runner: CliRunner,
+    *,
+    max_frames: int,
+    max_window: float,
 ) -> dict[str, Any]:
     asset_id = str(asset["asset_id"])
     paths = output_paths(output_root, asset_id)
     started_at = utc_now()
     try:
-        apple_path, timeline_path = canonical_inputs(asset)
+        apple_path, timeline_path, integrated_visual = canonical_inputs(asset)
+        timeline_key = (
+            "timeline_reviewed"
+            if integrated_visual
+            else "timeline_context_reviewed"
+        )
         inputs = {
             "apple_transcript": input_record(apple_path),
-            "timeline_context_reviewed": input_record(timeline_path),
+            timeline_key: input_record(timeline_path),
+            "config": {
+                "integrated_visual": integrated_visual,
+                "max_frames": max_frames if integrated_visual else None,
+                "max_window": max_window,
+            },
         }
-        reused = reusable_state(paths["state"], inputs, paths)
+        output_names = (
+            ("context_packet", "scene_dialogue_packet")
+            if integrated_visual
+            else ("scene_dialogue_packet",)
+        )
+        reused = reusable_state(paths["state"], inputs, paths, output_names)
         if reused is not None:
             return {
                 "asset_id": asset_id,
@@ -239,21 +266,43 @@ def prepare_asset(
                 "outputs": reused["outputs"],
             }
 
+        if integrated_visual:
+            context_command = [
+                *cli_command(),
+                "build-context-packet",
+                str(timeline_path),
+                "--output-dir",
+                str(paths["context_packet"].parent),
+                "--max-frames",
+                str(max_frames),
+            ]
+            runner(context_command, PROJECT_ROOT)
+            if not paths["context_packet"].is_file():
+                raise RuntimeError("Context packet command produced no output")
+
         paths["scene_dialogue_packet"].parent.mkdir(parents=True, exist_ok=True)
         scene_dialogue_command = [
             *cli_command(),
             "build-scene-dialogue-review-packet",
             str(apple_path),
             str(timeline_path),
+            "--max-window",
+            str(max_window),
             "--output",
             str(paths["scene_dialogue_packet"]),
         ]
+        if integrated_visual:
+            scene_dialogue_command.extend(
+                ["--visual-packet", str(paths["context_packet"])]
+            )
         runner(scene_dialogue_command, PROJECT_ROOT)
         if not paths["scene_dialogue_packet"].is_file():
             raise RuntimeError("Scene-dialogue packet command produced no output")
-        outputs = {
+        outputs: dict[str, Any] = {
             "scene_dialogue_packet": output_record(paths["scene_dialogue_packet"]),
         }
+        if integrated_visual:
+            outputs["context_packet"] = output_record(paths["context_packet"])
         state = {
             "schema_version": STATE_SCHEMA,
             "asset_id": asset_id,
@@ -264,7 +313,9 @@ def prepare_asset(
             "outputs": outputs,
             "policy": {
                 "fresh_reconciliation_built_inside_scene_packet": True,
-                "context_reviewed_timeline_only": True,
+                "integrated_visual_packet": integrated_visual,
+                "max_frames": max_frames if integrated_visual else None,
+                "max_window": max_window,
                 "model_review_performed": False,
                 "merge_performed": False,
                 "media_written": False,
@@ -307,10 +358,16 @@ def build_batch(
     asset_regex: str | None = None,
     shard: str | None = None,
     jobs: int = 1,
+    max_frames: int = 16,
+    max_window: float = 8.0,
     runner: CliRunner = run_cli,
 ) -> dict[str, Any]:
     if jobs < 1:
         raise ValueError("jobs must be at least 1")
+    if max_frames < 1:
+        raise ValueError("max_frames must be at least 1")
+    if max_window <= 0:
+        raise ValueError("max_window must be positive")
     inventory_path = inventory_path.expanduser().resolve()
     output_root = output_root.expanduser().resolve()
     inventory = load_json(inventory_path)
@@ -321,7 +378,14 @@ def build_batch(
     records: list[dict[str, Any]] = []
     with ThreadPoolExecutor(max_workers=jobs) as executor:
         futures = {
-            executor.submit(prepare_asset, asset, output_root, runner): asset
+            executor.submit(
+                prepare_asset,
+                asset,
+                output_root,
+                runner,
+                max_frames=max_frames,
+                max_window=max_window,
+            ): asset
             for asset in assets
         }
         for future in as_completed(futures):
@@ -363,13 +427,16 @@ def build_batch(
             "asset_regex": asset_regex,
             "shard": shard,
             "jobs": jobs,
+            "max_frames": max_frames,
+            "max_window": max_window,
             "inventory_asset_count": len(inventory["assets"]),
             "selected_asset_count": len(assets),
         },
         "policy": {
             "inputs": [
                 "apple_transcript_path",
-                "timeline_context_reviewed_path",
+                "timeline_reviewed_path (Golden integrated path) or "
+                "timeline_context_reviewed_path (legacy compatibility)",
             ],
             "ignored_prior_derivatives": [
                 "existing_reconciliation_packet_path",
@@ -378,6 +445,7 @@ def build_batch(
                 "timeline_final_prior_pipeline_path",
             ],
             "fresh_reconciliation_built_inside_scene_packet": True,
+            "fresh_dense_visual_packet_for_grouped_timelines": True,
             "model_review_performed": False,
             "merge_performed": False,
             "media_written": False,
@@ -405,6 +473,18 @@ def parse_args() -> argparse.Namespace:
         help="Deterministic one-based asset shard, for example 1/3",
     )
     parser.add_argument("--jobs", type=int, default=1)
+    parser.add_argument(
+        "--max-frames",
+        type=int,
+        default=16,
+        help="Maximum dense storyboard frames per coarse group",
+    )
+    parser.add_argument(
+        "--max-window",
+        type=float,
+        default=8.0,
+        help="Maximum dialogue review window before atomic-span expansion",
+    )
     return parser.parse_args()
 
 
@@ -417,6 +497,8 @@ def main() -> int:
             asset_regex=args.asset_regex,
             shard=args.shard,
             jobs=args.jobs,
+            max_frames=args.max_frames,
+            max_window=args.max_window,
         )
     except Exception as error:  # noqa: BLE001 - CLI boundary converts to exit code.
         print(f"error: {error}", file=sys.stderr)
