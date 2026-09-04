@@ -206,6 +206,38 @@ scene. Per-video `render-web` still has no player. A library with proxy symlinks
 detail links outside its output directory is a local linked view, not a portable
 package. HTML is a view; JSON remains the source of truth.
 
+## 7. Resumable story-day preparation
+
+For a multi-day archive, prepare deterministic Golden packets with the repository
+orchestrator instead of rewriting a shell loop:
+
+```bash
+uv run python scripts/run_golden_v3_batch.py \
+  /absolute/path/to/story-days.json \
+  --output-root "$WORKING_MEDIA_ROOT/analysis/golden-v3" \
+  --grouping-overrides /absolute/path/to/grouping-overrides.json \
+  --jobs 2
+```
+
+The input must use `travel-video-story-day-preflight/v1`. Existing reviewed
+grouping may be reused only when the manifest verifies it; newly authored grouping
+must be listed in a `golden-v3-grouping-overrides/v1` file with its current SHA-256
+and `accepted: true`. Missing grouping is reported as `blocked`, never silently
+invented by the runner.
+
+This command is prepare-only. Per asset it verifies lineage and inputs, then creates
+or reuses boundary signals, independent visual moments, dense storyboard context,
+and the integrated scene-dialogue review packet. Atomic state files, content hashes,
+per-asset locks, day manifests, and isolated failures make reruns safe. It does not
+author model reviews, merge those reviews, summarize a video, choose highlight
+clips, or render media. After preparation, allocate bounded asset shards to model
+reviewers, validate and merge every response, finish each story-day audit, and only
+then hand one complete day packet to one independent video editor.
+
+Do not run two batch processes against the same output root. A reasonable local
+starting point is two boundary producers; increase concurrency only after measuring
+storage and Vision/FFmpeg contention.
+
 ## Run manifest and completion report
 
 For every run, preserve:
