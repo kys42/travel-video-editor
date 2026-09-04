@@ -2,6 +2,16 @@
 
 액션캠으로 촬영한 장기간 여행 영상을 로컬 우선 방식으로 정리·검색·선별하고, 개인 소장용과 공개용 편집안을 함께 만드는 프로젝트입니다.
 
+## 골든 문서
+
+프로젝트의 두 주요 단계와 데이터 계약은 아래 문서를 정본으로 사용합니다.
+
+1. [Golden 01 — 원본 영상에서 편집 근거까지](docs/golden/01-raw-to-editorial-evidence.md)
+2. [Golden 02 — 편집 근거에서 하이라이트까지](docs/golden/02-editorial-evidence-to-highlight.md)
+
+기존 조사·설계·파일럿 문서는 배경과 구현 이력으로 유지하되, 파이프라인의
+현재 목표 흐름과 완료 조건이 충돌하면 위 두 문서를 우선합니다.
+
 이 프로젝트의 핵심은 원본 영상을 코덱스가 순차 시청하거나 한 번에 AI에 업로드하는 것이 아니라 다음 파생 자료를 먼저 만드는 것입니다.
 
 - 주문형 저해상도 프록시
@@ -85,7 +95,7 @@ travel-video-editor/
 
 ## 영상 편집 스킬
 
-[`video-editor`](skills/video-editor/SKILL.md) 스킬은 검토된 장면과 원본 타임코드를 `video-edit-plan/v1` JSON으로 만든 뒤 FFmpeg로 실제 영상을 조립합니다. 여러 파일의 구간 trim과 재정렬, 프록시/원본 재연결, 속도·볼륨 조절, 제목·라벨·번인 자막, SRT 출력, 오디오 정규화와 결과 검증을 지원합니다.
+[`video-editor`](skills/video-editor/SKILL.md) 스킬은 검토된 장면과 원본 타임코드를 `video-edit-plan/v1` JSON으로 만든 뒤 FFmpeg로 실제 영상을 조립합니다. 여러 파일의 구간 trim과 재정렬, 프록시/원본 재연결, 피치 유지 0.25–8배속, 오디오 gain/mute/fade, 세로·가로 contain/cover 리프레임과 crop anchor, 90도 회전, A/V 전환, 제목·라벨·번인 자막, SRT 출력, 오디오 정규화와 결과 검증을 지원합니다.
 
 저장소에는 재현 가능한 스킬 원본을 함께 보존하고, 현재 Mac의 전역 설치본은 `~/.codex/skills/video-editor`에서 어디서든 호출할 수 있습니다. 샘플 편집안은 [`examples/skagway-foodcourt-highlight-v1.edit-plan.json`](examples/skagway-foodcourt-highlight-v1.edit-plan.json)에 보존합니다.
 
@@ -101,12 +111,12 @@ python3 ~/.codex/skills/video-editor/scripts/render_edit.py \
 ```bash
 uv sync
 uv run travel-video phase1 /absolute/path/to/video.mp4 \
-  --stt mlx \
-  --stt-model mlx-community/whisper-small-mlx \
-  --stt-languages ko,en
+  --stt off
 ```
 
-결과는 기본적으로 `work/phase1`에 생성됩니다. 자세한 출력과 리뷰 절차는 [Phase 1 문서](docs/phase1-pipeline.md)를 참고합니다.
+시각 Phase 1과 음성 인식은 서로 독립된 캐시로 보존합니다. 결과는 기본적으로
+`work/phase1`에 생성됩니다. 자세한 출력과 리뷰 절차는
+[Phase 1 문서](docs/phase1-pipeline.md)를 참고합니다.
 
 혼합 언어 음성만 독립적으로 분석하려면 단계별 산출물을 보존하는 적응형 STT 명령을 사용할 수 있습니다.
 
@@ -131,32 +141,46 @@ uv run travel-video stt-apple /absolute/path/to/video.mp4 \
 
 이 경로는 한 번 추출한 16 kHz mono 음성에 대해 `SpeechDetector`가 각 언어별 `SpeechTranscriber`를 게이팅하게 합니다. 한국어와 영어 원시 결과를 각각 보존하고 구절별 시간·신뢰도, 정규화 후보와 확인용 음성 활동 범위를 생성합니다. 현재 Apple API는 Detector의 독립적인 VAD 경계를 결과로 제공하지 않으므로, 표시용 범위는 Detector를 통과한 양쪽 Transcriber 타임스탬프의 합집합임을 데이터에 명시합니다.
 
-원문과 번역을 분리한 종합 대본은 다음 세 단계로 만듭니다.
+편집·HTML·번인 자막에 사용할 정식 기본 경로는
+`dialogue-preservation/v1` 통합 장면-대화 리뷰입니다. 빠른 의미 그룹의
+조밀한 storyboard와 Apple 한·영 원시 후보를 한 packet에 넣고, 실제 발화와
+읽기 좋은 원언어 자막, 편집용 대화 beat를 같은 모델 패스에서 만듭니다.
 
 ```bash
-uv run travel-video build-transcript-reconciliation-packet \
+uv run travel-video build-context-packet \
+  work/phase1/sample/timeline.reviewed.json \
+  --output-dir work/phase1/sample/context --max-frames 8
+
+uv run travel-video build-scene-dialogue-review-packet \
   work/stt-apple/sample/transcript.apple.json \
-  --mlx-normalized work/stt-adaptive/sample/normalized/chunks.json \
-  --timeline work/phase1/sample/timeline.context-reviewed.json \
+  work/phase1/sample/timeline.reviewed.json \
+  --visual-packet work/phase1/sample/context/context-review-packet.json \
   --max-window 8 \
-  --output work/stt-apple/sample/reconciliation/packet.json
+  --output work/phase1/sample/scene-dialogue/review-packet.json
 
-uv run travel-video validate-transcript-reconciliation \
-  work/stt-apple/sample/reconciliation/packet.json \
-  work/stt-apple/sample/reconciliation/review.json
+# review-packet.json만 근거로 scene-dialogue/review.json을 작성한 뒤 검증·병합
+uv run travel-video validate-scene-dialogue-review \
+  work/phase1/sample/scene-dialogue/review-packet.json \
+  work/phase1/sample/scene-dialogue/review.json
 
-uv run travel-video merge-transcript-reconciliation \
-  work/stt-apple/sample/reconciliation/packet.json \
-  work/stt-apple/sample/reconciliation/review.json \
-  --output work/stt-apple/sample/reconciliation/transcript.reconciled.json
+uv run travel-video merge-scene-dialogue-review \
+  work/phase1/sample/timeline.reviewed.json \
+  work/phase1/sample/scene-dialogue/review-packet.json \
+  work/phase1/sample/scene-dialogue/review.json \
+  --output work/phase1/sample/timeline.dialogue-reviewed.json
 ```
 
-패킷은 Detector가 통과시킨 Apple 한·영 후보를 최대 8초 대조 창으로 정렬하고 MLX 언어 확률과 장면 맥락을 보조 근거로 붙입니다. 리뷰는 한 창 안에서도 화자 전환과 한·영 전환을 여러 발화로 나눌 수 있습니다. 최종 파일의 `original_text`는 실제 발화 언어를 유지하고 번역은 `translations`에만 기록합니다.
+낮은 ASR 신뢰도만으로 실제 대화를 버리지 않습니다. 복원 가능한 발화는
+`ko`/`en`/`mixed`로 남기고 모든 발화를 자막과 연결합니다. 불확실한 window도
+쓸 수 있는 말은 자막으로 살리며, 완전히 의미 없는 파편과 비음성만 제외합니다.
+병합 결과의 `reviewed_dialogue.policy_audit`가 보존율과 제외 결과를 기록합니다.
+독립 transcript-only reconciliation은 기존 실행을 이어 가는 호환 경로로만
+유지합니다.
 
 검토가 끝난 타임라인은 영상 인코딩 없이 인터랙티브 웹으로 만들 수 있습니다.
 
 ```bash
-uv run travel-video render-web timeline.context-reviewed.json \
+uv run travel-video render-web timeline.dialogue-reviewed.json \
   --output-dir web
 ```
 
@@ -165,19 +189,20 @@ uv run travel-video render-web timeline.context-reviewed.json \
 장면별 맥락 검토 뒤에는 원본을 다시 보지 않고 영상 하나의 전체 흐름을 합성하고, 여러 영상을 촬영 시각순 인덱스로 묶을 수 있습니다.
 
 ```bash
-uv run travel-video build-video-summary-packet timeline.context-reviewed.json \
+uv run travel-video build-video-summary-packet timeline.dialogue-reviewed.json \
   --output summary/video-summary-packet.json
 
 # packet을 근거로 summary/video-summary.json을 작성한 뒤 검증·병합
 uv run travel-video validate-video-summary \
   summary/video-summary-packet.json summary/video-summary.json
 uv run travel-video merge-video-summary \
-  timeline.context-reviewed.json \
+  timeline.dialogue-reviewed.json \
   summary/video-summary-packet.json summary/video-summary.json \
-  --output timeline.summarized.json
+  --output timeline.dialogue-reviewed.summarized.json
 
 uv run travel-video render-library \
-  clip-a/timeline.summarized.json clip-b/timeline.summarized.json \
+  clip-a/timeline.dialogue-reviewed.summarized.json \
+  clip-b/timeline.dialogue-reviewed.summarized.json \
   --output-dir work/library \
   --title "여행 날짜 또는 장소"
 ```
