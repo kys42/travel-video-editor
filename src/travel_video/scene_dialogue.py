@@ -7,6 +7,8 @@ import unicodedata
 from pathlib import Path
 from typing import Any
 
+from .clip_evidence import (contract as clip_evidence_contract, validate_clip_evidence,
+                            namespace_clip_evidence, validate_person_observations)
 from .phase1 import atomic_json, format_time
 from .review import load_json
 from .transcript_reconcile import (
@@ -705,6 +707,7 @@ def _review_contract(
     integrated_visual_review: bool = False,
     boundary_proposals_available: bool = False,
     visual_moments_available: bool = False,
+    clip_evidence_required: bool = False,
 ) -> dict[str, Any]:
     scene_required = [
         "group_id",
@@ -927,6 +930,9 @@ def _review_contract(
                 ),
             }
         ]
+    if clip_evidence_required:
+        contract["editorial_beat"]["required"].append("clip_evidence")
+        contract["clip_evidence"] = clip_evidence_contract()
     return contract
 
 
@@ -940,7 +946,10 @@ def build_scene_dialogue_packet(
     visual_packet_path: Path | None = None,
     boundary_proposals_path: Path | None = None,
     visual_moments_path: Path | None = None,
+    clip_evidence: bool = False,
 ) -> Path:
+    if clip_evidence and visual_packet_path is None:
+        raise ValueError("Clip evidence requires integrated --visual-packet review")
     apple_transcript_path = apple_transcript_path.expanduser().resolve()
     timeline_path = timeline_path.expanduser().resolve()
     output_path = output_path.expanduser().resolve()
@@ -1151,6 +1160,19 @@ def build_scene_dialogue_packet(
                 )
             )
 
+    if boundary_proposals_path is not None and clip_evidence:
+        observations = load_json(boundary_proposals_path).get("person_observations")
+        if observations is not None:
+            validate_person_observations(observations, duration)
+            for scene in scenes:
+                # Only sampled detections near supplied frames are sent to the model.
+                # Full positive detections remain in the boundary artifact.
+                times = [float(f["time"]) for f in scene["visual_context"]["candidate_frames"]]
+                cadence = float(observations["sample_interval_seconds"])
+                scene["person_observations"] = {**copy.deepcopy(observations),
+                    "observations": [copy.deepcopy(o) for o in observations["observations"]
+                        if any(abs(float(o["timestamp"]) - t) <= cadence + EPSILON for t in times)]}
+
     packet = {
         "schema_version": SCENE_DIALOGUE_PACKET_SCHEMA,
         "asset_id": timeline.get("asset_id"),
@@ -1198,6 +1220,7 @@ def build_scene_dialogue_packet(
             "drop_only": "non_speech_or_no_caption_usable_lexical_content",
             "integrated_visual_review": visual_packet_path is not None,
             "editorial_beats_required": visual_packet_path is not None,
+            "clip_evidence_required": clip_evidence,
             "boundary_proposals_supplied": boundary_proposals_path is not None,
             "boundary_proposals_available": boundary_proposals_available,
             "boundary_proposals_are_advisory": True,
@@ -1219,6 +1242,7 @@ def build_scene_dialogue_packet(
         ],
         "review_contract": _review_contract(
             integrated_visual_review=visual_packet_path is not None,
+            clip_evidence_required=clip_evidence,
             boundary_proposals_available=boundary_proposals_available,
             visual_moments_available=visual_moments_available,
         ),
@@ -1274,6 +1298,8 @@ def build_scene_dialogue_packet(
                 "Cite source_visual_moment_ids for moments used in editorial beats.",
             ]
         )
+    if clip_evidence:
+        packet["instructions"].append("Also return clip_evidence per beat using its exact versioned contract. Separate visual observations, speech mentions and inference; empty lists remain unknown.")
     validate_scene_dialogue_packet(packet, timeline)
     atomic_json(output_path, packet)
     return output_path
@@ -1290,6 +1316,9 @@ def validate_scene_dialogue_packet(
     duration = float(packet.get("media", {}).get("duration", 0.0))
     if duration <= 0:
         raise ValueError("Scene dialogue packet duration must be positive")
+    for scene in packet.get("scenes", []):
+        if "person_observations" in scene:
+            validate_person_observations(scene["person_observations"], float(packet["media"]["duration"]))
     contract = packet.get("review_contract", {})
     if contract.get("schema_version") != SCENE_DIALOGUE_REVIEW_SCHEMA:
         raise ValueError("Scene dialogue packet is missing its review contract")
@@ -2149,6 +2178,10 @@ def validate_scene_dialogue_review(
                     )
                 ),
             )
+            for beat in reviewed_scene["editorial_beats"]:
+                if packet.get("policy", {}).get("clip_evidence_required") or "clip_evidence" in beat:
+                    validate_clip_evidence(beat, packet_scene, utterance_map,
+                                           {c["caption_id"]: c for c in captions})
             scene_beat_ids = {
                 str(beat["beat_id"]) for beat in reviewed_scene["editorial_beats"]
             }
@@ -2240,6 +2273,7 @@ def _slice_packet(packet: dict[str, Any], group_ids: list[str]) -> dict[str, Any
     )
     sliced["policy"]["visual_moments_available"] = visual_moments_available
     sliced["review_contract"] = _review_contract(
+        clip_evidence_required=bool(sliced["policy"].get("clip_evidence_required")),
         integrated_visual_review=bool(
             sliced["policy"].get("integrated_visual_review", False)
         ),
@@ -2316,6 +2350,7 @@ def _namespace_scene_review_ids(scene: dict[str, Any]) -> dict[str, Any]:
             for item in caption.get("source_utterance_ids", [])
         ]
     for beat in result.get("editorial_beats", []):
+        namespace_clip_evidence(beat, utterance_id_map)
         beat_id = str(beat["beat_id"])
         if not beat_id.startswith(prefix):
             beat["beat_id"] = prefix + beat_id
@@ -2542,6 +2577,8 @@ def merge_scene_dialogue_review(
         group_id = packet_scene["group_id"]
         reviewed_scene = reviewed_by_group[group_id]
         group = group_map[group_id]
+        if "person_observations" in packet_scene:
+            group["person_observations"] = copy.deepcopy(packet_scene["person_observations"])
         group["reviewed_dialogue"] = {
             "window_decisions": copy.deepcopy(reviewed_scene["window_decisions"]),
             "utterances": [

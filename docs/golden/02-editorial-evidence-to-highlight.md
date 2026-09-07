@@ -440,3 +440,8 @@ work/highlights/<story-day>/<edit-id>/
 이 순서가 완성되기 전에는 “정보를 함께 보고 자동으로 하이라이트를 골랐다”고
 표현하지 않는다. 현재 가능한 것은 분석 근거를 사람이/모델이 참고해 수동으로
 구간을 정한 prototype이다.
+
+
+## 재사용 후보 내보내기
+
+`travel-video export-clip-candidates`는 기존 비트를 모델 호출 없이 `clip-candidate-library/v1`로 내보낸다. 안정적인 후보 ID·내용 버전·원본 구간·상세 근거를 연결한다. 기존 정보만 있거나 확인이 덜 된 후보는 검토 상태를 유지한다. 구조화됐다는 사실은 얼굴 제외 또는 영상 품질 승인을 뜻하지 않는다. [후보 소비 계약](../clip-editorial-evidence.md)을 따른다.
