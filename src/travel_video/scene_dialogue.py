@@ -1322,7 +1322,11 @@ def build_scene_dialogue_packet(
         packet["instructions"].append(
             "Also return clip_evidence per beat using its exact versioned contract. "
             "Separate visual observations, speech mentions and inference; "
-            "empty lists remain unknown."
+            "empty lists remain unknown. Author each supported claim from its cited evidence; "
+            "do not fill fields by repeating generic prose, copying a group label, or "
+            "transferring a machine quality score into claim confidence. Interpret "
+            "the visible target together with speech (e.g. commentary on a bird is "
+            "not necessarily commentary on a person eating)."
         )
     validate_scene_dialogue_packet(packet, timeline)
     atomic_json(output_path, packet)
