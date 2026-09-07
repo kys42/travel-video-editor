@@ -357,6 +357,38 @@ def test_library_renders_reusable_candidates_with_exact_ranges(tmp_path: Path) -
     path.write_text(json.dumps(timeline))
     document = render_video_library([path], tmp_path / "library").read_text()
     assert document.count('data-candidate-id="C-') == 1
+    assert "장면별 세부 구간" in document
+    assert "기계 샘플 구간 · 편집 장면 아님" in document
+    from html.parser import HTMLParser
+
+    class EvidenceParser(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.details = []
+            self.candidates_inside_evidence = []
+            self.segments_inside_evidence = []
+
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            if tag == "details":
+                is_evidence = "data-analysis-evidence" in attrs
+                if is_evidence:
+                    assert "open" not in attrs
+                self.details.append(is_evidence)
+            if "data-candidate-id" in attrs:
+                self.candidates_inside_evidence.append(any(self.details))
+            if attrs.get("class") == "segment-list":
+                self.segments_inside_evidence.append(any(self.details))
+
+        def handle_endtag(self, tag):
+            if tag == "details":
+                self.details.pop()
+
+    parser = EvidenceParser()
+    parser.feed(document)
+    assert parser.candidates_inside_evidence == [False]
+    assert parser.segments_inside_evidence == [True]
+
     assert 'data-source-in="2.250" data-source-out="4.500"' in document
     assert 'data-source-in="0.000" data-source-out="20.000"' in document
     assert "검토 필요 · 상세 근거 없음" in document
