@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .clip_evidence import person_observations
+
 import hashlib
 import math
 import os
@@ -1174,7 +1176,7 @@ def _implementation_digest() -> str:
     python_source = Path(__file__).resolve()
     swift_source = python_source.parents[2] / "scripts" / "apple_vision_boundary_signals.swift"
     digest = hashlib.sha256()
-    for path in (python_source, swift_source):
+    for path in (python_source, swift_source, python_source.with_name("clip_evidence.py")):
         digest.update(path.name.encode("utf-8"))
         digest.update(path.read_bytes())
     return digest.hexdigest()[:16]
@@ -1388,6 +1390,7 @@ def build_boundary_proposals(
             ],
         },
         "proposals": proposals,
+        "person_observations": person_observations(vision_raw, duration),
     }
     atomic_json(proposal_path, payload)
     validate_boundary_proposals(proposal_path, timeline_path)

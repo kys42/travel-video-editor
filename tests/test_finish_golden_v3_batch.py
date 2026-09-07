@@ -281,9 +281,40 @@ def make_fake_runner(calls: list[list[str]], *, fail_asset: str | None = None):
             output_dir.mkdir(parents=True, exist_ok=True)
             (output_dir / "index.html").write_text("<html></html>", encoding="utf-8")
             write_json(output_dir / "manifest.json", {"assets": "relative"})
+        elif action == "export-clip-candidates":
+            write_json(Path(command[command.index("--output") + 1]), {"candidates": []})
         return {"stdout": f"{action} ok", "stderr": ""}
 
     return runner
+
+
+def test_enriched_finisher_exports_candidates_and_resumes_without_reexport(tmp_path: Path) -> None:
+    batch = load_module()
+    record = make_prepared_asset(batch, tmp_path, "asset-a")
+    packet_path = Path(record["outputs"]["scene_dialogue_review_packet"])
+    packet = json.loads(packet_path.read_text())
+    packet["policy"]["clip_evidence_required"] = True
+    write_json(packet_path, packet)
+    state_path = Path(record["state"])
+    state = json.loads(state_path.read_text())
+    state["stages"]["scene_dialogue_packet"]["outputs"]["review_packet"] = batch.file_record(packet_path)
+    write_json(state_path, state)
+    preparation = make_preparation_manifest(batch, tmp_path, [record])
+    reviews = tmp_path / "reviews"
+    write_scene_review(reviews, "asset-a")
+    calls = []
+    result = batch.finish_batch(preparation, reviews, tmp_path / "finished", runner=make_fake_runner(calls))
+    assert result["summary"]["awaiting_summary"] == 1
+    assert sum(c[3] == "export-clip-candidates" for c in calls) == 1
+    state = json.loads((tmp_path / "finished/assets/asset-a/state.json").read_text())
+    assert Path(state["current_outputs"]["clip_candidates"]).is_file()
+    calls.clear()
+    write_summary(reviews, "asset-a")
+    result = batch.finish_batch(preparation, reviews, tmp_path / "finished", runner=make_fake_runner(calls))
+    assert result["summary"]["completed"] == 1
+    assert not any(c[3] == "export-clip-candidates" for c in calls)
+    state = json.loads((tmp_path / "finished/assets/asset-a/state.json").read_text())
+    assert Path(state["current_outputs"]["clip_candidates"]).is_file()
 
 
 def test_waits_for_review_without_running_commands(tmp_path: Path) -> None:

@@ -87,6 +87,7 @@ def implementation_record() -> dict[str, Any]:
         PROJECT_ROOT / "scripts/run_golden_v3_batch.py",
         PROJECT_ROOT / "src/travel_video/cli.py",
         PROJECT_ROOT / "src/travel_video/scene_dialogue.py",
+        PROJECT_ROOT / "src/travel_video/clip_evidence.py",
         PROJECT_ROOT / "src/travel_video/video_summary.py",
         PROJECT_ROOT / "src/travel_video/web.py",
     ]
@@ -711,6 +712,11 @@ def finish_asset(
             ],
         ]
 
+        candidate_path = review_output_dir / "clip-candidates.json"
+        if prepared.packet.get("policy", {}).get("clip_evidence_required"):
+            review_commands.append([*cli_prefix(), "export-clip-candidates", str(merged_path),
+                                    "--output", str(candidate_path)])
+
         def after_review_merge(_: list[dict[str, str]]) -> None:
             atomic_json(
                 audit_path,
@@ -733,6 +739,8 @@ def finish_asset(
                 collect_outputs=lambda: {
                     "timeline_dialogue_reviewed": file_record(merged_path),
                     "audit": file_record(audit_path),
+                    **({"clip_candidates": file_record(candidate_path)}
+                       if prepared.packet.get("policy", {}).get("clip_evidence_required") else {}),
                 },
             )
         )
@@ -782,6 +790,8 @@ def finish_asset(
 
         if not summary_review_path.is_file():
             state["current_outputs"] = {
+                **({"clip_candidates": str(candidate_path)}
+                   if prepared.packet.get("policy", {}).get("clip_evidence_required") else {}),
                 "timeline_dialogue_reviewed": str(merged_path),
                 "scene_dialogue_audit": str(audit_path),
                 "video_summary_packet": str(summary_packet_path),
@@ -885,6 +895,8 @@ def finish_asset(
         state["completed_at"] = utc_now()
         state.pop("expected_model_output", None)
         state["current_outputs"] = {
+            **({"clip_candidates": str(candidate_path)}
+               if prepared.packet.get("policy", {}).get("clip_evidence_required") else {}),
             "timeline_dialogue_reviewed": str(merged_path),
             "scene_dialogue_audit": str(audit_path),
             "video_summary_packet": str(summary_packet_path),

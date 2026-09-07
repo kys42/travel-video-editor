@@ -24,6 +24,12 @@ struct OCRSample: Codable {
     let lines: [OCRLine]
 }
 
+struct PersonDetection: Codable {
+    let timestamp: Double
+    let boundingBox: [Double]
+    let confidence: Float
+}
+
 struct BoundarySignalResult: Codable {
     let schemaVersion: String
     let input: String
@@ -32,6 +38,8 @@ struct BoundarySignalResult: Codable {
     let startedAt: String
     let elapsedSeconds: Double
     let sourceDurationSeconds: Double
+    let faceObservations: [PersonDetection]
+    let personObservations: [PersonDetection]
     let visualSamples: [VisualSample]
     let ocrSamples: [OCRSample]
 }
@@ -215,31 +223,51 @@ struct AppleVisionBoundarySignals {
         }
 
         let faceTask = Task {
-            var result: [CountSample] = []
+            var counts: [CountSample] = []
+            var detections: [PersonDetection] = []
             var index = 0
             for try await observations in faceSequence {
                 let fallback = Double(index) * arguments.visualInterval
-                let sampleTime = observations.first.flatMap { observation in
-                    try? timing(observation.timeRange, request: "face").seconds
-                } ?? fallback
-                result.append(CountSample(timestamp: sampleTime, count: observations.count))
+                var sampleTime = fallback
+                for observation in observations {
+                    // Positive evidence must use a real video timestamp, never cadence inference.
+                    let t = try timing(observation.timeRange, request: "face").seconds
+                    sampleTime = t
+                    let box = observation.boundingBox
+                    detections.append(PersonDetection(
+                        timestamp: t,
+                        boundingBox: [Double(box.origin.x), Double(box.origin.y), Double(box.width), Double(box.height)],
+                        confidence: observation.confidence
+                    ))
+                }
+                counts.append(CountSample(timestamp: sampleTime, count: observations.count))
                 index += 1
             }
-            return result
+            return (counts, detections)
         }
 
         let humanTask = Task {
-            var result: [CountSample] = []
+            var counts: [CountSample] = []
+            var detections: [PersonDetection] = []
             var index = 0
             for try await observations in humanSequence {
                 let fallback = Double(index) * arguments.visualInterval
-                let sampleTime = observations.first.flatMap { observation in
-                    try? timing(observation.timeRange, request: "human").seconds
-                } ?? fallback
-                result.append(CountSample(timestamp: sampleTime, count: observations.count))
+                var sampleTime = fallback
+                for observation in observations {
+                    // Positive evidence must use a real video timestamp, never cadence inference.
+                    let t = try timing(observation.timeRange, request: "human").seconds
+                    sampleTime = t
+                    let box = observation.boundingBox
+                    detections.append(PersonDetection(
+                        timestamp: t,
+                        boundingBox: [Double(box.origin.x), Double(box.origin.y), Double(box.width), Double(box.height)],
+                        confidence: observation.confidence
+                    ))
+                }
+                counts.append(CountSample(timestamp: sampleTime, count: observations.count))
                 index += 1
             }
-            return result
+            return (counts, detections)
         }
 
         let textTask = Task {
@@ -271,12 +299,17 @@ struct AppleVisionBoundarySignals {
         processor.startAnalysis()
         let features = try await featureTask.value.sorted { $0.timestamp < $1.timestamp }
         let aesthetics = try await aestheticsTask.value.sorted { $0.timestamp < $1.timestamp }
-        let faces = try await faceTask.value.sorted { $0.timestamp < $1.timestamp }
-        let humans = try await humanTask.value.sorted { $0.timestamp < $1.timestamp }
+        let (faceCounts, faceDetections) = try await faceTask.value
+        let faces = faceCounts.sorted { $0.timestamp < $1.timestamp }
+        let (humanCounts, humanDetections) = try await humanTask.value
+        let humans = humanCounts.sorted { $0.timestamp < $1.timestamp }
         let ocr = try await textTask.value.sorted { $0.timestamp < $1.timestamp }
         let elapsed = start.duration(to: .now).components
         let elapsedSeconds = Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18
 
+        guard !features.isEmpty else {
+            throw SignalError.usage("Vision produced no visual samples; check media access and runtime permissions")
+        }
         let visualSamples = features.map { feature in
             let aesthetic = nearest(to: feature.timestamp, in: aesthetics, timestamp: { $0.timestamp })
             let face = nearest(to: feature.timestamp, in: faces, timestamp: { $0.timestamp })
@@ -299,6 +332,8 @@ struct AppleVisionBoundarySignals {
             startedAt: startedAt,
             elapsedSeconds: elapsedSeconds,
             sourceDurationSeconds: sourceDuration,
+            faceObservations: faceDetections,
+            personObservations: humanDetections,
             visualSamples: visualSamples,
             ocrSamples: ocr
         )

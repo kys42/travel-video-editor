@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .clip_evidence import export_candidate_library
+
 import argparse
 import sys
 from pathlib import Path
@@ -149,6 +151,10 @@ def build_parser() -> argparse.ArgumentParser:
     scene_dialogue_packet.add_argument("--output", type=Path, required=True)
     scene_dialogue_packet.add_argument("--mlx-normalized", type=Path)
     scene_dialogue_packet.add_argument("--max-window", type=float, default=8.0)
+    scene_dialogue_packet.add_argument("--clip-evidence", action="store_true", help="Require structured event/person/audio evidence in the same model pass")
+    candidates = subparsers.add_parser("export-clip-candidates", help="Export source-linked beat candidates without model calls")
+    candidates.add_argument("timeline", type=Path)
+    candidates.add_argument("--output", type=Path, required=True)
     scene_dialogue_packet.add_argument(
         "--visual-packet",
         type=Path,
@@ -462,6 +468,8 @@ def main(argv: list[str] | None = None) -> int:
                     review_path=args.review,
                 )
             )
+        elif args.command == "export-clip-candidates":
+            print(export_candidate_library(args.timeline, args.output))
         elif args.command == "build-scene-dialogue-review-packet":
             print(
                 build_scene_dialogue_packet(
@@ -473,6 +481,7 @@ def main(argv: list[str] | None = None) -> int:
                     visual_packet_path=args.visual_packet,
                     boundary_proposals_path=args.boundary_proposals,
                     visual_moments_path=args.visual_moments,
+                    clip_evidence=args.clip_evidence,
                 )
             )
         elif args.command == "validate-scene-dialogue-review":

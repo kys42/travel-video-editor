@@ -53,6 +53,7 @@ class StageLockedError(RuntimeError):
 
 @dataclass(frozen=True)
 class GoldenV3Config:
+    clip_evidence: bool = False
     max_frames: int = 16
     max_window: float = 8.0
     vision_interval: float = 1 / 3
@@ -288,6 +289,7 @@ def implementation_record() -> dict[str, Any]:
         PROJECT_ROOT / "src/travel_video/cli.py",
         PROJECT_ROOT / "src/travel_video/context.py",
         PROJECT_ROOT / "src/travel_video/scene_dialogue.py",
+        PROJECT_ROOT / "src/travel_video/clip_evidence.py",
         PROJECT_ROOT / "src/travel_video/boundary_proposals.py",
         PROJECT_ROOT / "scripts/apple_vision_boundary_signals.swift",
     ]
@@ -1013,7 +1015,7 @@ def prepare_asset(
             "visual_moments": file_record(visual_moments_path),
             "evidence_validation": file_record(validation_path),
         }
-        packet_config = {"max_window": config.max_window}
+        packet_config = {"max_window": config.max_window, "clip_evidence": config.clip_evidence}
         packet_signature = stage_signature(
             "scene_dialogue_packet",
             packet_inputs,
@@ -1038,6 +1040,8 @@ def prepare_asset(
             "--output",
             str(packet_path),
         ]
+        if config.clip_evidence:
+            packet_command.append("--clip-evidence")
         statuses.append(
             execute_stage(
                 asset_root=asset_root,
@@ -1298,6 +1302,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--jobs", type=int, default=1)
     parser.add_argument("--max-frames", type=int, default=16)
     parser.add_argument("--max-window", type=float, default=8.0)
+    parser.add_argument("--clip-evidence", action="store_true")
     parser.add_argument("--vision-interval", type=float, default=1 / 3)
     parser.add_argument("--ocr-interval", type=float, default=1.0)
     parser.add_argument("--motion-interval", type=float, default=1 / 3)
@@ -1317,6 +1322,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     config = GoldenV3Config(
+        clip_evidence=args.clip_evidence,
         max_frames=args.max_frames,
         max_window=args.max_window,
         vision_interval=args.vision_interval,
