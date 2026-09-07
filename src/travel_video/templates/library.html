@@ -185,6 +185,23 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
     .notable-item small { display: block; margin-top: 3px; color: var(--text-2); font-size: 8px; }
     .empty-detail { margin: 0; color: var(--faint); font-size: 9px; }
 
+    .candidate-section { margin-bottom: 16px; }
+    .candidate-section > header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+    .candidate-section > header strong { font-size: 12px; }
+    .candidate-section > header span, .candidate-content small { color: var(--muted); font-size: 10px; }
+    .candidate-row { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 8px 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+    .candidate-frame img { width: 88px; aspect-ratio: 16/9; object-fit: cover; border-radius: 3px; }
+    .candidate-no-frame { color: var(--muted); font-size: 10px; }
+    .candidate-content { min-width: 0; overflow-wrap: anywhere; }
+    .candidate-content strong { font-size: 12px; }
+    .candidate-content p { margin: 4px 0; font-size: 11px; line-height: 1.5; }
+    .candidate-content small { display: block; margin-top: 4px; }
+    .candidate-content .candidate-state { color: var(--accent); }
+    .candidate-controls { grid-column: 1 / -1; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+    .candidate-controls span { margin-right: auto; color: var(--muted); font: 10px var(--font-time); }
+    .candidate-controls button { border: 1px solid var(--line); border-radius: 3px; background: var(--panel-2); padding: 6px 9px; color: inherit; font: inherit; cursor: pointer; }
+    .candidate-controls button:hover, .candidate-controls button:focus-visible { border-color: var(--accent); }
+    .candidate-row.is-active { border-left: 2px solid var(--accent); padding-left: 8px; }
     .segment-section, .storyboard-section { margin-top: 12px; }
     .segment-section > header, .storyboard-section > header { display: flex; align-items: end; justify-content: space-between; min-height: 31px; padding-bottom: 6px; }
     .segment-section header div, .storyboard-section header div { min-width: 0; }
@@ -697,8 +714,11 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
         updatePlayState();
       };
 
+      let previewScene = null;
       const updatePreview = scene => {
         if (!scene) return;
+        previewScene = scene;
+        document.querySelectorAll(".candidate-row.is-active").forEach(row => row.classList.remove("is-active"));
         const image = scene.querySelector('.scene-thumb img');
         previewImage.src = image.src;
         previewImage.alt = `${scene.dataset.previewTitle} 대표 프레임`;
@@ -785,7 +805,7 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
             const sourceIn = Number.isFinite(Number(action.source_in)) ? Number(action.source_in) : Number(scene.dataset.previewStart || 0);
             const sourceOut = Number.isFinite(Number(action.source_out)) ? Number(action.source_out) : Number(scene.dataset.previewEnd || sourceIn);
             const clip = {
-              label: scene.dataset.previewTitle,
+              label: action.label || scene.dataset.previewTitle,
               source_in: sourceIn,
               source_out: sourceOut,
               duration: sourceOut - sourceIn
@@ -794,6 +814,12 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
             return;
           }
           setInspectorTab('monitor');
+          selectedStart = Number.isFinite(Number(action.source_in)) ? Number(action.source_in) : selectedStart;
+          selectedEnd = Number.isFinite(Number(action.source_out)) ? Number(action.source_out) : selectedEnd;
+          previewTitle.textContent = action.label || scene.dataset.previewTitle;
+          previewTime.textContent = `${preciseTimeLabel(selectedStart)} — ${preciseTimeLabel(selectedEnd)}`;
+          seekToSelectedStart();
+          if (!loadedMediaUrl) showToast('이 원본에는 재생용 프록시가 없어 스틸 프레임으로 표시합니다.');
           if (action.autoplay !== false && !playButton.disabled) {
             seekToSelectedStart();
             rangePlayback = true;
@@ -804,11 +830,20 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
 
       clipButtons.forEach(button => button.addEventListener('click', () => selectClip(button.dataset.selectClip)));
       document.querySelectorAll('[data-scene]').forEach(scene => scene.addEventListener('toggle', () => {
-        if (scene.open && !scene.closest('[data-clip-panel]').hidden) openScene(scene, true);
+        if (scene.open && scene !== previewScene && !scene.closest('[data-clip-panel]').hidden) openScene(scene, true);
+        if (!scene.open && scene === previewScene) previewScene = null;
       }));
       document.querySelectorAll('[data-jump-scene]').forEach(button => button.addEventListener('click', () => {
         const scene = document.getElementById(button.dataset.jumpScene);
         openScene(scene, true);
+      }));
+
+      document.querySelectorAll('[data-play-candidate]').forEach(button => button.addEventListener('click', async () => {
+        const scene = button.closest('[data-scene]');
+        await dispatchAgentAction({type: 'play_source_range', scene_id: scene.dataset.sceneId,
+          source_in: Number(button.dataset.sourceIn), source_out: Number(button.dataset.sourceOut),
+          label: button.dataset.rangeTitle, autoplay: true});
+        button.closest('[data-candidate-id]').classList.add('is-active');
       }));
 
       const applySearch = () => {
@@ -893,6 +928,11 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
         return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
       };
 
+      const preciseTimeLabel = seconds => {
+        const millis = Math.round(Math.max(0, Number(seconds) || 0) * 1000);
+        return `${timeLabel(millis / 1000)}.${String(millis % 1000).padStart(3, '0')}`;
+      };
+
       const seekRoughPreview = () => {
         const seek = () => { roughPreviewVideo.currentTime = Math.min(roughStart, roughPreviewVideo.duration || roughStart); };
         if (roughPreviewVideo.readyState >= 1) seek();
@@ -906,7 +946,7 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
         if (image?.src) roughPreviewImage.src = image.src;
         roughPreviewImage.alt = `${clip.label || sourceScene.dataset.previewTitle} 대표 프레임`;
         roughPreviewTitle.textContent = clip.label || sourceScene.dataset.previewTitle;
-        roughPreviewTime.textContent = `${timeLabel(clip.source_in)} — ${timeLabel(clip.source_out)} · ${clipDuration.toFixed(1)}s · 원본 연결`;
+        roughPreviewTime.textContent = `${preciseTimeLabel(clip.source_in)} — ${preciseTimeLabel(clip.source_out)} · ${clipDuration.toFixed(1)}s · 원본 연결`;
         roughStart = Number(clip.source_in ?? sourceScene.dataset.previewStart ?? 0);
         roughEnd = Number(clip.source_out ?? sourceScene.dataset.previewEnd ?? roughStart);
         roughRangePlayback = false;
