@@ -326,3 +326,16 @@ def test_legacy_candidates_remain_unknown(enriched, tmp_path):
     assert all(
         c["evidence"] is None and c["readiness"] == "needs_review" for c in records
     )
+
+
+def test_empty_global_beats_preserve_group_candidates(enriched, tmp_path):
+    timeline, packet_path, _, review = enriched
+    review_path = tmp_path / "review.json"
+    review_path.write_text(json.dumps(review))
+    output = tmp_path / "merged.json"
+    merge_scene_dialogue_review(timeline, packet_path, review_path, output)
+    merged = json.loads(output.read_text())
+    expected = build_candidate_library(merged)["candidates"]
+    assert expected
+    merged["reviewed_dialogue"]["editorial_beats"] = []
+    assert build_candidate_library(merged)["candidates"] == expected

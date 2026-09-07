@@ -363,7 +363,7 @@ def build_candidate_library(timeline: dict) -> dict:
     captions = {c["caption_id"]: c for c in dialogue.get("captions", [])}
     utterances = {u["utterance_id"]: u for u in dialogue.get("utterances", [])}
     beats = dialogue.get("editorial_beats")
-    if beats is None:
+    if not beats:
         beats = [
             b
             for g in timeline.get("context_groups", [])
