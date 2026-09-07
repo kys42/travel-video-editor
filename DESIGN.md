@@ -44,7 +44,9 @@ Color always communicates selection, evidence type, confidence, or an error. It 
 - Footage rows combine one 16:10 thumbnail, title, filename, capture time, and duration.
 - A source-time ruler mirrors scene duration and updates selection.
 - Scene rows expose time, representative frame, action interpretation, dialogue summary, notable state, and confidence before expansion.
-- Expanded scene detail follows this order: interpretation and dialogue; edit/notable guidance; segment-level action and raw STT evidence; contextual storyboard.
+- For reusable candidates, expanded scenes start with a compact clip ledger: frame, title/time, synopsis/dialogue, subject and review signals. Dialogue, observed-people and review-needed filters narrow the ledger while preserving the ruler's original time positions.
+- Candidate detail opens inline beneath one selected row. Keep the frame small, share one transport/close bar, and show populated observation, people, audio and quality sections immediately. Use container width to arrange frame, copy and facts in two or three columns; do not add another disclosure for these facts.
+- Full group interpretation and dialogue remain available separately from raw machine samples and contextual storyboards. Older scenes without reusable candidates retain their existing detailed view.
 - Only one scene is open at once inside the active clip to preserve scan position.
 - Selecting a revision clip must select its footage row, open the linked scene in the shared workspace, and keep the scene summary visible after scrolling.
 - The source monitor follows the selected scene and truthfully reports `프록시 없음` until proxy media exists.

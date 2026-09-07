@@ -386,44 +386,87 @@ def _candidate_evidence_text(candidate: dict) -> list[str]:
     ]
 
 
+def _candidate_listing_signals(candidate: dict) -> list[tuple[str, str]]:
+    """Display-only facts. Unknown identity/absence is never promoted to a filter."""
+    evidence = candidate.get("evidence") or {}
+    signals = []
+    labels = {
+        "wildlife": "동물",
+        "place": "장소",
+        "food": "음식",
+        "activity": "활동",
+        "object": "사물",
+    }
+    for claim in evidence.get("subjects", []):
+        label = labels.get(claim["kind"], claim["kind"])
+        suffix = {"visual": "", "speech": " 언급", "inferred": " 추정"}[claim["basis"]]
+        entry = ("subject", label + suffix)
+        if entry not in signals:
+            signals.append(entry)
+    if candidate.get("dialogue"):
+        signals.append(("dialogue", "대화"))
+    if evidence.get("people"):
+        signals.append(("people", "인물 관찰"))
+    if candidate.get("review_reasons"):
+        signals.append(("attention", "검토 필요"))
+    return signals
+
+
 def _render_candidate_evidence(candidate: dict) -> str:
     evidence = candidate.get("evidence")
     if not evidence:
-        return '<p class="candidate-evidence-empty">상세 근거 미추출</p>'
+        return '<p class="candidate-evidence-empty">상세 관찰 정보 미추출</p>'
     sections = []
-    basis_labels = {
-        "visual": "화면 관찰",
-        "speech": "발화 근거",
-        "inferred": "문맥 추정",
-    }
-    for key, label in (
-        ("steps", "행동·반응 흐름"),
-        ("subjects", "볼거리·대상"),
-        ("interactions", "대화·상호작용"),
-        ("audio", "원음 정보"),
-        ("quality", "화면 품질"),
+    basis_labels = {"visual": "화면", "speech": "발화 근거", "inferred": "추정"}
+    dialogue = " ".join(candidate.get("dialogue", "").split())
+    seen = set()
+    for keys, label in (
+        (("subjects", "steps"), "대상·행동"),
+        (("interactions",), "상호작용"),
+        (("audio",), "원음"),
+        (("quality",), "화면 품질"),
     ):
-        claims = evidence.get(key, [])
+        claims = []
+        for key in keys:
+            for c in evidence.get(key, []):
+                text = " ".join(c["description"].split())
+                # The transcript is already displayed next to the frame.
+                if (
+                    key == "steps"
+                    and c["basis"] == "speech"
+                    and dialogue
+                    and text.removeprefix("발화 내용: ") == dialogue
+                    and {"start": c["start"], "end": c["end"]}
+                    == candidate.get("recommended_range")
+                ):
+                    continue
+                signature = (text, c["start"], c["end"], c["basis"])
+                if signature not in seen:
+                    claims.append(c)
+                    seen.add(signature)
         rows = "".join(
-            f"<li><span>{_escape(format_time(c['start']))}–{_escape(format_time(c['end']))} · {_escape(basis_labels.get(c['basis'], c['basis']))}</span> {_escape(c['description'])}</li>"
+            f'<li><span class="fact-stamp"><time>{_escape(_short_time(c["start"]))}–{_escape(_short_time(c["end"]))}</time><em class="basis-{_escape(c["basis"])}">{_escape(basis_labels[c["basis"]])}</em></span><span>{_escape(c["description"])}</span></li>'
             for c in claims
         )
         if rows:
-            sections.append(f"<section><b>{label}</b><ul>{rows}</ul></section>")
-    people = " · ".join(
-        f"{_escape(p['person_id'])}: {_escape(_PERSON_ROLE_LABELS.get(p['role'], p['role']))}"
-        for p in evidence.get("people", [])
-    )
+            sections.append(
+                f'<section class="fact-section"><h4>{label}</h4><ul>{rows}</ul></section>'
+            )
+    people = evidence.get("people", [])
     if people:
+        items = "".join(
+            f'<li><span title="{_escape(p["person_id"])}">관찰 {i}</span><span>{_escape(_PERSON_ROLE_LABELS.get(p["role"], p["role"]))}</span></li>'
+            for i, p in enumerate(people, 1)
+        )
         sections.append(
-            f"<section><b>등장인물</b><p>{people}</p><small>구간 내부 익명 관찰 · 동일인·우리 얼굴 여부 미확인</small></section>"
+            f'<section class="fact-section fact-people"><h4>인물 관찰 <span>{len(people)}건</span></h4><ul>{items}</ul><p class="fact-note">동일인·우리 얼굴 여부 미확인</p></section>'
         )
     if not sections:
         return ""
     return (
-        '<details class="candidate-facts"><summary>관찰 근거·인물·원음</summary><div class="candidate-evidence">'
+        '<div class="candidate-evidence" aria-label="클립 관찰 정보">'
         + "".join(sections)
-        + "</div></details>"
+        + "</div>"
     )
 
 
@@ -468,16 +511,23 @@ def _render_candidates(
             if quality_notes
             else ""
         )
+        signals = _candidate_listing_signals(candidate)
+        chips = "".join(
+            f'<span class="clip-signal signal-{kind}">{_escape(label)}</span>'
+            for kind, label in signals
+        )
+        signal_types = " ".join(sorted({kind for kind, _ in signals}))
         rows.append(f"""
-          <article class="candidate-row" data-candidate-id="{_escape(candidate["candidate_id"])}">
+          <article class="candidate-row" data-candidate-id="{_escape(candidate["candidate_id"])}" data-clip-signals="{signal_types}">
+            <div class="candidate-list-signals" hidden>{chips}</div>
             <div class="candidate-frame">{thumbnail}</div>
             <div class="candidate-content"><strong>{_escape(candidate["title"])}</strong>
               <p>{_escape(candidate["summary"])}</p>
               {f'<p class="candidate-dialogue">대사 · {_escape(candidate["dialogue"])}</p>' if candidate["dialogue"] else ""}
               {quality_badge}
-              {_render_candidate_evidence(candidate)}
               {f'<small class="candidate-state">{_escape(reasons)}</small>' if reasons else ""}
             </div>
+            {_render_candidate_evidence(candidate)}
             <div class="candidate-controls">
               <span>{_escape(format_time(start))} — {_escape(format_time(end))} · {end - start:.1f}s</span>
               <button type="button" data-play-candidate data-source-in="{start:.3f}" data-source-out="{end:.3f}" data-range-title="{_escape(candidate["title"])}">후보 재생</button>
