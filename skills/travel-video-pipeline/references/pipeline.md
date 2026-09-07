@@ -216,6 +216,7 @@ uv run python scripts/run_golden_v3_batch.py \
   /absolute/path/to/story-days.json \
   --output-root "$WORKING_MEDIA_ROOT/analysis/golden-v3" \
   --grouping-overrides /absolute/path/to/grouping-overrides.json \
+  --clip-evidence \
   --jobs 2
 ```
 
@@ -224,6 +225,11 @@ grouping may be reused only when the manifest verifies it; newly authored groupi
 must be listed in a `golden-v3-grouping-overrides/v1` file with its current SHA-256
 and `accepted: true`. Missing grouping is reported as `blocked`, never silently
 invented by the runner.
+
+For rich reusable libraries, keep `--clip-evidence` enabled. Add `--story-day
+YYYY-MM-DD` for a single day (repeat for several); omit it only when the requested
+scope is the full archive. The repository's `docs/reusable-scene-library-runbook.md`
+records the local input manifests, output layout and semantic acceptance checks.
 
 This command is prepare-only. Per asset it verifies lineage and inputs, then creates
 or reuses boundary signals, independent visual moments, dense storyboard context,

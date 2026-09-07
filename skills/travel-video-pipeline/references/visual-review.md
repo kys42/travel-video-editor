@@ -193,3 +193,26 @@ player.
 - Exceptions: individual frames or a short proxy interval only when required.
 - Never send raw 4K frames when a 640-1280 px review image is sufficient.
 - Never resend unchanged evidence to a second agent; send only disputed groups/windows and the minimal adjacent context.
+
+
+## Reusable scene libraries
+
+When the user wants a rich library for later assembly, extraction precedes highlight
+selection. Preserve ordinary actions, quiet visual material and transitions. Split
+at evidenced changes of action, subject, dialogue topic, interaction phase or
+reaction; coarse groups remain review context. Neither a fixed time grid nor a
+minimum clip count establishes meaningful granularity. Preserve complete speech
+and attach neighboring context when a useful unit crosses a coarse boundary.
+
+Write specific scene narratives and distinct beat summaries from the evidence,
+including ordered actions, visible subjects, dialogue context and uncertainty.
+Expose supported clip_evidence in the library instead of showing only its one-line
+summary; machine samples are separate review evidence. Unknown fields must remain
+unknown, especially identity, face absence and environmental audio without listening.
+
+For changed extraction prompts, use an isolated representative pilot and compare
+actual boundaries, preserved speech/visual moments and detailed descriptions before
+replacing an existing day. In travel-video-editor, candidate export's library_audit
+routes long single-beat groups, repetition and short descriptions to review. Resolve
+these signals against evidence and record why a continuous shot stays intact or why
+it needs subdivision; counts and character lengths are not acceptance scores.
