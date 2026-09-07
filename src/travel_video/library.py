@@ -511,12 +511,12 @@ def _render_scene(
         </summary>
         <div class="scene-depth">
           {_render_candidates(clip_candidates, sample_map, assets)}
-          {'<details class="analysis-evidence" data-analysis-evidence><summary>분석 근거 보기 · 기계 구간과 원시 추출 정보</summary><p class="evidence-notice">아래 기계 구간은 추출용 샘플입니다. 장면별 편집 구간이 아니며 같은 장면 설명이 반복될 수 있습니다.</p>' if clip_candidates else ""}
           <div class="analysis-grid">
             <section><span class="depth-label">장면 해석</span><h3>{_escape(group["label"])}</h3><p>{_escape(context["narrative_summary"])}</p></section>
             <section><span class="depth-label depth-label--audio">{dialogue_detail_label}</span>{dialogue_detail}{source_transcript}</section>
             <section><span class="depth-label depth-label--edit">특이 포인트 / 편집 가치</span>{_render_notables(context, sample_map)}</section>
           </div>
+          {'<details class="analysis-evidence" data-analysis-evidence><summary>분석 근거 보기 · 기계 구간과 원시 추출 정보</summary><p class="evidence-notice">아래 기계 구간은 추출용 샘플입니다. 장면별 편집 구간이 아니며 같은 장면 설명이 반복될 수 있습니다.</p>' if clip_candidates else ""}
           <section class="segment-section">
             <header><div><strong>{"기계 샘플 구간 · 편집 장면 아님" if clip_candidates else "세부 구간"}</strong><span>행동 해석과 {transcript_comparison} 같은 시간축으로 비교</span></div><span>{len(segments)} segments</span></header>
             <div class="segment-list">{_render_segment_rows(segments, assets)}</div>

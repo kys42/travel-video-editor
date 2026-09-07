@@ -367,6 +367,7 @@ def test_library_renders_reusable_candidates_with_exact_ranges(tmp_path: Path) -
             self.details = []
             self.candidates_inside_evidence = []
             self.segments_inside_evidence = []
+            self.interpretation_inside_evidence = []
 
         def handle_starttag(self, tag, attrs):
             attrs = dict(attrs)
@@ -377,6 +378,8 @@ def test_library_renders_reusable_candidates_with_exact_ranges(tmp_path: Path) -
                 self.details.append(is_evidence)
             if "data-candidate-id" in attrs:
                 self.candidates_inside_evidence.append(any(self.details))
+            if attrs.get("class") == "analysis-grid":
+                self.interpretation_inside_evidence.append(any(self.details))
             if attrs.get("class") == "segment-list":
                 self.segments_inside_evidence.append(any(self.details))
 
@@ -388,6 +391,7 @@ def test_library_renders_reusable_candidates_with_exact_ranges(tmp_path: Path) -
     parser.feed(document)
     assert parser.candidates_inside_evidence == [False]
     assert parser.segments_inside_evidence == [True]
+    assert parser.interpretation_inside_evidence == [False]
 
     assert 'data-source-in="2.250" data-source-out="4.500"' in document
     assert 'data-source-in="0.000" data-source-out="20.000"' in document
