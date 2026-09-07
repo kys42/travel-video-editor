@@ -245,6 +245,35 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
       .is-browser .candidate-frame img { max-height:135px; }
     }
 
+    /* Dense disclosure list: overview first, full clip only on request. */
+    .candidate-browser { display:block; height:auto; max-height:none; min-height:0; }
+    .candidate-filmstrip { display:block; padding:0; border:0; max-height:68vh; overflow-y:auto; }
+    .candidate-pick { display:grid; width:100%; grid-template-columns:56px minmax(105px,.55fr) minmax(0,1.5fr) 14px; gap:10px; padding:9px 10px; border:0; border-bottom:1px solid var(--line); border-radius:0; min-height:54px; }
+    .candidate-pick img { width:56px; height:34px; object-fit:cover; }
+    .candidate-pick:not(:has(img))::before { content:'—'; width:56px; color:var(--faint); text-align:center; }
+    .candidate-pick strong { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .candidate-pick[aria-expanded="true"] { background:#302a20; box-shadow:inset 2px 0 var(--accent); }
+    .candidate-brief { min-width:0; }
+    .candidate-brief > span, .candidate-brief > small { display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:11px; line-height:1.6; }
+    .candidate-brief > small { color:var(--muted); font-family:inherit; font-size:10px; margin-top:2px; }
+    .candidate-chevron { color:var(--muted); }
+    .candidate-pick[aria-expanded="true"] .candidate-chevron { transform:rotate(45deg); }
+    .candidate-detail { padding:12px 18px 18px; border-bottom:1px solid var(--line-strong); max-height:540px; overflow:auto; }
+    .candidate-detail[hidden] { display:none; }
+    .candidate-close { display:block; margin:0 0 10px auto; padding:5px 8px; border:1px solid var(--line); background:transparent; color:var(--muted); font-size:10px; cursor:pointer; }
+    .is-browser .candidate-row { display:grid; grid-template-columns:minmax(110px,.7fr) minmax(0,1fr); gap:12px 18px; }
+    .is-browser .candidate-controls { grid-column:1/-1; grid-row:1; }
+    .is-browser .candidate-frame img { max-height:220px; }
+    @media(max-width:640px) {
+      .candidate-pick { grid-template-columns:40px minmax(80px,.6fr) minmax(0,1fr) 10px; gap:7px; padding:8px; }
+      .candidate-pick img { width:40px; height:30px; }
+      .candidate-pick:not(:has(img))::before { width:40px; }
+      .candidate-pick strong { font-size:10px; }
+      .candidate-pick small { font-size:9px; }
+      .candidate-detail { padding:10px; }
+      .is-browser .candidate-row { display:flex; }
+    }
+
     .segment-section, .storyboard-section { margin-top: 12px; }
     .segment-section > header, .storyboard-section > header { display: flex; align-items: end; justify-content: space-between; min-height: 31px; padding-bottom: 6px; }
     .segment-section header div, .storyboard-section header div { min-width: 0; }
@@ -890,12 +919,19 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
         timeline.className = 'candidate-timetable'; timeline.setAttribute('aria-label', '클립 길이별 타임라인');
         const workspace = document.createElement('div'); workspace.className = 'candidate-browser';
         const strip = document.createElement('div'); strip.className = 'candidate-filmstrip';
-        strip.setAttribute('role', 'tablist'); strip.setAttribute('aria-label', '시간순 클립');
+        strip.setAttribute('aria-label', '시간순 클립 목록');
         const detail = document.createElement('div'); detail.className = 'candidate-detail';
-        workspace.append(strip, detail); section.append(timeline, workspace);
+        workspace.append(strip); strip.append(detail); detail.hidden = true; section.append(timeline, workspace);
         const picks = [], ticks = [];
+        let expanded = -1;
+        const close = document.createElement('button'); close.type = 'button'; close.className = 'candidate-close'; close.textContent = '상세 접기 ×'; detail.append(close);
+        close.addEventListener('click', () => { const index = expanded; collapse(); if (index >= 0) picks[index].focus(); });
+        const collapse = () => { detail.hidden = true; expanded = -1; picks.forEach(p => p.setAttribute('aria-expanded', 'false')); ticks.forEach(t => t.setAttribute('aria-pressed', 'false')); };
+        detail.addEventListener('keydown', event => { if (event.key === 'Escape') { event.stopPropagation(); close.click(); } });
         const select = async (index, preview = false) => {
-          rows.forEach((row, i) => { row.hidden = i !== index; picks[i].setAttribute('aria-selected', String(i === index)); picks[i].tabIndex = i === index ? 0 : -1; ticks[i].setAttribute('aria-pressed', String(i === index)); });
+          if (expanded === index) { collapse(); return; }
+          expanded = index; detail.hidden = false; picks[index].after(detail);
+          rows.forEach((row, i) => { row.hidden = i !== index; picks[i].setAttribute('aria-expanded', String(i === index)); ticks[i].setAttribute('aria-pressed', String(i === index)); });
           detail.scrollTop = 0;
           if (preview) {
             const play = rows[index].querySelector('[data-play-candidate]');
@@ -907,18 +943,24 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
         };
         rows.forEach((row, i) => {
           row.id = 'detail-' + row.dataset.candidateId;
-          row.setAttribute('role', 'tabpanel');
+          row.setAttribute('role', 'region');
           row.setAttribute('tabindex', '0');
           const title = row.querySelector('.candidate-content > strong').textContent;
           const play = row.querySelector('[data-play-candidate]');
           const duration = Number(play.dataset.sourceOut) - Number(play.dataset.sourceIn);
           const pick = document.createElement('button'); pick.type = 'button'; pick.className = 'candidate-pick';
-          pick.id = 'pick-' + row.dataset.candidateId; pick.setAttribute('role', 'tab');
+          pick.id = 'pick-' + row.dataset.candidateId; pick.setAttribute('aria-expanded', 'false');
           pick.setAttribute('aria-controls', row.id); row.setAttribute('aria-labelledby', pick.id);
           const frame = row.querySelector('.candidate-frame img'); if (frame) pick.append(frame.cloneNode(true));
           const text = document.createElement('span'), name = document.createElement('strong'), time = document.createElement('small');
           name.textContent = title; time.textContent = [Math.floor(Number(play.dataset.sourceIn) / 60), Math.floor(Number(play.dataset.sourceIn) % 60)].map(n => String(n).padStart(2, '0')).join(':') + ' · ' + duration.toFixed(1) + 's';
-          text.append(name, time); pick.append(text); strip.append(pick); picks.push(pick);
+          text.append(name, time); pick.append(text);
+          const brief = document.createElement('span'); brief.className = 'candidate-brief';
+          const synopsis = document.createElement('span'); synopsis.textContent = row.querySelector('.candidate-content > p')?.textContent || '';
+          brief.append(synopsis);
+          const speech = row.querySelector('.candidate-dialogue'); if (speech) { const quote = document.createElement('small'); quote.textContent = speech.textContent; brief.append(quote); }
+          pick.append(brief); const chevron = document.createElement('span'); chevron.className = 'candidate-chevron'; chevron.textContent = '+'; chevron.setAttribute('aria-hidden', 'true'); pick.append(chevron);
+          strip.append(pick); picks.push(pick);
           const tick = document.createElement('button'); tick.type = 'button'; tick.className = 'candidate-tick';
           tick.style.flexGrow = String(duration); tick.style.flexBasis = '0'; tick.textContent = String(i + 1);
           tick.title = title + ' · ' + time.textContent; tick.setAttribute('aria-label', tick.title); ticks.push(tick); timeline.append(tick);
@@ -930,11 +972,11 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
             else if (event.key === 'Home') next = 0;
             else if (event.key === 'End') next = rows.length - 1;
             else return;
-            event.preventDefault(); event.stopPropagation(); picks[next].focus(); select(next, true);
+            event.preventDefault(); event.stopPropagation(); picks[next].focus();
           });
           detail.append(row);
         });
-        select(0);
+        rows.forEach(row => { row.hidden = true; }); collapse();
       });
 
       document.querySelectorAll('[data-play-candidate]').forEach(button => button.addEventListener('click', async () => {
