@@ -336,6 +336,22 @@ def namespace_clip_evidence(beat: dict, utterance_ids: dict[str, str]) -> None:
             ]
 
 
+def _dialogue_neighbors(items: list[dict], start: float, end: float) -> dict:
+    """Snapshot nearby source speech even when it belongs to another coarse group."""
+    ordered = sorted(items, key=lambda item: (float(item["start"]), float(item["end"])))
+    return copy.deepcopy(
+        {
+            "overlapping": [
+                item
+                for item in ordered
+                if float(item["start"]) < end and float(item["end"]) > start
+            ],
+            "previous": [item for item in ordered if float(item["end"]) <= start][-2:],
+            "next": [item for item in ordered if float(item["start"]) >= end][:2],
+        }
+    )
+
+
 def build_candidate_library(timeline: dict) -> dict:
     """Materialize candidates, not good-clip rankings or privacy clearances."""
     duration = _number(timeline.get("media", {}).get("duration"), "source duration")
@@ -365,6 +381,16 @@ def build_candidate_library(timeline: dict) -> dict:
         group = groups.get(beat.get("group_id"))
         if group is None:
             raise ValueError("Candidate has no owning context group")
+        dialogue_context = {
+            "captions": _dialogue_neighbors(list(captions.values()), a, b),
+            "utterances": _dialogue_neighbors(list(utterances.values()), a, b),
+        }
+        context_items = [
+            item
+            for collection in dialogue_context.values()
+            for entries in collection.values()
+            for item in entries
+        ]
         evidence = copy.deepcopy(beat.get("clip_evidence"))
         if evidence:
             validate_clip_evidence(
@@ -409,11 +435,20 @@ def build_candidate_library(timeline: dict) -> dict:
             "summary": beat["summary"],
             "recommended_range": {"start": a, "end": b},
             "context_range": {
-                "start": min(a, float(group["start"])),
-                "end": max(b, float(group["end"])),
+                "start": min(
+                    a,
+                    float(group["start"]),
+                    *(float(item["start"]) for item in context_items),
+                ),
+                "end": max(
+                    b,
+                    float(group["end"]),
+                    *(float(item["end"]) for item in context_items),
+                ),
             },
             "core_range": evidence["core_range"] if evidence else None,
             "dialogue": " ".join(captions[c]["display_text"] for c in cids),
+            "dialogue_context": dialogue_context,
             "evidence": evidence,
             "references": {
                 k: copy.deepcopy(v)

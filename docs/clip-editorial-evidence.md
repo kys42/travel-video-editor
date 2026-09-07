@@ -79,6 +79,7 @@ Golden 배치 preparation에도 `--clip-evidence`를 전달할 수 있다. 해�
 
 - `candidate_id`: asset ID + beat ID 기반. `revision`: 후보 내용·근거·정책 상태의 지문.
 - `source`, `recommended_range`, `context_range`, `core_range`, `references`: 원본과 시간/근거를 보존.
+- `dialogue_context`: 후보와 겹치는 자막/발화, 바로 이전 2개와 다음 2개를 시간순으로 포함한다. 다른 coarse group에 속해도 제공하며, 경계를 횡단하는 발화는 overlapping에 남긴다. 미리보기 context 범위는 이 근거까지 포함하지만 기본 사용 범위는 바꾸지 않는다. 인접 대사가 수정되면 후보 revision도 바뀐다.
 - `evidence`: 검증된 LLM 추가 정보 또는 `null`. 제목·설명·대화는 독립 검색 가능.
 - `readiness`: `needs_review` 또는 `structured_candidate`. 후자는 구조화가 됐다는 의미이며 ‘좋은 장면’ 또는 ‘얼굴 제외 사용 가능’의 승인이 아니다.
 - `review_reasons`: 사건 미완결, 이웃 경계 검토, 발화 절단, 추가 정보 없음 등.

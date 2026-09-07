@@ -150,6 +150,56 @@ def test_enriched_roundtrip_preserves_evidence_and_never_grants_privacy(
     assert "Partial … words" in partial["dialogue"]
 
 
+def test_candidate_context_crosses_groups_without_changing_edit_range(
+    enriched, tmp_path
+):
+    timeline, packet_path, _, review = enriched
+    review_path = tmp_path / "review.json"
+    review_path.write_text(json.dumps(review))
+    output = tmp_path / "merged.json"
+    merge_scene_dialogue_review(timeline, packet_path, review_path, output)
+    merged = json.loads(output.read_text())
+    # Deliberately unordered source data. The crossing utterance must stay in
+    # overlapping evidence, not disappear between previous/next buckets.
+    merged["reviewed_dialogue"]["captions"].reverse()
+    merged["reviewed_dialogue"]["utterances"].reverse()
+    candidates = build_candidate_library(merged)["candidates"]
+    first, second = candidates
+    assert first["recommended_range"] == {"start": 0, "end": 6}
+    assert second["recommended_range"] == {"start": 5.5, "end": 12}
+    assert first["context_range"]["end"] >= 6.8
+    assert second["context_range"]["start"] <= 1.2
+    assert "G002-U001" in [
+        u["utterance_id"]
+        for u in first["dialogue_context"]["utterances"]["overlapping"]
+    ]
+    assert "G001-U001" in [
+        u["utterance_id"] for u in second["dialogue_context"]["utterances"]["previous"]
+    ]
+    original_id = first["candidate_id"]
+    original_revision = first["revision"]
+    # Editing neighboring context changes the content snapshot, not candidate identity.
+    for item in merged["reviewed_dialogue"]["utterances"]:
+        if item["utterance_id"] == "G002-U002":
+            item["original_text"] = "Updated neighboring context"
+    updated = build_candidate_library(merged)["candidates"][0]
+    assert updated["candidate_id"] == original_id
+    assert updated["revision"] != original_revision
+
+
+def test_dialogue_neighbors_keep_two_chronological_turns_and_edge_overlaps():
+    from travel_video.clip_evidence import _dialogue_neighbors
+
+    items = [{"start": i, "end": i + 1, "id": str(i)} for i in range(8)]
+    items.append({"start": 3.5, "end": 5.5, "id": "crossing"})
+    result = _dialogue_neighbors(list(reversed(items)), 4, 5)
+    assert [i["id"] for i in result["previous"]] == ["2", "3"]
+    assert [i["id"] for i in result["overlapping"]] == ["crossing", "4"]
+    assert [i["id"] for i in result["next"]] == ["5", "6"]
+    result["overlapping"][0]["id"] = "edited"
+    assert items[-1]["id"] == "crossing"
+
+
 @pytest.mark.parametrize(
     "mutation,match",
     [
