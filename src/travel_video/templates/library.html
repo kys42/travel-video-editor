@@ -210,6 +210,41 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
     .candidate-controls button { border: 1px solid var(--line); border-radius: 3px; background: var(--panel-2); padding: 6px 9px; color: inherit; font: inherit; cursor: pointer; }
     .candidate-controls button:hover, .candidate-controls button:focus-visible { border-color: var(--accent); }
     .candidate-row.is-active { border-left: 2px solid var(--accent); padding-left: 8px; }
+
+    .candidate-facts, .scene-context { border-top:1px solid var(--line); margin-top:14px; }
+    .candidate-facts > summary, .scene-context > summary { padding:12px 0; cursor:pointer; color:var(--muted); font-size:11px; }
+    .candidate-section.is-browser > header { justify-content:space-between; padding:14px 0; }
+    .candidate-timetable { display:flex; gap:3px; height:28px; margin-bottom:12px; }
+    .candidate-tick { min-width:8px; padding:0; border:0; border-bottom:3px solid transparent; background:#2b3538; color:var(--muted); font:9px var(--font-time); cursor:pointer; overflow:hidden; }
+    .candidate-tick[aria-pressed="true"] { background:#766039; border-color:var(--accent); color:var(--text-2); }
+    .candidate-browser { display:grid; grid-template-columns:minmax(160px, .85fr) minmax(0,1.5fr); border:1px solid var(--line); border-radius:5px; overflow:hidden; height:520px; max-height:65vh; min-height:330px; }
+    .candidate-filmstrip { overflow-y:auto; background:#101416; border-right:1px solid var(--line); padding:6px; }
+    .candidate-pick { width:100%; display:grid; grid-template-columns:76px minmax(0,1fr); gap:9px; text-align:left; align-items:center; padding:9px 6px; border:1px solid transparent; border-radius:3px; background:none; color:var(--text-2); cursor:pointer; }
+    .candidate-pick img { width:76px; aspect-ratio:16/9; object-fit:cover; border-radius:2px; }
+    .candidate-pick strong { display:block; font-size:11px; font-weight:500; line-height:1.5; }
+    .candidate-pick small { display:block; color:var(--muted); margin-top:5px; font:9px var(--font-time); }
+    .candidate-pick[aria-selected="true"] { background:#302a20; border-color:#675536; }
+    .candidate-pick:focus-visible, .candidate-tick:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+    .candidate-detail { overflow-y:auto; padding:16px; min-width:0; background:#171c1f; }
+    .is-browser .candidate-row { display:flex; flex-direction:column; padding:0; border:0; gap:12px; }
+    .is-browser .candidate-row[hidden] { display:none; }
+    .is-browser .candidate-frame img { width:100%; max-height:190px; object-fit:contain; background:#0d1012; border-radius:3px; }
+    .is-browser .candidate-content > strong { display:block; font-size:16px; line-height:1.4; }
+    .is-browser .candidate-content > p { font-size:12px; line-height:1.8; margin:10px 0; }
+    .is-browser .candidate-dialogue { padding:10px 12px; border-left:2px solid var(--audio); background:#111719; }
+    .is-browser .candidate-controls { order:-1; padding-bottom:10px; border-bottom:1px solid var(--line); }
+    .candidate-evidence { gap:10px; }
+    @media(max-width:640px) {
+      .candidate-browser { display:flex; flex-direction:column; height:620px; max-height:78vh; }
+      .candidate-filmstrip { display:flex; flex:none; overflow-x:auto; border-right:0; border-bottom:1px solid var(--line); }
+      .candidate-pick { display:block; width:118px; flex:none; padding:6px; }
+      .candidate-pick img { width:100%; height:56px; }
+      .candidate-pick strong { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+      .candidate-detail { flex:1; min-height:0; padding:12px; }
+      .candidate-section.is-browser > header { align-items:start; gap:8px; }
+      .is-browser .candidate-frame img { max-height:135px; }
+    }
+
     .segment-section, .storyboard-section { margin-top: 12px; }
     .segment-section > header, .storyboard-section > header { display: flex; align-items: end; justify-content: space-between; min-height: 31px; padding-bottom: 6px; }
     .segment-section header div, .storyboard-section header div { min-width: 0; }
@@ -826,6 +861,7 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
           selectedEnd = Number.isFinite(Number(action.source_out)) ? Number(action.source_out) : selectedEnd;
           previewTitle.textContent = action.label || scene.dataset.previewTitle;
           previewTime.textContent = `${preciseTimeLabel(selectedStart)} — ${preciseTimeLabel(selectedEnd)}`;
+          previewTimecode.textContent = preciseTimeLabel(selectedStart);
           seekToSelectedStart();
           if (!loadedMediaUrl) showToast('이 원본에는 재생용 프록시가 없어 스틸 프레임으로 표시합니다.');
           if (action.autoplay !== false && !playButton.disabled) {
@@ -845,6 +881,61 @@ FORM: Edit Desk, selected concept A; one nested scene-detail layer replaces a se
         const scene = document.getElementById(button.dataset.jumpScene);
         openScene(scene, true);
       }));
+
+      document.querySelectorAll('.candidate-section').forEach(section => {
+        const rows = Array.from(section.querySelectorAll('[data-candidate-id]'));
+        if (!rows.length) return;
+        section.classList.add('is-browser');
+        const timeline = document.createElement('nav');
+        timeline.className = 'candidate-timetable'; timeline.setAttribute('aria-label', '클립 길이별 타임라인');
+        const workspace = document.createElement('div'); workspace.className = 'candidate-browser';
+        const strip = document.createElement('div'); strip.className = 'candidate-filmstrip';
+        strip.setAttribute('role', 'tablist'); strip.setAttribute('aria-label', '시간순 클립');
+        const detail = document.createElement('div'); detail.className = 'candidate-detail';
+        workspace.append(strip, detail); section.append(timeline, workspace);
+        const picks = [], ticks = [];
+        const select = async (index, preview = false) => {
+          rows.forEach((row, i) => { row.hidden = i !== index; picks[i].setAttribute('aria-selected', String(i === index)); picks[i].tabIndex = i === index ? 0 : -1; ticks[i].setAttribute('aria-pressed', String(i === index)); });
+          detail.scrollTop = 0;
+          if (preview) {
+            const play = rows[index].querySelector('[data-play-candidate]');
+            const scene = section.closest('[data-scene]');
+            await dispatchAgentAction({type:'play_source_range', scene_id:scene.dataset.sceneId,
+              source_in:Number(play.dataset.sourceIn), source_out:Number(play.dataset.sourceOut),
+              label:play.dataset.rangeTitle, autoplay:false});
+          }
+        };
+        rows.forEach((row, i) => {
+          row.id = 'detail-' + row.dataset.candidateId;
+          row.setAttribute('role', 'tabpanel');
+          row.setAttribute('tabindex', '0');
+          const title = row.querySelector('.candidate-content > strong').textContent;
+          const play = row.querySelector('[data-play-candidate]');
+          const duration = Number(play.dataset.sourceOut) - Number(play.dataset.sourceIn);
+          const pick = document.createElement('button'); pick.type = 'button'; pick.className = 'candidate-pick';
+          pick.id = 'pick-' + row.dataset.candidateId; pick.setAttribute('role', 'tab');
+          pick.setAttribute('aria-controls', row.id); row.setAttribute('aria-labelledby', pick.id);
+          const frame = row.querySelector('.candidate-frame img'); if (frame) pick.append(frame.cloneNode(true));
+          const text = document.createElement('span'), name = document.createElement('strong'), time = document.createElement('small');
+          name.textContent = title; time.textContent = [Math.floor(Number(play.dataset.sourceIn) / 60), Math.floor(Number(play.dataset.sourceIn) % 60)].map(n => String(n).padStart(2, '0')).join(':') + ' · ' + duration.toFixed(1) + 's';
+          text.append(name, time); pick.append(text); strip.append(pick); picks.push(pick);
+          const tick = document.createElement('button'); tick.type = 'button'; tick.className = 'candidate-tick';
+          tick.style.flexGrow = String(duration); tick.style.flexBasis = '0'; tick.textContent = String(i + 1);
+          tick.title = title + ' · ' + time.textContent; tick.setAttribute('aria-label', tick.title); ticks.push(tick); timeline.append(tick);
+          pick.addEventListener('click', () => select(i, true)); tick.addEventListener('click', () => { select(i, true); pick.scrollIntoView({block:'nearest', inline:'nearest'}); });
+          pick.addEventListener('keydown', event => {
+            let next = i;
+            if (event.key === 'ArrowDown' || event.key === 'ArrowRight') next = (i + 1) % rows.length;
+            else if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') next = (i + rows.length - 1) % rows.length;
+            else if (event.key === 'Home') next = 0;
+            else if (event.key === 'End') next = rows.length - 1;
+            else return;
+            event.preventDefault(); event.stopPropagation(); picks[next].focus(); select(next, true);
+          });
+          detail.append(row);
+        });
+        select(0);
+      });
 
       document.querySelectorAll('[data-play-candidate]').forEach(button => button.addEventListener('click', async () => {
         const scene = button.closest('[data-scene]');
