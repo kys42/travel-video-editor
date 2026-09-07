@@ -854,7 +854,7 @@ def prepare_asset(
         boundary_config = {
             key: value
             for key, value in config_value.items()
-            if key not in {"max_frames", "max_window"}
+            if key not in {"max_frames", "max_window", "clip_evidence"}
         }
         boundary_signature = stage_signature(
             "boundaries",

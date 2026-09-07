@@ -3,6 +3,7 @@
 Machine observations never establish identity or absence between sampled frames.
 This module deliberately does not rank clips or silently approve privacy policies.
 """
+
 from __future__ import annotations
 
 import copy
@@ -24,19 +25,37 @@ EPS = 0.05
 def contract() -> dict[str, Any]:
     return {
         "schema_version": SCHEMA,
-        "required": ["schema_version", "core_range", "event_closure", "steps", "subjects",
-                     "people", "speakers", "interactions", "audio", "quality"],
-        "range": "core_range: {start,end}; within beat, anchored to supplied frames/spans/boundaries; never cut a cited utterance or caption",
+        "required": [
+            "schema_version",
+            "core_range",
+            "event_closure",
+            "steps",
+            "subjects",
+            "people",
+            "speakers",
+            "interactions",
+            "audio",
+            "quality",
+        ],
+        "range": "core_range: {start,end}; within beat, anchored to beat edges, supplied frame times or cited utterance/caption bounds; never cut a cited utterance or caption",
         "event_closure": ["closed", "open", "unknown"],
         "claim": {
-            "required": ["kind", "description", "start", "end", "basis", "source_sample_ids",
-                         "source_utterance_ids", "confidence"],
+            "required": [
+                "kind",
+                "description",
+                "start",
+                "end",
+                "basis",
+                "source_sample_ids",
+                "source_utterance_ids",
+                "confidence",
+            ],
             "basis": ["visual", "speech", "inferred"],
             "rule": "visual needs in-range frame evidence; speech needs overlapping reviewed utterances; inferred is explicitly contextual, never direct observation",
         },
         "steps": "claim[]; kind: setup/action/reaction/payoff/transition. Retain narrative order, use [] when unsupported.",
         "subjects": "claim[]; kind: wildlife/place/food/activity/object. Separate visible subjects from spoken mentions.",
-        "people": "[{person_id, role, basis, source_sample_ids, source_detection_ids, confidence}]; role unknown/traveler/staff/guide/bystander, basis visual/inferred; IDs local to beat. Role except unknown requires inferred. Never infer owner identity or cross-video identity. Detections and cited frames must coincide within sampling interval.",
+        "people": "[{person_id, role, basis, source_sample_ids, source_detection_ids, confidence}]; role unknown/traveler/staff/guide/bystander, basis visual/inferred; IDs local to beat. Role except unknown requires inferred. Record clearly visible editorially relevant anonymous people with role unknown even when identity and speaker links are unknown. Never infer owner identity or cross-video identity. Detections and cited frames must coincide within sampling interval.",
         "speakers": "[{speaker_id, source_utterance_ids, person_id, link_basis, confidence}]; person_id null with link_basis unknown, or a local person ID with link_basis inferred. STT locale is NOT speaker identity; leave [] or unknown when voice separation lacks evidence.",
         "interactions": "claim[] plus participant_ids (local person/speaker IDs); kind order/guidance/question_answer/conversation/other. Needs utterance evidence; do not invent answers.",
         "audio": "claim[]; kind speech/laughter/music/crowd/nature/mechanical/noise. This packet supplies frames and STT, not verified environmental listening: speech may use basis speech; all other audio must be inferred, or omit. Do not infer non-speech audio from visual presence as observed fact.",
@@ -46,7 +65,11 @@ def contract() -> dict[str, Any]:
 
 
 def _number(value: Any, label: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (float, int)) or not math.isfinite(value):
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (float, int))
+        or not math.isfinite(value)
+    ):
         raise ValueError(f"{label} must be a finite number")
     return float(value)
 
@@ -57,7 +80,9 @@ def _confidence(item: dict) -> None:
 
 
 def _ids(value: Any, allowed: dict | set, label: str) -> list[str]:
-    if not isinstance(value, list) or any(not isinstance(x, str) or not x for x in value):
+    if not isinstance(value, list) or any(
+        not isinstance(x, str) or not x for x in value
+    ):
         raise ValueError(f"{label} must be a list of IDs")
     if len(value) != len(set(value)) or set(value) - set(allowed):
         raise ValueError(f"{label} contains duplicate or unknown IDs")
@@ -72,7 +97,10 @@ def _range(item: dict, start: float, end: float) -> tuple[float, float]:
 
 
 def validate_person_observations(payload: dict, duration: float) -> None:
-    if payload.get("schema_version") != PERSON_SCHEMA or payload.get("coverage") != "sampled_only":
+    if (
+        payload.get("schema_version") != PERSON_SCHEMA
+        or payload.get("coverage") != "sampled_only"
+    ):
         raise ValueError("Unsupported sampled person observations")
     if _number(payload.get("sample_interval_seconds"), "sample interval") <= 0:
         raise ValueError("Invalid person sample interval")
@@ -105,44 +133,68 @@ def person_observations(raw: dict, duration: float) -> dict:
         for index, item in enumerate(raw.get(key, []), 1):
             # Vision may predict boxes extending beyond the image for partial faces.
             # Preserve the original in raw JSON; expose its visible intersection here.
-            x, y, w, h = [_number(n, "Vision bounding box") for n in item["boundingBox"]]
+            x, y, w, h = [
+                _number(n, "Vision bounding box") for n in item["boundingBox"]
+            ]
             if w <= 0 or h <= 0:
                 raise ValueError("Invalid Vision bounding box size")
-            left, bottom, right, top = max(0, x), max(0, y), min(1, x + w), min(1, y + h)
+            left, bottom, right, top = (
+                max(0, x),
+                max(0, y),
+                min(1, x + w),
+                min(1, y + h),
+            )
             if right <= left or top <= bottom:
                 raise ValueError("Vision bounding box does not intersect the image")
-            observations.append({
-                "observation_id": f"PV-{kind}-{index:06d}", "kind": kind,
-                "timestamp": item["timestamp"], "bounding_box": [left, bottom, right-left, top-bottom],
-                "frame_edge_truncated": x < 0 or y < 0 or x + w > 1 or y + h > 1,
-                "confidence": item["confidence"],
-            })
+            observations.append(
+                {
+                    "observation_id": f"PV-{kind}-{index:06d}",
+                    "kind": kind,
+                    "timestamp": item["timestamp"],
+                    "bounding_box": [left, bottom, right - left, top - bottom],
+                    "frame_edge_truncated": x < 0 or y < 0 or x + w > 1 or y + h > 1,
+                    "confidence": item["confidence"],
+                }
+            )
     result = {
-        "schema_version": PERSON_SCHEMA, "coverage": "sampled_only",
+        "schema_version": PERSON_SCHEMA,
+        "coverage": "sampled_only",
         "sample_interval_seconds": raw["visualIntervalSeconds"],
         "coordinates": "normalized_lower_left_origin",
-        "status": "available" if "faceObservations" in raw and "personObservations" in raw else "legacy_counts_only",
-        "observations": sorted(observations, key=lambda item: (item["timestamp"], item["observation_id"])),
+        "status": "available"
+        if "faceObservations" in raw and "personObservations" in raw
+        else "legacy_counts_only",
+        "observations": sorted(
+            observations, key=lambda item: (item["timestamp"], item["observation_id"])
+        ),
     }
     validate_person_observations(result, duration)
     return result
 
 
-def validate_clip_evidence(beat: dict, scene: dict, utterances: dict, captions: dict) -> None:
+def validate_clip_evidence(
+    beat: dict, scene: dict, utterances: dict, captions: dict
+) -> None:
     data = beat.get("clip_evidence")
     if not isinstance(data, dict) or data.get("schema_version") != SCHEMA:
         raise ValueError(f"Beat {beat.get('beat_id')} requires {SCHEMA}")
     if set(contract()["required"]) - set(data):
         raise ValueError("Clip evidence is missing required fields")
-    start, end = float(beat["start"]), float(beat["end"])
-    frames = {str(f["sample_id"]): f for f in scene.get("visual_context", {}).get("candidate_frames", [])}
+    start, end = _number(beat["start"], "beat start"), _number(beat["end"], "beat end")
+    frames = {
+        str(f["sample_id"]): f
+        for f in scene.get("visual_context", {}).get("candidate_frames", [])
+    }
     person_packet = scene.get("person_observations", {})
     detections = {p["observation_id"]: p for p in person_packet.get("observations", [])}
     # Restrict references to the owning beat's speech, not unrelated neighboring turns.
     speech = {uid: utterances[uid] for uid in beat.get("source_utterance_ids", [])}
     a, b = _range(data["core_range"], start, end)
     anchors = {start, end, *(float(f["time"]) for f in frames.values())}
-    for item in [*speech.values(), *(captions[cid] for cid in beat.get("source_caption_ids", []))]:
+    for item in [
+        *speech.values(),
+        *(captions[cid] for cid in beat.get("source_caption_ids", [])),
+    ]:
         anchors.update((float(item["start"]), float(item["end"])))
         if max(a, float(item["start"])) < min(b, float(item["end"])):
             if a > float(item["start"]) + EPS or b < float(item["end"]) - EPS:
@@ -153,7 +205,12 @@ def validate_clip_evidence(beat: dict, scene: dict, utterances: dict, captions: 
         raise ValueError("Invalid event closure")
 
     def claim(item: dict, kinds: set) -> None:
-        if not isinstance(item, dict) or item.get("kind") not in kinds or not str(item.get("description", "")).strip():
+        if (
+            not isinstance(item, dict)
+            or item.get("kind") not in kinds
+            or not isinstance(item.get("description"), str)
+            or not item["description"].strip()
+        ):
             raise ValueError("Invalid clip evidence claim")
         x, y = _range(item, start, end)
         _confidence(item)
@@ -161,7 +218,10 @@ def validate_clip_evidence(beat: dict, scene: dict, utterances: dict, captions: 
         us = _ids(item.get("source_utterance_ids"), speech, "claim utterances")
         if any(not x - EPS <= float(frames[f]["time"]) <= y + EPS for f in fs):
             raise ValueError("Claim frame is outside claim range")
-        if any(max(x, float(speech[u]["start"])) >= min(y, float(speech[u]["end"])) for u in us):
+        if any(
+            max(x, float(speech[u]["start"])) >= min(y, float(speech[u]["end"]))
+            for u in us
+        ):
             raise ValueError("Claim utterance does not overlap its range")
         basis = item.get("basis")
         if basis not in {"visual", "speech", "inferred"} or not (fs or us):
@@ -172,8 +232,22 @@ def validate_clip_evidence(beat: dict, scene: dict, utterances: dict, captions: 
     kinds = {
         "steps": {"setup", "action", "reaction", "payoff", "transition"},
         "subjects": {"wildlife", "place", "food", "activity", "object"},
-        "interactions": {"order", "guidance", "question_answer", "conversation", "other"},
-        "audio": {"speech", "laughter", "music", "crowd", "nature", "mechanical", "noise"},
+        "interactions": {
+            "order",
+            "guidance",
+            "question_answer",
+            "conversation",
+            "other",
+        },
+        "audio": {
+            "speech",
+            "laughter",
+            "music",
+            "crowd",
+            "nature",
+            "mechanical",
+            "noise",
+        },
         "quality": {"stable", "shaky", "occluded", "blurred", "exposure_issue"},
     }
     for field in [*kinds, "people", "speakers"]:
@@ -182,8 +256,13 @@ def validate_clip_evidence(beat: dict, scene: dict, utterances: dict, captions: 
     for field, allowed in kinds.items():
         for item in data[field]:
             claim(item, allowed)
-            if field == "audio" and (item["basis"] == "visual" or (item["kind"] != "speech" and item["basis"] != "inferred")):
-                raise ValueError("Environmental audio needs listening evidence; this packet only supports inference")
+            if field == "audio" and (
+                item["basis"] == "visual"
+                or (item["kind"] != "speech" and item["basis"] != "inferred")
+            ):
+                raise ValueError(
+                    "Environmental audio needs listening evidence; this packet only supports inference"
+                )
             if field == "quality" and item["basis"] == "speech":
                 raise ValueError("Visual quality cannot be observed from speech")
     if [s["start"] for s in data["steps"]] != sorted(s["start"] for s in data["steps"]):
@@ -194,19 +273,31 @@ def validate_clip_evidence(beat: dict, scene: dict, utterances: dict, captions: 
         if not isinstance(pid, str) or not pid or pid in people:
             raise ValueError("Person IDs must be unique within beat")
         people[pid] = person
-        if person.get("role") not in {"unknown", "traveler", "staff", "guide", "bystander"}:
+        if person.get("role") not in {
+            "unknown",
+            "traveler",
+            "staff",
+            "guide",
+            "bystander",
+        }:
             raise ValueError("Invalid person role; owner identity cannot be inferred")
-        if person.get("basis") not in {"visual", "inferred"} or (person["role"] != "unknown" and person["basis"] != "inferred"):
+        if person.get("basis") not in {"visual", "inferred"} or (
+            person["role"] != "unknown" and person["basis"] != "inferred"
+        ):
             raise ValueError("Person role requires explicit inference")
         _confidence(person)
         fs = _ids(person.get("source_sample_ids"), frames, "person frames")
         ds = _ids(person.get("source_detection_ids"), detections, "person detections")
-        if not fs or any(not start - EPS <= float(frames[f]["time"]) <= end + EPS for f in fs):
+        if not fs or any(
+            not start - EPS <= float(frames[f]["time"]) <= end + EPS for f in fs
+        ):
             raise ValueError("Onscreen person requires in-beat visual frames")
         cadence = float(person_packet.get("sample_interval_seconds", 0))
         for did in ds:
             t = float(detections[did]["timestamp"])
-            if not start - EPS <= t <= end + EPS or not any(abs(t - float(frames[f]["time"])) <= cadence + EPS for f in fs):
+            if not start - EPS <= t <= end + EPS or not any(
+                abs(t - float(frames[f]["time"])) <= cadence + EPS for f in fs
+            ):
                 raise ValueError("Person detection is not near cited in-beat frame")
     speakers = {}
     for speaker in data["speakers"]:
@@ -222,9 +313,15 @@ def validate_clip_evidence(beat: dict, scene: dict, utterances: dict, captions: 
             if speaker.get("link_basis") != "unknown":
                 raise ValueError("Unlinked speaker must retain unknown link")
         elif pid not in people or speaker.get("link_basis") != "inferred":
-            raise ValueError("Speaker/person link must be a local, explicitly inferred link")
+            raise ValueError(
+                "Speaker/person link must be a local, explicitly inferred link"
+            )
     for item in data["interactions"]:
-        if not item["source_utterance_ids"] or not _ids(item.get("participant_ids"), set(people) | set(speakers), "interaction participants"):
+        if not item["source_utterance_ids"] or not _ids(
+            item.get("participant_ids"),
+            set(people) | set(speakers),
+            "interaction participants",
+        ):
             raise ValueError("Interaction requires participants and speech evidence")
 
 
@@ -234,7 +331,9 @@ def namespace_clip_evidence(beat: dict, utterance_ids: dict[str, str]) -> None:
         return
     for field in ("steps", "subjects", "speakers", "interactions", "audio", "quality"):
         for item in data[field]:
-            item["source_utterance_ids"] = [utterance_ids.get(x, x) for x in item["source_utterance_ids"]]
+            item["source_utterance_ids"] = [
+                utterance_ids.get(x, x) for x in item["source_utterance_ids"]
+            ]
 
 
 def build_candidate_library(timeline: dict) -> dict:
@@ -248,7 +347,11 @@ def build_candidate_library(timeline: dict) -> dict:
     utterances = {u["utterance_id"]: u for u in dialogue.get("utterances", [])}
     beats = dialogue.get("editorial_beats")
     if beats is None:
-        beats = [b for g in timeline.get("context_groups", []) for b in g.get("editorial_beats", [])]
+        beats = [
+            b
+            for g in timeline.get("context_groups", [])
+            for b in g.get("editorial_beats", [])
+        ]
     groups = {g["group_id"]: g for g in timeline.get("context_groups", [])}
     records, seen = [], set()
     for beat in beats:
@@ -264,8 +367,15 @@ def build_candidate_library(timeline: dict) -> dict:
             raise ValueError("Candidate has no owning context group")
         evidence = copy.deepcopy(beat.get("clip_evidence"))
         if evidence:
-            validate_clip_evidence(beat, {"visual_context": {"candidate_frames": timeline.get("samples", [])},
-                                          "person_observations": group.get("person_observations", {})}, utterances, captions)
+            validate_clip_evidence(
+                beat,
+                {
+                    "visual_context": {"candidate_frames": timeline.get("samples", [])},
+                    "person_observations": group.get("person_observations", {}),
+                },
+                utterances,
+                captions,
+            )
         reasons = []
         if not evidence:
             reasons.append("editorial_evidence_missing")
@@ -275,6 +385,13 @@ def build_candidate_library(timeline: dict) -> dict:
             reasons.append("neighbor_boundary_review")
         if beat.get("dialogue_closure") == "open":
             reasons.append("dialogue_open")
+        if any(
+            "…" in captions[cid]["display_text"]
+            or "..." in captions[cid]["display_text"]
+            for cid in cids
+        ):
+            # Preserve partial speech, but surface its uncertainty for clip assembly.
+            reasons.append("caption_uncertainty")
         for item in [*captions.values(), *utterances.values()]:
             x, y = float(item["start"]), float(item["end"])
             if max(a, x) < min(b, y) and (x < a - EPS or y > b + EPS):
@@ -282,24 +399,43 @@ def build_candidate_library(timeline: dict) -> dict:
                 break
         # Quality promotion requires separate review; a closed model event alone is insufficient.
         record = {
-            "candidate_id": "C-" + hashlib.sha256(f"{asset_id}::{bid}".encode()).hexdigest()[:16],
-            "asset_id": asset_id, "source": copy.deepcopy(source), "group_id": beat["group_id"],
-            "beat_id": bid, "title": beat["title"], "summary": beat["summary"],
+            "candidate_id": "C-"
+            + hashlib.sha256(f"{asset_id}::{bid}".encode()).hexdigest()[:16],
+            "asset_id": asset_id,
+            "source": copy.deepcopy(source),
+            "group_id": beat["group_id"],
+            "beat_id": bid,
+            "title": beat["title"],
+            "summary": beat["summary"],
             "recommended_range": {"start": a, "end": b},
-            "context_range": {"start": min(a, float(group["start"])), "end": max(b, float(group["end"]))},
+            "context_range": {
+                "start": min(a, float(group["start"])),
+                "end": max(b, float(group["end"])),
+            },
             "core_range": evidence["core_range"] if evidence else None,
             "dialogue": " ".join(captions[c]["display_text"] for c in cids),
             "evidence": evidence,
-            "references": {k: copy.deepcopy(v) for k, v in beat.items() if k.startswith("source_") or k == "representative_sample_ids"},
+            "references": {
+                k: copy.deepcopy(v)
+                for k, v in beat.items()
+                if k.startswith("source_") or k == "representative_sample_ids"
+            },
             "readiness": "needs_review" if reasons else "structured_candidate",
             "review_reasons": sorted(set(reasons)),
             "privacy": {"owners": "unknown", "no_faces": "unknown"},
             "audio_policy": "unassessed",
         }
-        record["revision"] = hashlib.sha256(json.dumps(record, ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:16]
+        record["revision"] = hashlib.sha256(
+            json.dumps(record, ensure_ascii=False, sort_keys=True).encode()
+        ).hexdigest()[:16]
         records.append(record)
-    return {"schema_version": CATALOG_SCHEMA, "asset_id": asset_id, "source": copy.deepcopy(source),
-            "candidates": records, "summary": {"candidate_count": len(records), "model_calls": 0}}
+    return {
+        "schema_version": CATALOG_SCHEMA,
+        "asset_id": asset_id,
+        "source": copy.deepcopy(source),
+        "candidates": records,
+        "summary": {"candidate_count": len(records), "model_calls": 0},
+    }
 
 
 def export_candidate_library(timeline_path: Path, output_path: Path) -> Path:
