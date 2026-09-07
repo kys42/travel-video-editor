@@ -323,3 +323,54 @@ def test_library_shows_corrected_captions_and_collapses_source_transcript(
     assert '<details class="source-transcript" open' not in document
     assert "연어 타코 둘 주세요." in document
     assert "What should we eat?" not in document
+
+
+def test_library_renders_reusable_candidates_with_exact_ranges(tmp_path: Path) -> None:
+    path, _ = context_timeline(
+        tmp_path,
+        asset_id="candidates",
+        creation_time="2026-08-26T00:00:00Z",
+        source_name="clip.mp4",
+    )
+    timeline = json.loads(path.read_text())
+    timeline["source"]["quick_fingerprint"] = "fixture-fingerprint"
+    timeline["reviewed_dialogue"] = {
+        "captions": [
+            {"caption_id": "C1", "start": 2.25, "end": 4.5, "display_text": "새 대사"}
+        ],
+        "utterances": [],
+        "editorial_beats": [
+            {
+                "beat_id": "B1",
+                "group_id": "G001",
+                "start": 2.25,
+                "end": 4.5,
+                "title": '<script>alert("clip")</script>',
+                "summary": "후보에만 있는 내용",
+                "source_caption_ids": ["C1"],
+                "representative_sample_ids": ["F0001"],
+            }
+        ],
+    }
+    timeline["schema_version"] = "phase1-video-summarized-timeline/v1"
+    timeline["video_summary"] = summary_review("candidates", "후보 테스트")
+    path.write_text(json.dumps(timeline))
+    document = render_video_library([path], tmp_path / "library").read_text()
+    assert document.count('data-candidate-id="C-') == 1
+    assert 'data-source-in="2.250" data-source-out="4.500"' in document
+    assert 'data-source-in="0.000" data-source-out="20.000"' in document
+    assert "검토 필요 · 상세 근거 없음" in document
+    assert "우리 얼굴 제외 여부 미확인" in document
+    assert "프레임 없음" in document  # F0001 at 0s is outside the candidate.
+    assert '<script>alert("clip")</script>' not in document
+    assert "&lt;script&gt;alert(&quot;clip&quot;)&lt;/script&gt;" in document
+    assert "후보에만 있는 내용 새 대사" in document  # scene search terms
+    assert document.count("data-review-workspace") == 1
+    assert "프록시 없음 · 스틸 프리뷰" in document
+
+    # Legacy summaries may contain beats without the candidate identity contract.
+    del timeline["source"]["quick_fingerprint"]
+    path.write_text(json.dumps(timeline))
+    legacy = render_video_library([path], tmp_path / "legacy-library").read_text()
+    assert 'data-candidate-id="C-' not in legacy
+    assert "시장 도착과 탐색" in legacy

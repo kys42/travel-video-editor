@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+from .clip_evidence import build_candidate_library
 from .phase1 import atomic_json, format_time
 from .review import load_json
 from .video_summary import VIDEO_SUMMARIZED_TIMELINE_SCHEMA
@@ -354,6 +355,67 @@ def _render_group_source_transcript(group: dict[str, Any]) -> str:
     )
 
 
+_REVIEW_REASON_LABELS = {
+    "editorial_evidence_missing": "상세 근거 없음",
+    "event_closure_unconfirmed": "행동 마무리 확인 필요",
+    "neighbor_boundary_review": "앞뒤 경계 확인 필요",
+    "dialogue_open": "대사가 이어질 수 있음",
+    "caption_uncertainty": "자막 불확실",
+    "speech_boundary_cut": "발화 중간 경계",
+}
+
+
+def _render_candidates(
+    candidates: list[dict], sample_map: dict, assets: ImageAssetResolver
+) -> str:
+    if not candidates:
+        return ""
+    rows = []
+    for candidate in candidates:
+        start, end = (candidate["recommended_range"][key] for key in ("start", "end"))
+        context = candidate["context_range"]
+        samples = [
+            sample_map[sid]
+            for sid in candidate["references"].get("representative_sample_ids", [])
+            if sid in sample_map and start <= float(sample_map[sid]["time"]) < end
+        ]
+        thumbnail = (
+            f'<img loading="lazy" src="{assets.url(samples[0]["frame"])}" alt="구간 내 대표 프레임">'
+            if samples
+            else '<span class="candidate-no-frame">프레임 없음</span>'
+        )
+        reasons = " · ".join(
+            _REVIEW_REASON_LABELS.get(reason, reason)
+            for reason in candidate["review_reasons"]
+        )
+        state = (
+            "검토 필요" if candidate["readiness"] == "needs_review" else "구조화 후보"
+        )
+        people = (candidate.get("evidence") or {}).get("people", [])
+        people_label = f"인물 관찰 {len(people)}건" if people else "인물 정보 미확인"
+        rows.append(f"""
+          <article class="candidate-row" data-candidate-id="{_escape(candidate["candidate_id"])}">
+            <div class="candidate-frame">{thumbnail}</div>
+            <div class="candidate-content"><strong>{_escape(candidate["title"])}</strong>
+              <p>{_escape(candidate["summary"])}</p>
+              {f'<p class="candidate-dialogue">대사 · {_escape(candidate["dialogue"])}</p>' if candidate["dialogue"] else ""}
+              <small>{_escape(people_label)} · 우리 얼굴 제외 여부 미확인</small>
+              <small class="candidate-state">{state}{" · " + _escape(reasons) if reasons else ""}</small>
+            </div>
+            <div class="candidate-controls">
+              <span>{_escape(format_time(start))} — {_escape(format_time(end))} · {end - start:.1f}s</span>
+              <button type="button" data-play-candidate data-source-in="{start:.3f}" data-source-out="{end:.3f}" data-range-title="{_escape(candidate["title"])}">후보 재생</button>
+              <button type="button" data-play-candidate data-source-in="{context["start"]:.3f}" data-source-out="{context["end"]:.3f}" data-range-title="{_escape(candidate["title"])} · 앞뒤 맥락">앞뒤 맥락 재생</button>
+            </div>
+          </article>""")
+    return (
+        '<section class="candidate-section"><header><strong>편집 후보</strong>'
+        f"<span>{len(candidates)}개 · 좋은 컷 여부는 재생 후 판단</span></header>"
+        + "".join(rows)
+        + "</section>"
+    )
+
+
 def _render_scene(
     timeline: dict[str, Any],
     group: dict[str, Any],
@@ -361,6 +423,7 @@ def _render_scene(
     index: int,
     assets: ImageAssetResolver,
     *,
+    clip_candidates: list[dict],
     highlighted: bool,
     initially_open: bool,
 ) -> str:
@@ -393,6 +456,10 @@ def _render_scene(
         str(context.get("narrative_summary", "")),
         "" if has_reviewed_dialogue else str(context.get("dialogue_summary", "")),
     ]
+    for candidate in clip_candidates:
+        search_parts.extend(
+            [candidate["title"], candidate["summary"], candidate["dialogue"]]
+        )
     for segment in segments:
         review = segment.get("review") or {}
         search_parts.append(str(review.get("visual_summary", "")))
@@ -443,6 +510,7 @@ def _render_scene(
           <span class="scene-state">{'<b class="highlight-state">HIGHLIGHT</b>' if highlighted else "<b>SCENE</b>"}{f"<small>{notable_count} notable</small>" if notable_count else ""}<small>{round(confidence * 100)}%</small><i aria-hidden="true"></i></span>
         </summary>
         <div class="scene-depth">
+          {_render_candidates(clip_candidates, sample_map, assets)}
           <div class="analysis-grid">
             <section><span class="depth-label">장면 해석</span><h3>{_escape(group["label"])}</h3><p>{_escape(context["narrative_summary"])}</p></section>
             <section><span class="depth-label depth-label--audio">{dialogue_detail_label}</span>{dialogue_detail}{source_transcript}</section>
@@ -475,6 +543,18 @@ def _render_video(
     representative = sample_map[summary["representative_sample_id"]]
     capture_time, capture_date = _capture_parts(timeline["media"].get("creation_time"))
     highlight_ids = set(summary.get("highlight_group_ids", []))
+    has_beats = timeline.get("reviewed_dialogue", {}).get("editorial_beats") or any(
+        group.get("editorial_beats") for group in timeline["context_groups"]
+    )
+    source = timeline.get("source", {})
+    has_candidate_identity = bool(
+        source.get("path") and source.get("quick_fingerprint")
+    )
+    candidates = (
+        build_candidate_library(timeline)["candidates"]
+        if has_beats and has_candidate_identity
+        else []
+    )
     scenes: list[str] = []
     for scene_index, event in enumerate(summary["chronological_events"], start=1):
         group = group_map[event["group_id"]]
@@ -486,6 +566,9 @@ def _render_video(
                 event,
                 scene_index,
                 assets,
+                clip_candidates=[
+                    c for c in candidates if c["group_id"] == group["group_id"]
+                ],
                 highlighted=highlighted,
                 initially_open=index == 1 and scene_index == 1,
             )
