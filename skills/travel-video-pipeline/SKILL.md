@@ -24,6 +24,7 @@ Use deterministic local processing to reduce video into traceable evidence, then
 - For source discovery, phase execution, caching, and exact CLI commands, read [references/pipeline.md](references/pipeline.md).
 - For Apple/MLX STT, mixed-language decisions, or subtitle scripts, read [references/transcript-reconciliation.md](references/transcript-reconciliation.md).
 - For contact sheets, scene descriptions, storyboard review, whole-video summaries, or HTML libraries, read [references/visual-review.md](references/visual-review.md).
+- For reusable clip libraries or processing further story days in travel-video-editor, start with the repository's `docs/reusable-scene-library-runbook.md`. Use `--clip-evidence` for fresh integrated reviews and the resumable preparation/finisher commands; preparing packets alone does not create reviewed scene data.
 - For an end-to-end request, read all three in that order and stop at the user's requested output; do not infer permission to render final edits or publish.
 
 ## Invariants

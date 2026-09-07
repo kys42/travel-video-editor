@@ -7,6 +7,7 @@
 프로젝트의 두 주요 단계와 데이터 계약은 아래 문서를 정본으로 사용합니다.
 
 - [편집용 정보 추출과 재사용 클립 후보 계약](docs/clip-editorial-evidence.md)
+- [새 세션에서 날짜별 장면 라이브러리 만들기](docs/reusable-scene-library-runbook.md)
 
 1. [Golden 01 — 원본 영상에서 편집 근거까지](docs/golden/01-raw-to-editorial-evidence.md)
 2. [Golden 02 — 편집 근거에서 하이라이트까지](docs/golden/02-editorial-evidence-to-highlight.md)
