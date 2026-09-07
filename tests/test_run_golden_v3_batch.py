@@ -473,3 +473,24 @@ def test_rejects_output_inside_source_or_proxy_tree(tmp_path: Path) -> None:
         batch.prepare_batch(manifest, tmp_path / "source" / "analysis")
     with pytest.raises(ValueError, match="proxy_root"):
         batch.prepare_batch(manifest, tmp_path / "proxies" / "analysis")
+
+
+def test_clip_evidence_option_only_invalidates_packet_stage(tmp_path: Path) -> None:
+    batch = load_batch_module()
+    asset, _ = make_asset(tmp_path, "clip-a")
+    manifest = make_manifest(tmp_path, [asset])
+    output = tmp_path / "golden-v3"
+    calls = []
+    runner = make_fake_runner(calls)
+    first = batch.prepare_batch(manifest, output, jobs=1, runner=runner)
+    assert first["summary"]["completed"] == 1
+    calls.clear()
+    second = batch.prepare_batch(manifest, output, jobs=1, runner=runner,
+                                 config=batch.GoldenV3Config(clip_evidence=True))
+    assert second["summary"]["completed"] == 1
+    assert [c[3] for c in calls] == ["build-scene-dialogue-review-packet"]
+    assert "--clip-evidence" in calls[0]
+    calls.clear()
+    batch.prepare_batch(manifest, output, jobs=1, runner=runner,
+                        config=batch.GoldenV3Config(clip_evidence=True))
+    assert calls == []
