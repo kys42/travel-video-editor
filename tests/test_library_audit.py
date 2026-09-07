@@ -1,5 +1,9 @@
 from travel_video.library_audit import audit_library
-from travel_video.library import _render_candidate_evidence, _candidate_evidence_text
+from travel_video.library import (
+    _render_candidate_evidence,
+    _candidate_evidence_text,
+    _candidate_listing_signals,
+)
 
 
 def test_audit_routes_coarse_and_repeated_results_without_changing_beats():
@@ -64,7 +68,8 @@ def test_rich_evidence_preserves_modality_and_escapes_claims():
     assert "<script>" not in rendered
     assert "역할 미확인" in rendered
     assert "미평가 / 확인할 근거 부족" not in rendered
-    assert '<details class="candidate-facts">' in rendered
+    assert 'aria-label="클립 관찰 정보"' in rendered
+    assert "<details" not in rendered
     assert _candidate_evidence_text(candidate) == [
         "<script>bear</script> mentioned",
         "P1 unknown 역할 미확인",
@@ -91,3 +96,54 @@ def test_audit_detects_template_filler_even_with_different_titles():
     flags = report["groups"][0]["review_signals"]
     assert "near_duplicate_beat_summary" in flags
     assert "repeated_evidence_across_beats" in flags
+
+
+def test_list_signals_distinguish_mentions_from_visible_subjects_and_unknown_people():
+    candidate = {
+        "dialogue": "곰 이야기",
+        "review_reasons": [],
+        "evidence": {
+            "subjects": [{"kind": "wildlife", "basis": "speech"}],
+            "people": [],
+        },
+    }
+    signals = _candidate_listing_signals(candidate)
+    assert ("subject", "동물 언급") in signals
+    assert ("subject", "동물") not in signals
+    assert not any(kind == "people" for kind, _ in signals)
+    assert ("dialogue", "대화") in signals
+
+
+def test_evidence_does_not_repeat_already_visible_dialogue():
+    candidate = {
+        "dialogue": "소스가 새콤하다",
+        "recommended_range": {"start": 0, "end": 2},
+        "evidence": {
+            "steps": [
+                {
+                    "description": "발화 내용: 소스가 새콤하다",
+                    "start": 0,
+                    "end": 2,
+                    "basis": "speech",
+                }
+            ]
+        },
+    }
+    assert _render_candidate_evidence(candidate) == ""
+
+
+def test_repeated_dialogue_preserves_visual_and_more_precise_evidence():
+    candidate = {
+        "dialogue": "치킨이 보인다",
+        "recommended_range": {"start": 0, "end": 5},
+        "evidence": {
+            "steps": [
+                {"description": "치킨이 보인다", "start": 0, "end": 5, "basis": "visual"},
+                {"description": "치킨이 보인다", "start": 2, "end": 4, "basis": "speech"},
+            ]
+        },
+    }
+    rendered = _render_candidate_evidence(candidate)
+    assert "basis-visual" in rendered
+    assert "basis-speech" in rendered
+    assert "00:02–00:04" in rendered
