@@ -63,7 +63,8 @@ def test_rich_evidence_preserves_modality_and_escapes_claims():
     assert "&lt;script&gt;bear&lt;/script&gt;" in rendered
     assert "<script>" not in rendered
     assert "역할 미확인" in rendered
-    assert "미평가 / 확인할 근거 부족" in rendered
+    assert "미평가 / 확인할 근거 부족" not in rendered
+    assert '<details class="candidate-facts">' in rendered
     assert _candidate_evidence_text(candidate) == [
         "<script>bear</script> mentioned",
         "P1 unknown 역할 미확인",

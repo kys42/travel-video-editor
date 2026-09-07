@@ -395,8 +395,10 @@ def test_library_renders_reusable_candidates_with_exact_ranges(tmp_path: Path) -
 
     assert 'data-source-in="2.250" data-source-out="4.500"' in document
     assert 'data-source-in="0.000" data-source-out="20.000"' in document
-    assert "검토 필요 · 상세 근거 없음" in document
-    assert "우리 얼굴 제외 여부 미확인" in document
+    assert "상세 근거 없음" in document
+    assert (
+        "우리 얼굴 제외 여부 미확인" not in document
+    )  # No repeated unassessed status.
     assert "프레임 없음" in document  # F0001 at 0s is outside the candidate.
     assert '<script>alert("clip")</script>' not in document
     assert "&lt;script&gt;alert(&quot;clip&quot;)&lt;/script&gt;" in document

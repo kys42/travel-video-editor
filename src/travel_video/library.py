@@ -408,19 +408,23 @@ def _render_candidate_evidence(candidate: dict) -> str:
             f"<li><span>{_escape(format_time(c['start']))}–{_escape(format_time(c['end']))} · {_escape(basis_labels.get(c['basis'], c['basis']))}</span> {_escape(c['description'])}</li>"
             for c in claims
         )
-        sections.append(
-            f"<section><b>{label}</b><ul>{rows}</ul></section>"
-            if rows
-            else f"<section><b>{label}</b><p>미평가 / 확인할 근거 부족</p></section>"
-        )
+        if rows:
+            sections.append(f"<section><b>{label}</b><ul>{rows}</ul></section>")
     people = " · ".join(
         f"{_escape(p['person_id'])}: {_escape(_PERSON_ROLE_LABELS.get(p['role'], p['role']))}"
         for p in evidence.get("people", [])
     )
-    sections.append(
-        f"<section><b>등장인물</b><p>{people or '미평가 / 확인할 근거 부족'}</p><small>구간 내부 익명 관찰 · 동일인·우리 얼굴 여부 미확인</small></section>"
+    if people:
+        sections.append(
+            f"<section><b>등장인물</b><p>{people}</p><small>구간 내부 익명 관찰 · 동일인·우리 얼굴 여부 미확인</small></section>"
+        )
+    if not sections:
+        return ""
+    return (
+        '<details class="candidate-facts"><summary>관찰 근거·인물·원음</summary><div class="candidate-evidence">'
+        + "".join(sections)
+        + "</div></details>"
     )
-    return '<div class="candidate-evidence">' + "".join(sections) + "</div>"
 
 
 def _render_candidates(
@@ -446,20 +450,33 @@ def _render_candidates(
             _REVIEW_REASON_LABELS.get(reason, reason)
             for reason in candidate["review_reasons"]
         )
-        state = (
-            "검토 필요" if candidate["readiness"] == "needs_review" else "구조화 후보"
+        quality_labels = {
+            "blurred": "초점 확인",
+            "shaky": "흔들림 확인",
+            "occluded": "가림 확인",
+            "exposure_issue": "노출 확인",
+        }
+        quality_notes = sorted(
+            {
+                quality_labels[c["kind"]]
+                for c in (candidate.get("evidence") or {}).get("quality", [])
+                if c["kind"] in quality_labels
+            }
         )
-        people = (candidate.get("evidence") or {}).get("people", [])
-        people_label = f"인물 관찰 {len(people)}건" if people else "인물 정보 미확인"
+        quality_badge = (
+            f'<small class="candidate-state">샘플 프레임 · {" · ".join(quality_notes)}</small>'
+            if quality_notes
+            else ""
+        )
         rows.append(f"""
           <article class="candidate-row" data-candidate-id="{_escape(candidate["candidate_id"])}">
             <div class="candidate-frame">{thumbnail}</div>
             <div class="candidate-content"><strong>{_escape(candidate["title"])}</strong>
               <p>{_escape(candidate["summary"])}</p>
               {f'<p class="candidate-dialogue">대사 · {_escape(candidate["dialogue"])}</p>' if candidate["dialogue"] else ""}
+              {quality_badge}
               {_render_candidate_evidence(candidate)}
-              <small>{_escape(people_label)} · 우리 얼굴 제외 여부 미확인</small>
-              <small class="candidate-state">{state}{" · " + _escape(reasons) if reasons else ""}</small>
+              {f'<small class="candidate-state">{_escape(reasons)}</small>' if reasons else ""}
             </div>
             <div class="candidate-controls">
               <span>{_escape(format_time(start))} — {_escape(format_time(end))} · {end - start:.1f}s</span>
@@ -469,7 +486,7 @@ def _render_candidates(
           </article>""")
     return (
         '<section class="candidate-section"><header><strong>장면별 세부 구간</strong>'
-        f"<span>{len(candidates)}개 · 행동·대화 단위 편집 후보 · 재생 후 검토</span></header>"
+        f"<span>{len(candidates)}개 클립 · 선택해서 살펴보기</span></header>"
         + "".join(rows)
         + "</section>"
     )
@@ -575,11 +592,13 @@ def _render_scene(
         </summary>
         <div class="scene-depth">
           {_render_candidates(clip_candidates, sample_map, assets)}
+          {'<details class="scene-context"><summary>전체 장면 설명·대화·편집 포인트</summary>' if clip_candidates else ""}
           <div class="analysis-grid">
             <section><span class="depth-label">장면 해석</span><h3>{_escape(group["label"])}</h3><p>{_escape(context["narrative_summary"])}</p></section>
             <section><span class="depth-label depth-label--audio">{dialogue_detail_label}</span>{dialogue_detail}{source_transcript}</section>
             <section><span class="depth-label depth-label--edit">특이 포인트 / 편집 가치</span>{_render_notables(context, sample_map)}</section>
           </div>
+          {"</details>" if clip_candidates else ""}
           {'<details class="analysis-evidence" data-analysis-evidence><summary>분석 근거 보기 · 기계 구간과 원시 추출 정보</summary><p class="evidence-notice">아래 기계 구간은 추출용 샘플입니다. 장면별 편집 구간이 아니며 같은 장면 설명이 반복될 수 있습니다.</p>' if clip_candidates else ""}
           <section class="segment-section">
             <header><div><strong>{"기계 샘플 구간 · 편집 장면 아님" if clip_candidates else "세부 구간"}</strong><span>행동 해석과 {transcript_comparison} 같은 시간축으로 비교</span></div><span>{len(segments)} segments</span></header>
