@@ -290,6 +290,7 @@ def implementation_record() -> dict[str, Any]:
         PROJECT_ROOT / "src/travel_video/context.py",
         PROJECT_ROOT / "src/travel_video/scene_dialogue.py",
         PROJECT_ROOT / "src/travel_video/clip_evidence.py",
+        PROJECT_ROOT / "src/travel_video/library_audit.py",
         PROJECT_ROOT / "src/travel_video/boundary_proposals.py",
         PROJECT_ROOT / "scripts/apple_vision_boundary_signals.swift",
     ]

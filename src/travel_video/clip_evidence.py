@@ -13,6 +13,7 @@ import math
 from pathlib import Path
 from typing import Any
 
+from .library_audit import audit_library
 from .phase1 import atomic_json
 from .review import load_json
 
@@ -470,6 +471,7 @@ def build_candidate_library(timeline: dict) -> dict:
         "source": copy.deepcopy(source),
         "candidates": records,
         "summary": {"candidate_count": len(records), "model_calls": 0},
+        "library_audit": audit_library(timeline),
     }
 
 

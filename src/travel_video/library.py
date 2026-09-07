@@ -365,6 +365,64 @@ _REVIEW_REASON_LABELS = {
 }
 
 
+_PERSON_ROLE_LABELS = {
+    "unknown": "역할 미확인",
+    "traveler": "여행객 추정",
+    "staff": "직원 추정",
+    "guide": "가이드 추정",
+    "bystander": "주변 인물 추정",
+}
+
+
+def _candidate_evidence_text(candidate: dict) -> list[str]:
+    evidence = candidate.get("evidence") or {}
+    return [
+        str(claim.get("description", ""))
+        for key in ("steps", "subjects", "interactions", "audio", "quality")
+        for claim in evidence.get(key, [])
+    ] + [
+        f"{p['person_id']} {p['role']} {_PERSON_ROLE_LABELS.get(p['role'], p['role'])}"
+        for p in evidence.get("people", [])
+    ]
+
+
+def _render_candidate_evidence(candidate: dict) -> str:
+    evidence = candidate.get("evidence")
+    if not evidence:
+        return '<p class="candidate-evidence-empty">상세 근거 미추출</p>'
+    sections = []
+    basis_labels = {
+        "visual": "화면 관찰",
+        "speech": "발화 근거",
+        "inferred": "문맥 추정",
+    }
+    for key, label in (
+        ("steps", "행동·반응 흐름"),
+        ("subjects", "볼거리·대상"),
+        ("interactions", "대화·상호작용"),
+        ("audio", "원음 정보"),
+        ("quality", "화면 품질"),
+    ):
+        claims = evidence.get(key, [])
+        rows = "".join(
+            f"<li><span>{_escape(format_time(c['start']))}–{_escape(format_time(c['end']))} · {_escape(basis_labels.get(c['basis'], c['basis']))}</span> {_escape(c['description'])}</li>"
+            for c in claims
+        )
+        sections.append(
+            f"<section><b>{label}</b><ul>{rows}</ul></section>"
+            if rows
+            else f"<section><b>{label}</b><p>미평가 / 확인할 근거 부족</p></section>"
+        )
+    people = " · ".join(
+        f"{_escape(p['person_id'])}: {_escape(_PERSON_ROLE_LABELS.get(p['role'], p['role']))}"
+        for p in evidence.get("people", [])
+    )
+    sections.append(
+        f"<section><b>등장인물</b><p>{people or '미평가 / 확인할 근거 부족'}</p><small>구간 내부 익명 관찰 · 동일인·우리 얼굴 여부 미확인</small></section>"
+    )
+    return '<div class="candidate-evidence">' + "".join(sections) + "</div>"
+
+
 def _render_candidates(
     candidates: list[dict], sample_map: dict, assets: ImageAssetResolver
 ) -> str:
@@ -399,6 +457,7 @@ def _render_candidates(
             <div class="candidate-content"><strong>{_escape(candidate["title"])}</strong>
               <p>{_escape(candidate["summary"])}</p>
               {f'<p class="candidate-dialogue">대사 · {_escape(candidate["dialogue"])}</p>' if candidate["dialogue"] else ""}
+              {_render_candidate_evidence(candidate)}
               <small>{_escape(people_label)} · 우리 얼굴 제외 여부 미확인</small>
               <small class="candidate-state">{state}{" · " + _escape(reasons) if reasons else ""}</small>
             </div>
@@ -458,7 +517,12 @@ def _render_scene(
     ]
     for candidate in clip_candidates:
         search_parts.extend(
-            [candidate["title"], candidate["summary"], candidate["dialogue"]]
+            [
+                candidate["title"],
+                candidate["summary"],
+                candidate["dialogue"],
+                *_candidate_evidence_text(candidate),
+            ]
         )
     for segment in segments:
         review = segment.get("review") or {}

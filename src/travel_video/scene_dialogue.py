@@ -1292,7 +1292,12 @@ def build_scene_dialogue_packet(
         packet["instructions"].extend(
             [
                 "Author scene_understanding from the dense storyboard and timed speech together.",
-                "Split each coarse group into evidence-anchored editorial_beats for visual, action, and dialogue flow.",
+                "Build a reusable scene library, not a selected highlight reel: preserve ordinary, quiet, transitional and interesting content before any editorial ranking.",
+                "Split each coarse group into independently reusable evidence-anchored editorial_beats when the action, subject, dialogue topic, interaction phase or reaction changes. Coarse groups are review context, not default clips.",
+                "Review the complete temporal sequence before choosing boundaries: e.g. menu browsing, staff question, order, food reveal, first bite, taste response and joke may be separate reusable units when supported. Do not force those events when absent.",
+                "Do not enforce a beat count or fixed duration/grid. Keep a continuous action or complete utterance intact; use boundary_adjustment and neighboring context for a question or response crossing a coarse boundary.",
+                "Keep scene_understanding narrative_summary concrete and information-rich: describe setting, visible subjects, ordered actions, topic changes and reactions supported by evidence, including uncertainties. Do not replace it with a title, generic one-line synopsis or repeated group label.",
+                "Give each beat its own specific summary of what happens, what changes and relevant dialogue context. Do not copy the coarse scene summary across beats. Extraction is not highlight selection or compression.",
                 "Assign every window, utterance, and caption to exactly one editorial beat.",
                 "Do not cut a complete utterance; flag coarse boundaries crossed by speech.",
             ]
