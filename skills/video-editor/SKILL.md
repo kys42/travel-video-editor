@@ -10,7 +10,8 @@ Turn explicit source ranges into a reproducible local video edit. Preserve sourc
 ## First use and editing brief
 
 Use [editing onboarding](references/onboarding.md) when setup, source, or the intended
-film is unclear. Check only required render dependencies and collect purpose, duration,
+film is unclear. First summarize the available footage/candidates from a quick metadata
+inventory, asking only for the source location if unknown. Then check required render dependencies and collect purpose, duration,
 format, pacing, sound/captions and exclusion preferences in small batches. Reuse a
 pipeline onboarding profile or explicit edit plan; do not restart the questionnaire or
 install speech models for already-analyzed footage. Skill installation is passive;

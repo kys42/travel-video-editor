@@ -4,9 +4,11 @@ Start here when the user is new or their source/brief is incomplete. Existing us
 
 ## Choose the route
 
+Before asking for purpose or options, use the known source/library to give a quick inventory: available dates, source count/duration and existing candidates/analysis. Prefer cached metadata; a missing duration can remain unknown rather than trigger a full scan. If the location is missing, ask only for that first. Summarize the findings and ask only choices they leave open. For a complete authorized edit plan, limit this to its inputs and proceed.
+
 - **Explicit source ranges or an existing edit plan:** check render readiness and execute the requested edit. No new source analysis or speech model is needed just to trim, caption, or render.
 - **Reviewed library/candidate JSON:** reuse it. Carry purpose and options from the extraction brief, then select/reorder cuts with traceable ranges.
-- **Unanalyzed travel folder:** ask whether the user wants scene extraction only or extraction through final highlight. When the travel-video-pipeline skill and repository are available, use its `references/onboarding.md` for setup and extraction. Otherwise locate that project or proceed only with the narrower explicit editing task this skill can perform; do not pretend a missing extraction tool exists.
+- **Unanalyzed travel folder:** use the quick inventory to ask whether the user wants scene extraction only or extraction through final highlight. When the travel-video-pipeline skill and repository are available, use its `references/onboarding.md` for bounded discovery, setup and extraction. Otherwise locate that project or proceed only with the narrower explicit editing task this skill can perform; do not pretend a missing extraction tool exists.
 
 ## Check render readiness
 

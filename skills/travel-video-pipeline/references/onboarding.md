@@ -2,15 +2,19 @@
 
 Use this on the first invocation, a new machine/project/source, or a changed goal. Skill installation copies instructions; it does not execute a setup hook. On an ordinary resume, read the existing local profile and ask only about missing or changed decisions. If the user already supplied source, purpose, options, and authorization, use those answers and proceed.
 
-## 1. Establish the task, then inspect without changing anything
+## 1. Look at the available footage, then ask in context
 
-Start with one short question if scope is missing:
+Use source paths and existing manifests from the conversation/profile first. If no source folder or library is known, ask only where it is; defer purpose and output questions until after a quick inventory. Do not ask users to upload full camera footage to chat. Never adopt this repository author's paths, trip names, identities, or exclusion preferences as another user's defaults.
 
-> 어떤 작업을 원하세요? ① 장면·대사 추출과 웹 정리 ② 추출부터 하이라이트 제작까지 ③ 기존 라이브러리로 영상 편집
+Keep the initial look brief (roughly 30 seconds where practical), read-only, and limited to the designated folder or library. Prefer existing manifests/catalogs for file count, bytes, total duration, date distribution, orientation/resolution, and proxy/transcript/scene-library coverage. Count source assets separately from their proxies and exports. If metadata is missing, list files and use a small bounded sample of `ffprobe` metadata when available; do not wait for a full-folder probe, decode, or hash pass. Report measured coverage and unknowns; sampled duration is an estimate, not an exact total. File timestamps are provisional unless camera metadata or existing story-day mappings support them.
 
-Ask for the source folder or existing library and a separate working/output folder if unknown. Do not ask users to upload full camera footage to chat. Existing conversation paths and manifests take precedence. Never adopt paths, trip names, identities, or exclusion preferences from this repository's examples as defaults for another user.
+Existing summaries or thumbnails can add subject context; filenames alone do not establish content, people, or spoken language. Do not start STT, model downloads, proxy/contact-sheet batches, or paid LLM calls for this first look. Missing tools or disconnected storage should lead to a partial inventory with a clear limitation, not block the conversation behind setup.
 
-Perform cheap discovery first: current project, OS/architecture, Python/runtime, FFmpeg/ffprobe, uv, source reachability, file count/size and free working space. List files only inside the user-designated source; prefer existing manifests. Do not start STT, model downloads, proxy batches, or paid LLM calls during inventory. File dates can be unreliable: preserve camera metadata, distinguish story day from timezone conversions, and ask about date scope only if it affects selection.
+Give a compact factual summary before asking the first scope question. For example, **only if the inventory supports these values**:
+
+> 7일치 180개, 총 약 5시간이고 마지막 이틀은 아직 분석되지 않았네요. 전체를 장면·대사 웹으로 정리할까요, 하이라이트까지 만들까요? 기존 분석분만 먼저 편집할 수도 있어요.
+
+Tailor choices to what exists: date range when many days are present, reuse when analysis exists, full extraction when it does not. If the user already chose the goal, proceed without asking it again. Ask for a separate working/output folder when needed. Then inspect current project, OS/architecture, runtime, available tools and free working space for the chosen route.
 
 Run the bundled read-only checker (substitute actual paths; outputs remain local):
 

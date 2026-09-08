@@ -10,8 +10,10 @@ Use deterministic local processing to reduce video into traceable evidence, then
 ## First use and changed goals
 
 Before processing a new user's footage, follow [onboarding](references/onboarding.md):
-inspect environment and model readiness, help install only needed dependencies,
-identify source/work locations, and establish extraction-only versus highlight scope.
+first skim the known source/library using cheap metadata and summarize its scale and
+existing analysis, then ask contextual scope questions. If the source is unknown, ask
+only its location first. Check environment/model readiness and install needed dependencies
+for the chosen extraction-only or highlight route.
 Installation of the skill itself does not run setup. Start this interaction on first use;
 on resume reuse the local brief and ask only missing/changed questions. For a complete
 existing brief, proceed directly. Do not begin downloads or full processing during a check-only request.
