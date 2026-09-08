@@ -34,8 +34,8 @@
 - `work/day-comparison-20260820/`: 21개 자산의 기존/새 계약 비교. 분할과 설명이
   너무 거칠었던 초기 결과이므로 최신 라이브러리 추출 완료본으로 계산하지 않는다.
 - `work/scene-library-rich-pilot/`: 2개 자산, 35개 후보의 최신 세분화 파일럿.
-  화면 http://127.0.0.1:8794/ 및 `parent-quality-review.json`을 참고한다.
-  음식·대화에서의 검토 사례이며 빙하·열차·동물 등 모든 유형의 품질 검증은 아니다.
+  음식·대화에서의 검토 사례이며 완성 승인 기준은 아니다. 과거
+  `parent-quality-review.json`은 새 run의 입력·승인·재검토 근거로 사용하지 않는다.
 - `work/highlights/faceless-discovery-v1/source-inventory.json`: 과거 편집용 위치 색인.
   새 모델 리뷰에 이전 답안을 넣기 위한 자료가 아니다.
 
@@ -44,10 +44,19 @@
 기존 packet은 생성 당시 프롬프트를 담으므로 코드만 업데이트해 재사용하면 새 지침이
 반영되지 않는다. 신규 run에서 현재 코드로 packet을 다시 만든다.
 
+## 부모 모델 없이 여러 날짜 실행
+
+준비 manifest가 있는 새 배치는 [자동 작업 큐 가이드](scene-library-queue.md)를 사용한다.
+로컬 큐가 fresh worker를 배정하고 실제 validator 결과로 요약·재시도·후보·웹까지 이어간다.
+아래 수동 명령은 준비·문제 진단용이며 부모가 asset마다 반복 호출하는 운영 루프로 사용하지 않는다.
+기존 완료 데이터를 새 모델 배치에 다시 넣지 않는다.
+
 ## 1. 날짜 선택과 로컬 근거 준비
 
 프로젝트 루트에서 실행한다. 아래 날짜는 예시이며 사용자 지정 범위로 바꾼다.
-전체 여행을 맡았더라도 하루씩 완성하면 중단 후 이어가기와 검수가 쉽다.
+manifest와 결과는 날짜별로 유지하되, 실행은 날짜 완료를 기다리지 않는다. 사용 가능한
+worker 슬롯에 여러 날짜의 독립된 asset 또는 완전한 coarse group을 병렬 배정한다.
+한 묶음이 끝나면 다음 미배정 묶음으로 바로 넘기며, 이미 담당 중인 근거를 중복 배정하지 않는다.
 
 ```sh
 cd /Users/kys/projects/travel-video-editor
@@ -96,76 +105,65 @@ packet에 내장된 계약과 `dialogue-preservation/v1`을 따른다.
 등장인물은 비트 내부 익명 관찰이며 ‘우리’의 신원·같은 사람·얼굴 부재를 확정하지 않는다.
 원음을 직접 듣지 않았다면 환경음·음악·웃음은 관찰 사실로 단정하지 않는다.
 
-## 3. 검증·요약·후보 생성
+## 3. 자동 완료·요약·라이브러리 생성
 
 ```sh
-.venv/bin/python scripts/finish_golden_v3_batch.py \
+.venv/bin/python scripts/complete_scene_library_day.py \
   "$LIBRARY_RUN_ROOT/prepared/manifest.json" \
   --review-root "$LIBRARY_RUN_ROOT/reviews" \
-  --output-root "$LIBRARY_RUN_ROOT/finished" --jobs 2
+  --output-root "$LIBRARY_RUN_ROOT/finished" \
+  --library-root "$LIBRARY_RUN_ROOT/automatic-library" \
+  --story-day "$LIBRARY_DAY" --jobs 2
 ```
 
-finisher는 모델 답안을 작성하지 않는다. 없으면 `awaiting_review`, 장면 리뷰가
-검증됐지만 영상 요약이 없으면 `awaiting_summary`를 남긴다. 후자의 record가 가리키는
-`summary_packet`만 읽어 영상 요약을 위 규약 경로에 작성한 뒤 같은 명령을 재실행한다.
-요약 대기 중에도 검증된 `clip-candidates.json`은 생성된다.
-리뷰를 고치면 이전 답안과 변경 이유를 보존하고 finisher로 파생물을 다시 만든다.
+이 명령은 기존 finisher를 호출한 뒤 성공 자산의 라이브러리를 자동 생성한다. 완료 결과는
+`finished/completion.json`, `finished/work-queue.json`, `finished/original-relink-index.json`과
+`automatic-library/`에 남는다. 이전 원본과 정본은 보존한다.
 
-종료 코드 0만으로 완료 판정하지 않는다. `finished/manifest.json`과
-`finished/days/<story-day>/manifest.json`의 상태·누락·실패 개수를 읽는다.
-각 성공 record의 `outputs`가 정본, 후보, 감사 결과와 개별 웹의 실제 위치다.
-과거 `timeline.final.json`이나 파일명의 최신 수정 시각으로 정본을 선택하지 않는다.
+worker는 장면 리뷰만으로 끝나지 않는다. `timeline.dialogue-reviewed.json`을 만든 뒤 실제
+`video-summary-packet.json`을 읽어 `reviews/<asset_id>/summary/video-summary.json`을 작성하고
+`validate-video-summary`까지 통과시킨다. 이것이 fresh extract와 장면 리뷰 validator를 포함한
+정상 자산 완료 조건이다. 부모 승인이나 날짜별 모델 QA는 없다.
 
-## 4. 날짜별 편집 웹 만들기
+`completion.json`은 완료·진행·예외를 구분한다. 누락 review 또는 summary는 해당 worker 작업으로
+`work-queue.json`에 넣는다. `quality-notes.json`의 긴 비트·반복·짧은 설명 같은 신호는 기록용이며
+차단하지 않는다. 예외 경로는 `reviews/<asset_id>/review-exceptions.json`뿐이며
+`scene-review-exceptions/v1`의 `items[{status: open|resolved, reason: ...}]`로 명시된 근거 충돌 또는
+validator 실패만 넣는다. 종료 코드만으로 완료를 판단하지 말고 completion과 queue의 상태·누락·실패를
+읽고, 성공 record의 `outputs`로 정본·후보·감사 결과를 찾는다.
 
-완료 record만 원본 순서대로 모아 공용 라이브러리를 만든다. 아래 예시는 미완료가
-남아 있으면 멈춘다. 일부만 미리 보여줄 때는 별도 출력에 ‘부분 결과’로 명시한다.
+## 4. 자동 생성 라이브러리 열기
+
+완료 자산만 `automatic-library/`에 자동 포함된다. 진행 또는 예외 자산은 completion과 queue에 남으며,
+성공 자산의 부분 라이브러리는 즉시 사용할 수 있다. 전체 eligible 자산이 끝나고 열린 작업이 없어야
+날짜 상태가 `complete`가 된다.
 
 ```sh
-.venv/bin/python - <<'PY'
-import json, os
-from pathlib import Path
-from travel_video.library import render_video_library
-root = Path(os.environ['LIBRARY_RUN_ROOT'])
-day = os.environ['LIBRARY_DAY']
-data = json.loads((root / 'finished/days' / day / 'manifest.json').read_text())
-records = data['records']
-if not records or any(r['status'] not in ('completed', 'reused') for r in records):
-    raise SystemExit('미완료 record를 먼저 확인하세요.')
-paths = [Path(r['outputs']['timeline_dialogue_reviewed_summarized']) for r in records]
-render_video_library(paths, root / 'library', title=f'{day} 장면 라이브러리',
-    proxy_root=Path(os.environ['WORKING_MEDIA_ROOT']) / 'proxies/1080p-h264')
-PY
-
 .venv/bin/python -m travel_video.cli serve-editor \
-  "$LIBRARY_RUN_ROOT/library/manifest.json" \
+  "$LIBRARY_RUN_ROOT/automatic-library/manifest.json" \
   --state-dir "$LIBRARY_RUN_ROOT/editor-state" --port 8795 --agent-backend demo
 ```
 
 사용 중인 포트가 있으면 다른 포트를 고른다. 위 서버는 비용 없는 검토용 demo다.
 웹은 프레임·시간·설명·대사·대상·검토 상태를 행에 표시하고, 클립을 펼치면
-근거·인물·원음·품질이 즉시 보인다. 후보 재생과 앞뒤 맥락 재생을 확인한다.
+근거·인물·원음·품질이 즉시 보인다. 재생 UI를 변경했을 때만 후보·맥락 재생을 검증하며,
+데이터 배치마다 부모의 재생 검수 단계를 추가하지 않는다.
 후보 담기·revision 직접 조립은 별도 기능이며 데이터 생성 완료 조건에 섞지 않는다.
 
-## 5. 하루 완료 판정과 인계
+## 5. 하루 상태와 인계
 
-- 계획한 날짜의 eligible 자산 수와 준비·리뷰·요약·최종 결과 수를 대조한다.
-- `policy_audit.status=pass`, 자막·발화·visual moment 보존, 원본 시간/ID 검증을 확인한다.
-- `library_audit`의 긴 단일 후보·짧은 설명·반복 근거 신호를 확인한다. 신호가 있는
-  그룹과 대표적인 조용한 볼거리·대화·빠른 반응을 프레임/짧은 재생으로 대조한다.
-  후보 개수 증가나 검증기 통과만으로 의미 품질 합격을 선언하지 않는다.
-- 검토 메모에 살릴 단위가 보존됐는지, 질문·반응이 잘리지 않았는지, 설명에 새로운
-  구체 정보가 있는지, 남은 불확실성을 적는다. 문제 그룹만 재리뷰한다.
-- 기존 날짜 정본과 비교 자료는 보존한다. 새 결과를 생성하는 것과 이전 결과를
-  공식 교체하는 것은 따로 기록한다.
-- 프로젝트 `work/scene-library-runs/`에 실행 코드 SHA, 옵션, 날짜, 입력 manifest,
-  prepared/reviews/finished/library 경로, 상태별 수, 검수 메모와 재시작 명령을 남긴다.
-  실제 토큰·비용 기록이 없으면 파일 크기로 비용을 추측하지 않는다.
+- `completion.json`으로 eligible·완료·진행·예외 수와 자동 validator 결과를 확인한다.
+- 완료는 worker의 fresh extraction, 장면 리뷰/whole-summary validator, 그리고 자동 library 생성이다.
+- 불확실성은 quality notes에 보존한다. 재작업을 막는 경우는 명시된 증거 충돌 또는 validator 실패뿐이다.
+- `work-queue.json`의 누락 review/summary와 열린 `review-exceptions.json`만 후속 worker에 배정한다.
+- 기존 날짜 정본·원본·비교 자료는 보존하고, 실행 경로·상태별 수·재시작 명령을 `work/scene-library-runs/`에 남긴다.
 
 ## 새 세션에 줄 요청 예시
 
 > travel-video-pipeline 스킬과 프로젝트의 docs/reusable-scene-library-runbook.md를 읽고,
 > 지정한 여행일의 재사용 장면 라이브러리 데이터를 만들어줘. 기존 raw STT·프레임·grouping
 > 캐시를 활용하되 --clip-evidence로 새 통합 리뷰를 하고, 의미 단위 클립과 구체적인
-> 설명·대화·인물·볼거리를 풍부하게 보존해줘. 하루씩 검증·예외 검토·요약·후보 JSON·편집
-> 웹까지 완성하고 재개 가능한 manifest를 남겨줘. 기존 정본은 보존해줘.
+> 설명·대화·인물·볼거리를 풍부하게 보존해줘. 날짜와 완전한 그룹별로 병렬 추출하고,
+> worker 요약과 필수 자동 검증이 통과하면 후보 JSON·편집 웹까지 자동 완료해줘.
+> 부모 모델 최종검수 없이 실제 검증 오류·명시적 근거 충돌만 필요한 부분을 수정하고,
+> 날짜별 재개 가능한 manifest를 남겨줘. 기존 정본은 보존해줘.

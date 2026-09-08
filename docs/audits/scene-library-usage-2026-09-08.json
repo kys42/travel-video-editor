@@ -1,0 +1,245 @@
+{
+  "start": "2026-09-07T16:48:35.271Z",
+  "cutoff": "2026-09-08T08:58:48.965Z",
+  "wall_hours": 16.170470555557145,
+  "collection_start": "2026-09-07T16:39:07.082Z",
+  "scope_notice": "Usage includes initial preparation and storage move; excludes later questions and this audit. Wall_hours starts at proxy-processing authorization.",
+  "session_count": 77,
+  "worker_count": 76,
+  "totals": {
+    "input_tokens": 1474748889,
+    "cached_input_tokens": 1434918784,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 6149649,
+    "reasoning_output_tokens": 1042802,
+    "total_tokens": 1480898538,
+    "responses": 11587,
+    "usd_standard": 676.4586391999987
+  },
+  "models": {
+    "gpt-6-astra": {
+      "input_tokens": 368356498,
+      "cached_input_tokens": 359982976,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 1088562,
+      "reasoning_output_tokens": 159154,
+      "total_tokens": 369445060,
+      "responses": 2720,
+      "usd_standard": 498.1462960000013
+    },
+    "gpt-5.6-terra": {
+      "input_tokens": 483313153,
+      "cached_input_tokens": 464978688,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 2569519,
+      "reasoning_output_tokens": 519830,
+      "total_tokens": 485882672,
+      "responses": 3703,
+      "usd_standard": 160.49889559999988
+    },
+    "gpt-5.6-luna": {
+      "input_tokens": 623079238,
+      "cached_input_tokens": 609957120,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 2491568,
+      "reasoning_output_tokens": 363818,
+      "total_tokens": 625570806,
+      "responses": 5164,
+      "usd_standard": 17.813447600000007
+    }
+  },
+  "phases": {
+    "before_no_parent_review": {
+      "input_tokens": 1255048461,
+      "cached_input_tokens": 1220726400,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 5407043,
+      "reasoning_output_tokens": 925293,
+      "total_tokens": 1260455504,
+      "responses": 9632,
+      "usd_standard": 612.6054734799982
+    },
+    "cross_date_parallel": {
+      "input_tokens": 75306345,
+      "cached_input_tokens": 73465728,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 231458,
+      "reasoning_output_tokens": 31305,
+      "total_tokens": 75537803,
+      "responses": 689,
+      "usd_standard": 17.756215599999976
+    },
+    "no_parent_review": {
+      "input_tokens": 144394083,
+      "cached_input_tokens": 140726656,
+      "cache_write_input_tokens": 0,
+      "output_tokens": 511148,
+      "reasoning_output_tokens": 86204,
+      "total_tokens": 144905231,
+      "responses": 1266,
+      "usd_standard": 46.096950119999974
+    }
+  },
+  "root": {
+    "input_tokens": 368356498,
+    "cached_input_tokens": 359982976,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 1088562,
+    "reasoning_output_tokens": 159154,
+    "total_tokens": 369445060,
+    "responses": 2720,
+    "usd_standard": 498.1462960000013
+  },
+  "workers": {
+    "input_tokens": 1106392391,
+    "cached_input_tokens": 1074935808,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 5061087,
+    "reasoning_output_tokens": 883648,
+    "total_tokens": 1111453478,
+    "responses": 8867,
+    "usd_standard": 178.31234319999973
+  },
+  "worker_concurrency_hours": {
+    "0": 0.3345761111709807,
+    "1": 1.1398088890976377,
+    "2": 3.1072836104366512,
+    "3": 11.588801944851875
+  },
+  "average_worker_concurrency": 2.6047963044619835,
+  "concurrency_method": "Union of task intervals per worker, then sweep; includes tool waits, not GPU utilization.",
+  "worker_turn_count": 382,
+  "root_tool_counts": {
+    "exec": 1845,
+    "request_user_input_async": 1,
+    "spawn_agent": 81,
+    "send_message": 252,
+    "wait_agent": 159,
+    "followup_task": 309,
+    "interrupt_agent": 13,
+    "list_agents": 36,
+    "sleep": 2
+  },
+  "root_nested_tools": {
+    "exec_command": 1967,
+    "write_stdin": 143,
+    "view_image": 271,
+    "mcp__aside__repl": 118,
+    "apply_patch": 32,
+    "clock__curr_time": 1
+  },
+  "root_tool_wait_hours": 1.4924613883097966,
+  "root_usage_after_wait": {
+    "input_tokens": 20449317,
+    "cached_input_tokens": 20011520,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 18690,
+    "reasoning_output_tokens": 13043,
+    "total_tokens": 20468007,
+    "responses": 161,
+    "usd_standard": 25.323990000000006
+  },
+  "error_observations": 1772,
+  "error_counts": [
+    [
+      "Claim frame is outside claim range",
+      166
+    ],
+    [
+      "clip evidence range is outside its beat",
+      110
+    ],
+    [
+      "Event steps must be chronological",
+      93
+    ],
+    [
+      "Invalid clip evidence claim",
+      38
+    ],
+    [
+      "Beat G001-B001 cites a proposal that does not anchor its boundary",
+      33
+    ],
+    [
+      "'str' object has no attribute 'get'",
+      23
+    ],
+    [
+      "Beat G001-B001 boundaries are not evidence-anchored",
+      23
+    ],
+    [
+      "Onscreen person requires in-beat visual frames",
+      23
+    ],
+    [
+      "Invalid video summary representative sample",
+      19
+    ],
+    [
+      "Beat G002-B001 cuts utterance G002-U001",
+      18
+    ],
+    [
+      "Utterance G001-U001 timing exceeds cited evidence",
+      18
+    ],
+    [
+      "Claim utterance does not overlap its range",
+      17
+    ],
+    [
+      "Claim requires explicit basis and evidence",
+      16
+    ],
+    [
+      "Utterances in scene G001 must be chronological",
+      16
+    ],
+    [
+      "Beat G002-B001 crosses the group start without adjustment",
+      15
+    ],
+    [
+      "Beat G001-B001 omits the representative sample for visual moment VM0001",
+      13
+    ],
+    [
+      "[Errno 2] No such file or directory: '<local-path>",
+      13
+    ],
+    [
+      "Person detection is not near cited in-beat frame",
+      12
+    ],
+    [
+      "Core range cuts an utterance or caption",
+      12
+    ],
+    [
+      "[Errno 21] Is a directory: '<local-path>'",
+      12
+    ],
+    [
+      "Beat G001-B003 boundaries are not evidence-anchored",
+      12
+    ],
+    [
+      "Beat G001-B001 source_boundary_proposal_ids must be a list",
+      11
+    ],
+    [
+      "Interaction requires participants and speech evidence",
+      11
+    ],
+    [
+      "Scene G001 editorial beats must exactly cover visual moments",
+      11
+    ],
+    [
+      "Beat G003-B001 boundaries are not evidence-anchored",
+      10
+    ]
+  ]
+}
