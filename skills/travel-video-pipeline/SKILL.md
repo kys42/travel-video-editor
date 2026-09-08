@@ -7,9 +7,18 @@ description: Run a local-first, token-efficient action-camera and travel-video w
 
 Use deterministic local processing to reduce video into traceable evidence, then spend model context only on compact review packets. Preserve raw outputs and every later judgment as separate artifacts.
 
+## First use and changed goals
+
+Before processing a new user's footage, follow [onboarding](references/onboarding.md):
+inspect environment and model readiness, help install only needed dependencies,
+identify source/work locations, and establish extraction-only versus highlight scope.
+Installation of the skill itself does not run setup. Start this interaction on first use;
+on resume reuse the local brief and ask only missing/changed questions. For a complete
+existing brief, proceed directly. Do not begin downloads or full processing during a check-only request.
+
 ## Start safely
 
-1. Locate the project root. Prefer `TRAVEL_VIDEO_PROJECT_ROOT`, then the current repository, then `/Users/kys/projects/travel-video-editor` when it exists.
+1. Locate the project root from the user's explicit path, `TRAVEL_VIDEO_PROJECT_ROOT`, or the current repository. If missing, help locate/clone it; never assume this author's personal machine paths.
 2. Read the repository `AGENTS.md` and its referenced media-location document before touching media.
 3. Run `python3 scripts/check_environment.py --project-root <root>` from this skill directory when the environment or mounted volumes are uncertain.
 4. Treat source-camera media as immutable. Resolve actual Unicode paths from the filesystem or manifests; do not type a normalized Korean path and assume it matches.
