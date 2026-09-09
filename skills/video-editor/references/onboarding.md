@@ -18,6 +18,8 @@ No Swift, Apple speech model, or MLX install is necessary for a render using rev
 
 ## Gather a brief in two or three short rounds
 
+Reuse the pipeline profile's `agents` cost preference for model-based candidate selection. If missing and delegation is useful, offer economy first, resolve a supported worker model/role and bounded parallelism, and keep stronger-model escalation off unless authorized. Check the effective launch settings instead of assuming a saved profile changes them. Simple trimming or FFmpeg rendering needs no extra LLM worker or cost questionnaire.
+
 1. **Purpose and story:** audience (private, family, public), subject emphasis (scenery, food, dialogue, activities), source/library and date scope.
 2. **Shape:** desired length, 16:9/9:16 or another requested format, chronology/theme, calm/brisk pacing, required scenes and omissions.
 3. **Sound and privacy:** original dialogue/ambience, subtitle language/style, available music, excluded people/faces/names/private dialogue, and output destination/resolution.

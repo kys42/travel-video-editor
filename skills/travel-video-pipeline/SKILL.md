@@ -14,6 +14,8 @@ first skim the known source/library using cheap metadata and summarize its scale
 existing analysis, then ask contextual scope questions. If the source is unknown, ask
 only its location first. Check environment/model readiness and install needed dependencies
 for the chosen extraction-only or highlight route.
+Before batch work, resolve an economy/balanced subagent preference to actual supported
+worker settings; prefer economy, bounded parallelism and no automatic model escalation.
 Installation of the skill itself does not run setup. Start this interaction on first use;
 on resume reuse the local brief and ask only missing/changed questions. For a complete
 existing brief, proceed directly. Do not begin downloads or full processing during a check-only request.

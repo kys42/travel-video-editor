@@ -70,7 +70,25 @@ When the assets command is not present in the user's checkout, inspect `capabili
 
 Source: [Apple AssetInventory](https://developer.apple.com/documentation/speech/assetinventory), which downloads and manages assets for configured analyzer modules. MLX and Apple assets are different backends; installing one does not prepare the other.
 
-## 3. Ask a small brief, only as needed
+## 3. Set the subagent cost preference before batch work
+
+After the footage summary and scope choice, offer **economy (recommended)** or **balanced** if the user has not already chosen a cost preference. Economy uses the least expensive available model that supports the packet's image/text and tool requirements; balanced can use a stronger worker for ambiguous dialogue or more complex scene reasoning. Neither means skipping required evidence, dialogue preservation, or validators. Reuse a previously accepted choice.
+
+> 이 분량은 저비용 서브에이전트로 날짜·구간을 나눠 처리하는 걸 추천해요. 비용 절약형으로 갈까요, 조금 더 강한 모델을 쓰는 균형형으로 갈까요? 상위 모델 검토는 필요한 예외가 생길 때만 선택할 수 있어요.
+
+Before dispatch, inspect the current host's exposed models/roles, supported effort and modalities, authentication mode and concurrency limits. Resolve and record an actual worker model/role; do not silently inherit an expensive parent model or assume the same names exist in Claude and Codex. Use supported per-task/per-agent overrides or scoped project configuration, preserving unrelated global defaults. If overrides are unavailable, explain the effective model and limitation before offering savings. Do not launch paid test calls merely to inspect setup. Consult current official provider documentation for configuration syntax or price comparisons; subscription usage and an API price estimate are not the same bill.
+
+For this repository's local queue, inspect `scripts/run_scene_library_queue.py` when present: its built-in command currently fixes `gpt-5.6-luna` with `medium` effort. Do not imply an onboarding profile changes that command or add unsupported `model` keys to its config. Use that verified economy route when available; a different worker needs an explicitly configured and validated supported launch route. A standalone skill must inspect its own runtime instead of assuming this queue is installed.
+
+Use disjoint asset/group packets and compact context, without full parent history or nested workers. Start with at most three workers, capped by available agent slots, API limits and local I/O; explain that more parallelism improves elapsed time, not token price. Use the executor's bounded attempts/timeouts and retain completed results. At the parent's level, consume completion/error summaries rather than rereading every normal packet.
+
+Default escalation is **off**: actual validation failures or concrete evidence conflicts become bounded repair jobs on the same model. After the retry limit, retain the unresolved exception. A stronger-model pass needs existing permission or one contextual choice when that exception occurs, limited to the affected packet; ordinary warnings are not escalation triggers. Do not add a mandatory parent/model final-review pass. Agree any optional usage budget before the batch; only claim a hard monetary cap if the executor/provider can enforce it. Track reported tokens, retries and requested versus observed model where available, leaving missing usage unknown.
+
+Save this under `agents` in the local onboarding profile: `preset`, `runtime`, `worker_model`, `worker_role`, `reasoning_effort`, `max_parallel`, `escalation` and optional `budget`. Use null for unresolved values. This is an agent-readable brief, not an auto-applied runtime configuration: map it to supported launch settings and check the effective command/role before claiming setup complete. Carry it into editing without re-asking; FFmpeg rendering itself needs no LLM worker.
+
+Configuration reference: [Codex subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents). Resolve Claude settings through its installed runtime and current official documentation rather than translating Codex settings verbatim.
+
+## 4. Ask a small brief, only as needed
 
 Batch two or three related decisions per message and offer reasonable defaults. Explain the effect of a choice in ordinary language. Keep required unanswered choices pending; elapsed time is not consent.
 
@@ -93,7 +111,7 @@ Example concise questions:
 
 Use the user's existing answers instead of replaying these examples verbatim.
 
-## 4. Save the brief locally and proceed
+## 5. Save the brief locally and proceed
 
 Store accepted choices and environment findings in `<project>/work/onboarding/profile.json` or the user-selected local work directory. It is private runtime state, not a Git-tracked example. A minimal shape is:
 
@@ -105,6 +123,9 @@ Store accepted choices and environment findings in `<project>/work/onboarding/pr
   "working_root": "/path/to/work",
   "date_scope": [],
   "speech": {"backend": "apple", "locales": ["ko-KR", "en-US"]},
+  "agents": {"preset": "economy", "runtime": null, "worker_model": null,
+    "worker_role": null, "reasoning_effort": null, "max_parallel": 3,
+    "escalation": "off", "budget": null},
   "brief": {"purpose": "family", "subjects": ["scenery", "food"], "target_seconds": 180,
     "aspect_ratio": "16:9", "pace": "calm", "dialogue": "preserve", "captions": "original_language",
     "music_paths": [], "exclusions": [], "preview_first": true, "final_resolution": null},
