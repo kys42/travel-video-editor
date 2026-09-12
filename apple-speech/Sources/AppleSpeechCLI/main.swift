@@ -257,6 +257,47 @@ func capabilities(output: String?) async throws {
     try writeJSON(report, to: output)
 }
 
+struct AssetReport: Encodable {
+    let schema_version = "apple-speech-assets/v1"
+    let requested_locale: String
+    let selected_locale: String
+    let status_before: String
+    let status_after: String
+    let installation_requested: Bool
+}
+
+func assets(arguments: [String]) async throws {
+    let identifier = try option("--locale", in: arguments)
+    guard SpeechTranscriber.isAvailable,
+          let locale = await SpeechTranscriber.supportedLocale(
+            equivalentTo: Locale(identifier: identifier)
+          ) else {
+        throw CLIError.unsupportedLocale(identifier)
+    }
+    let (sensitivity, _) = try detectorSensitivity(from: arguments)
+    let modules: [any SpeechModule] = [
+        SpeechDetector(detectionOptions: .init(sensitivityLevel: sensitivity), reportResults: true),
+        SpeechTranscriber(locale: locale, transcriptionOptions: [],
+            reportingOptions: [.alternativeTranscriptions],
+            attributeOptions: [.audioTimeRange, .transcriptionConfidence]),
+    ]
+    let install = arguments.contains("--install")
+    let before = statusName(await AssetInventory.status(forModules: modules))
+    let after: String
+    if install {
+        let result = try await ensureAssets(for: modules)
+        after = result.1
+    } else {
+        after = before
+    }
+    try writeJSON(AssetReport(requested_locale: identifier,
+        selected_locale: locale.identifier, status_before: before, status_after: after,
+        installation_requested: install), to: optionalOption("--output", in: arguments))
+    if install && after != "installed" {
+        throw CLIError.usage("Speech assets are not ready: \(after)")
+    }
+}
+
 func transcribe(arguments: [String]) async throws {
     let input = try option("--input", in: arguments)
     let requestedIdentifier = try option("--locale", in: arguments)
@@ -342,6 +383,7 @@ struct AppleSpeechCLI {
             guard let command = arguments.first else {
                 throw CLIError.usage(
                     "Usage: apple-speech capabilities [--output FILE] | "
+                        + "assets --locale LOCALE [--install] [--output FILE] | "
                         + "transcribe --input AUDIO --locale LOCALE --output FILE "
                         + "[--detector-sensitivity low|medium|high]"
                 )
@@ -349,6 +391,8 @@ struct AppleSpeechCLI {
             switch command {
             case "capabilities":
                 try await capabilities(output: optionalOption("--output", in: arguments))
+            case "assets":
+                try await assets(arguments: arguments)
             case "transcribe":
                 try await transcribe(arguments: arguments)
             default:

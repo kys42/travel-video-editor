@@ -1,0 +1,141 @@
+# First-use onboarding and interaction
+
+Use this on the first invocation, a new machine/project/source, or a changed goal. Skill installation copies instructions; it does not execute a setup hook. On an ordinary resume, read the existing local profile and ask only about missing or changed decisions. If the user already supplied source, purpose, options, and authorization, use those answers and proceed.
+
+## 1. Look at the available footage, then ask in context
+
+Use source paths and existing manifests from the conversation/profile first. If no source folder or library is known, ask only where it is; defer purpose and output questions until after a quick inventory. Do not ask users to upload full camera footage to chat. Never adopt this repository author's paths, trip names, identities, or exclusion preferences as another user's defaults.
+
+Keep the initial look brief (roughly 30 seconds where practical), read-only, and limited to the designated folder or library. Prefer existing manifests/catalogs for file count, bytes, total duration, date distribution, orientation/resolution, and proxy/transcript/scene-library coverage. Count source assets separately from their proxies and exports. If metadata is missing, list files and use a small bounded sample of `ffprobe` metadata when available; do not wait for a full-folder probe, decode, or hash pass. Report measured coverage and unknowns; sampled duration is an estimate, not an exact total. File timestamps are provisional unless camera metadata or existing story-day mappings support them.
+
+Existing summaries or thumbnails can add subject context; filenames alone do not establish content, people, or spoken language. Do not start STT, model downloads, proxy/contact-sheet batches, or paid LLM calls for this first look. Missing tools or disconnected storage should lead to a partial inventory with a clear limitation, not block the conversation behind setup.
+
+Give a compact factual summary before asking the first scope question. For example, **only if the inventory supports these values**:
+
+> 7일치 180개, 총 약 5시간이고 마지막 이틀은 아직 분석되지 않았네요. 전체를 장면·대사 웹으로 정리할까요, 하이라이트까지 만들까요? 기존 분석분만 먼저 편집할 수도 있어요.
+
+Tailor choices to what exists: date range when many days are present, reuse when analysis exists, full extraction when it does not. If the user already chose the goal, proceed without asking it again. Ask for a separate working/output folder when needed. Then inspect current project, OS/architecture, runtime, available tools and free working space for the chosen route.
+
+Run the bundled read-only checker (substitute actual paths; outputs remain local):
+
+```sh
+python3 <skill-dir>/scripts/check_environment.py \
+  --project-root /path/to/travel-video-editor \
+  --source-root /path/to/camera-originals \
+  --working-root /path/to/working-storage \
+  --speech-backend auto --output /path/to/local/preflight.json
+```
+
+`ok` covers the checks actually performed, not every future backend. Choose `--speech-backend apple` after Apple STT is selected to require installed assets, or `off` when transcription is not needed. The checker does not download anything. A missing CLI or failed version command is an unmet dependency, even if its executable path exists.
+
+Here `auto` means capability inspection only, not backend selection or transcription routing. Reuse an existing backend choice; otherwise explain compatible options and record the selected backend before processing. This checker verifies Apple assets only, so MLX readiness requires its own runtime/model checks. On Windows/Linux, the bundled Apple and MLX speech paths are unavailable; do not promise native local STT through these paths. Use shell-appropriate Python commands and path syntax (for example, `py` on Windows).
+
+## 2. Explain only the preparation this task needs
+
+Show a compact table: **ready / needs installation / unsupported / choice needed**, with the next action for each unmet item. Avoid a long questionnaire about settings that can be determined locally.
+
+| Selected task | Required preparation |
+|---|---|
+| Existing library → edit | FFmpeg/ffprobe, Python + Pillow, readable selected media, output space; no new STT model |
+| New footage → scene web | Project runtime, FFmpeg/ffprobe, working proxies/evidence; a supported speech backend only when speech extraction is wanted |
+| Apple speech | macOS 26+, compatible Swift toolchain and device, built worker, requested locale + detector assets actually installed |
+| MLX alternative | Apple Silicon and compatible MLX runtime/model; inspect project adaptive-STT guide before installing |
+| No compatible local speech backend | Offer an existing transcript or explicit visual-only extraction; do not label missing speech as silence or silently select a cloud service |
+| Model reasoning | The chosen agent's usable authentication and limits; don't read/copy credentials or ask the user to paste keys into chat |
+
+For ordinary missing packages, state exactly what will be installed, where, whether a model download is involved, and any known disk/network need. If the user already asked to set up/install dependencies, do the authorized setup without re-asking. If they requested only inspection, present the concrete install plan and ask once before modifying the environment. OS upgrades, privileged prompts, account sign-in, or unknown installation size are distinct from a routine package install; let the user handle required system UI and don't claim completion before rechecking.
+
+Prefer an existing package manager. Typical project setup is `uv sync --group dev` (or `uv sync` for runtime only). On a Mac with Homebrew already installed, missing FFmpeg/uv can be installed with `brew install ffmpeg uv`. Don't install a package manager or upgrade the OS as an unannounced side effect. Check current official installation instructions when no suitable package manager exists.
+
+### Apple speech: check → optionally install → recheck
+
+Apple manages these shared on-device assets. macOS version and a built binary alone do not prove model readiness. Check the selected locales and SpeechDetector configuration used by this project's transcriber.
+
+```sh
+swift build --package-path apple-speech -c release
+apple-speech/.build/release/apple-speech capabilities
+
+# Read-only: no audio is analyzed and nothing is downloaded.
+apple-speech/.build/release/apple-speech assets --locale ko-KR
+apple-speech/.build/release/apple-speech assets --locale en-US
+
+# Only after installation is authorized; install the requested languages only.
+apple-speech/.build/release/apple-speech assets --locale ko-KR --install
+apple-speech/.build/release/apple-speech assets --locale en-US --install
+```
+
+The command reports `status_before`, `status_after`, and `installation_requested`. Only `installed` is ready. `supported`, `downloading`, `unsupported`, timeout, or an old worker without the `assets` command are not readiness. Rebuild an old worker; don't repeatedly start transcription to make model setup happen indirectly. Retry a failed install once if a transient cause is resolved, then report the actual blocker. Never remove other apps' locale reservations or models to free space automatically.
+
+When the assets command is not present in the user's checkout, inspect `capabilities` and explain that fine-grained detector readiness/install needs the updated worker; do not invent a command. The existing `transcribe` path can download assets implicitly, so it is not a read-only setup test.
+
+Source: [Apple AssetInventory](https://developer.apple.com/documentation/speech/assetinventory), which downloads and manages assets for configured analyzer modules. MLX and Apple assets are different backends; installing one does not prepare the other.
+
+## 3. Set the subagent cost preference before batch work
+
+After the footage summary and scope choice, offer **economy (recommended)** or **balanced** if the user has not already chosen a cost preference. Economy uses the least expensive available model that supports the packet's image/text and tool requirements; balanced can use a stronger worker for ambiguous dialogue or more complex scene reasoning. Neither means skipping required evidence, dialogue preservation, or validators. Reuse a previously accepted choice.
+
+> 이 분량은 저비용 서브에이전트로 날짜·구간을 나눠 처리하는 걸 추천해요. 비용 절약형으로 갈까요, 조금 더 강한 모델을 쓰는 균형형으로 갈까요? 상위 모델 검토는 필요한 예외가 생길 때만 선택할 수 있어요.
+
+Before dispatch, inspect the current host's exposed models/roles, supported effort and modalities, authentication mode and concurrency limits. Resolve and record an actual worker model/role; do not silently inherit an expensive parent model or assume the same names exist in Claude and Codex. Use supported per-task/per-agent overrides or scoped project configuration, preserving unrelated global defaults. If overrides are unavailable, explain the effective model and limitation before offering savings. Do not launch paid test calls merely to inspect setup. Consult current official provider documentation for configuration syntax or price comparisons; subscription usage and an API price estimate are not the same bill.
+
+For this repository's local queue, inspect `scripts/run_scene_library_queue.py` when present: its built-in command currently fixes `gpt-5.6-luna` with `medium` effort. Do not imply an onboarding profile changes that command or add unsupported `model` keys to its config. Use that verified economy route when available; a different worker needs an explicitly configured and validated supported launch route. A standalone skill must inspect its own runtime instead of assuming this queue is installed.
+
+Use disjoint asset/group packets and compact context, without full parent history or nested workers. Start with at most three workers, capped by available agent slots, API limits and local I/O; explain that more parallelism improves elapsed time, not token price. Use the executor's bounded attempts/timeouts and retain completed results. At the parent's level, consume completion/error summaries rather than rereading every normal packet.
+
+Default escalation is **off**: actual validation failures or concrete evidence conflicts become bounded repair jobs on the same model. After the retry limit, retain the unresolved exception. A stronger-model pass needs existing permission or one contextual choice when that exception occurs, limited to the affected packet; ordinary warnings are not escalation triggers. Do not add a mandatory parent/model final-review pass. Agree any optional usage budget before the batch; only claim a hard monetary cap if the executor/provider can enforce it. Track reported tokens, retries and requested versus observed model where available, leaving missing usage unknown.
+
+Save this under `agents` in the local onboarding profile: `preset`, `runtime`, `worker_model`, `worker_role`, `reasoning_effort`, `max_parallel`, `escalation` and optional `budget`. Use null for unresolved values. This is an agent-readable brief, not an auto-applied runtime configuration: map it to supported launch settings and check the effective command/role before claiming setup complete. Carry it into editing without re-asking; FFmpeg rendering itself needs no LLM worker.
+
+Configuration reference: [Codex subagents](https://learn.chatgpt.com/docs/agent-configuration/subagents). Resolve Claude settings through its installed runtime and current official documentation rather than translating Codex settings verbatim.
+
+## 4. Ask a small brief, only as needed
+
+Batch two or three related decisions per message and offer reasonable defaults. Explain the effect of a choice in ordinary language. Keep required unanswered choices pending; elapsed time is not consent.
+
+For **extraction only**, gather date/source scope, spoken languages, desired outputs (scene web + reusable candidate JSON by default), and whether any material should be excluded. Do not ask aspect ratio, music, or film duration. Stop after the requested library deliverables.
+
+For **highlight production**, gather these in stages:
+
+1. **Purpose/audience and subject:** personal memory, family sharing, public travel vlog, short social clip; scenery, food, people/dialogue, activities, or a balanced story.
+2. **Length and presentation:** desired runtime or range, horizontal/vertical, narrative chronology vs themed montage, calm vs brisk pacing. Defaults may be suggested, never silently treated as preferences.
+3. **Voice and privacy:** keep conversations/original ambience, subtitle language and style, user-supplied music, faces/names/private conversations to exclude, sensitive scenes. Ask whom/what to exclude if ambiguous; anonymous person metadata is not identity or face-absence proof.
+4. **Deliverables:** proxy preview first, final resolution/source relink, MP4/SRT/edit-plan outputs, destination. Public-facing purpose does not authorize uploading footage, making the GitHub repo public, or publishing the final film.
+
+Example concise questions:
+
+> 누구에게 보여줄 영상이고, 어떤 순간을 중심으로 남기고 싶으세요? 개인 기록 / 가족 공유 / 공개용 여행 영상
+
+> 길이와 화면은 어떻게 할까요? 3분 가로 / 60초 세로 / 10분 이상 여행 기록
+
+> 대사·자막·음악, 그리고 제외할 얼굴이나 장면 조건이 있나요?
+
+Use the user's existing answers instead of replaying these examples verbatim.
+
+## 5. Save the brief locally and proceed
+
+Store accepted choices and environment findings in `<project>/work/onboarding/profile.json` or the user-selected local work directory. It is private runtime state, not a Git-tracked example. A minimal shape is:
+
+```json
+{
+  "schema_version": "travel-video-onboarding/v1",
+  "goal": "extract_and_highlight",
+  "source_root": "/path/to/source",
+  "working_root": "/path/to/work",
+  "date_scope": [],
+  "speech": {"backend": "apple", "locales": ["ko-KR", "en-US"]},
+  "agents": {"preset": "economy", "runtime": null, "worker_model": null,
+    "worker_role": null, "reasoning_effort": null, "max_parallel": 3,
+    "escalation": "off", "budget": null},
+  "brief": {"purpose": "family", "subjects": ["scenery", "food"], "target_seconds": 180,
+    "aspect_ratio": "16:9", "pace": "calm", "dialogue": "preserve", "captions": "original_language",
+    "music_paths": [], "exclusions": [], "preview_first": true, "final_resolution": null},
+  "setup": {"preflight_report": "preflight.json", "verified_at": null},
+  "pending_questions": []
+}
+```
+
+Use `null`/pending for unknowns and retain their meaning. Save no secrets, credentials, identity photos, or conversation transcript. This profile records choices, not a permanent blanket authorization. On resume, verify paths/current dependency readiness; don't redownload models or reprocess completed assets just because a new chat started.
+
+Reflect the agreed task in one short paragraph with the source scope, outputs, edit constraints and any remaining dependency. If enough is already authorized, start; don't add another approval gate. When needed, do a small representative pilot before a large batch, reuse caches, and follow the current runbook's parallel extraction/automatic validation policy. Parent model reinspection of every asset is not an onboarding requirement.
+
+For `extract_and_highlight`, finish the validated library and pass this same brief plus candidate paths to `video-editor`. Do not ask the questions again at the skill boundary. Before expensive rendering, show the concrete edit plan/preview according to the user's existing authorization. Report the actual stage, pending exceptions, output paths, and next action at interruption.

@@ -7,6 +7,16 @@ description: Plan, trim, assemble, caption, and validate local video edits with 
 
 Turn explicit source ranges into a reproducible local video edit. Preserve source media, keep edit decisions inspectable, and make a preview that can be relinked to originals without changing timecodes.
 
+## First use and editing brief
+
+Use [editing onboarding](references/onboarding.md) when setup, source, or the intended
+film is unclear. First summarize the available footage/candidates from a quick metadata
+inventory, asking only for the source location if unknown. Then check required render dependencies and collect purpose, duration,
+format, pacing, sound/captions and exclusion preferences in small batches. Reuse a
+pipeline onboarding profile or explicit edit plan; do not restart the questionnaire or
+install speech models for already-analyzed footage. Skill installation is passive;
+this interaction starts when the skill is first invoked.
+
 ## Workflow
 
 1. Inspect the source and any reviewed timeline, transcript, markers, or user selections. Prefer already-reviewed metadata over re-watching full media.

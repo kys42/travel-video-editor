@@ -21,12 +21,10 @@ def discover_project(explicit: str | None) -> Path | None:
     candidates: list[Path] = []
     if explicit:
         candidates.append(Path(explicit))
-    if os.environ.get("TRAVEL_VIDEO_PROJECT_ROOT"):
+    elif os.environ.get("TRAVEL_VIDEO_PROJECT_ROOT"):
         candidates.append(Path(os.environ["TRAVEL_VIDEO_PROJECT_ROOT"]))
-    candidates.extend([Path.cwd(), *Path.cwd().parents])
-    fallback = Path("/Users/kys/projects/travel-video-editor")
-    if fallback.exists():
-        candidates.append(fallback)
+    else:
+        candidates.extend([Path.cwd(), *Path.cwd().parents])
     for candidate in candidates:
         resolved = candidate.expanduser().resolve()
         if (resolved / "pyproject.toml").is_file() and (
@@ -50,9 +48,37 @@ def command_info(name: str) -> dict[str, Any]:
             )
             first_line = (result.stdout or result.stderr).splitlines()
             info["version"] = first_line[0] if first_line else None
+            info["exit_code"] = result.returncode
+            info["available"] = result.returncode == 0
         except (OSError, subprocess.SubprocessError) as exc:
+            info["available"] = False
             info["version_error"] = str(exc)
     return info
+
+
+def apple_asset_info(worker: Path, locales: list[str]) -> dict[str, Any]:
+    """Inspect detector + transcription assets; never download or transcribe."""
+    result: dict[str, Any] = {"ready": False, "locales": {}, "check_only": True}
+    for locale in locales:
+        try:
+            probe = subprocess.run(
+                [str(worker), "assets", "--locale", locale],
+                capture_output=True, text=True, timeout=30, check=False,
+            )
+            if probe.returncode:
+                result["locales"][locale] = {"error": probe.stderr.strip()[:1200],
+                    "next_action": "Check locale support; rebuild worker if assets command is unknown"}
+            else:
+                payload = json.loads(probe.stdout)
+                if not isinstance(payload, dict) or payload.get("schema_version") != "apple-speech-assets/v1":
+                    raise ValueError("Unexpected Apple assets report")
+                result["locales"][locale] = payload
+        except (OSError, subprocess.SubprocessError, ValueError) as error:
+            result["locales"][locale] = {"error": str(error)}
+    result["ready"] = bool(locales) and all(
+        item.get("status_after") == "installed" for item in result["locales"].values()
+    )
+    return result
 
 
 def active_media_processes() -> list[dict[str, Any]]:
@@ -117,6 +143,9 @@ def main() -> int:
     parser.add_argument("--project-root")
     parser.add_argument("--source-root")
     parser.add_argument("--working-root")
+    parser.add_argument("--speech-backend", choices=("auto", "apple", "off"), default="auto",
+                        help="apple requires installed assets; off skips speech setup; no downloads")
+    parser.add_argument("--locales", default="ko-KR,en-US")
     parser.add_argument(
         "--require-idle-proxy",
         action="store_true",
@@ -175,8 +204,10 @@ def main() -> int:
         "swift_available": commands["swift"]["available"],
     }
     if project:
-        venv_python = project / ".venv/bin/python"
-        project_cli = project / ".venv/bin/travel-video"
+        windows = platform.system() == "Windows"
+        venv_bin = project / ".venv" / ("Scripts" if windows else "bin")
+        venv_python = venv_bin / ("python.exe" if windows else "python")
+        project_cli = venv_bin / ("travel-video.exe" if windows else "travel-video")
         runtime: dict[str, Any] = {
             "python": str(venv_python),
             "python_exists": venv_python.is_file(),
@@ -246,9 +277,16 @@ def main() -> int:
                 ),
             }
         )
-        if package.is_file() and not worker.is_file():
+        locales = [s.strip() for s in args.locales.split(",") if s.strip()]
+        apple["requested_locales"] = locales
+        if args.speech_backend != "off" and apple["supported_os"] and worker.is_file():
+            apple["assets"] = apple_asset_info(worker, locales)
+        if args.speech_backend == "apple":
+            if not apple.get("assets", {}).get("ready"):
+                failures.append("Apple Speech assets are not verified ready; inspect apple_speech, build/check/install then recheck")
+        if args.speech_backend != "off" and package.is_file() and not worker.is_file():
             warnings.append("Apple Speech worker is not built")
-        if not apple["supported_os"]:
+        if args.speech_backend != "off" and not apple["supported_os"]:
             warnings.append("Apple Speech path requires macOS 26 or newer")
 
     report = {
@@ -268,6 +306,7 @@ def main() -> int:
         "project_runtime": report_runtime if project else None,
         "active_media_processes": active_processes,
         "apple_speech": apple,
+        "speech_backend": args.speech_backend,
         "failures": failures,
         "warnings": warnings,
     }
